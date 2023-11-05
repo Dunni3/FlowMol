@@ -1,0 +1,43 @@
+training:
+  batch_size: 8
+  num_workers: 1
+  trainer_args:
+    max_epochs: 1
+    accelerator: gpu
+    devices: 1
+    accumulate_grad_batches: 1
+
+wandb:
+  project: mol-fm
+  group: "dev"
+  name:
+  mode: offline # can be disabled, online, offline
+  save_dir: runs
+
+scheduler:
+  base_lr: 1.0e-4
+  warmup_length: 1
+  restart_interval: 0 # 0 means no restart
+  restart_type: 'linear'
+
+dataset:
+  raw_data_dir: data/raw/
+  processed_data_dir: data/geom_dev
+  atom_map: ['C', 'H', 'N', 'O', 'F', 'P', 'S', 'Cl', 'Br', 'I'] # TODO: check the list of atoms contained in geomdrugs
+  dataset_name: geom # only geom is supported for now
+  n_conformers: 4
+  dataset_size: 500
+
+checkpointing:
+  save_last: True
+  every_n_train_steps: 5
+
+ligand_edm:
+  n_timesteps: 1000
+
+terminal_predictor:
+  hidden_size: 256
+  n_convs: 3
+  edge_cutoff: 5 # angstroms
+  agg_norm_factor: 10
+
