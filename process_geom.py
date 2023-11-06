@@ -12,9 +12,35 @@ import torch
 import tqdm
 import yaml
 from rdkit import Chem
+from multiprocessing import Pool
 
-from data_processing.geom import featurize_molecules
+from data_processing.geom import MoleculeFeaturizer
 
+def chunks(lst, n):
+    """Yield successive n-sized chunks from lst."""
+    for i in range(0, len(lst), n):
+        yield lst[i:i + n]
+
+def get_exit_handler(running_file: Path):
+    def exit_handler(*args, **kwargs):
+        running_file.unlink()
+    return exit_handler
+
+def setup_exit_handler(running_file: Path):
+
+    if running_file.exists():
+        print(f"Running file {running_file} already exists. Exiting.")
+        sys.exit(0)
+
+    # create running file
+    running_file.touch()
+
+    # remove running file when script exits
+    atexit.register(get_exit_handler(running_file))
+
+    # register exit handler on SIGTERM signal using signal module
+    signal.signal(signal.SIGTERM, get_exit_handler(running_file))
+    signal.signal(signal.SIGINT, get_exit_handler(running_file))
 
 def parse_args():
     """Parse command line arguments using argparse."""
@@ -27,6 +53,7 @@ def parse_args():
     p.add_argument('--end_idx', type=int, default=np.inf, help='end index')
 
     p.add_argument('--n_cpus', type=int, default=1, help='number of cpus to use when computing partial charges for confomers')
+    p.add_argument('--chunk_size', type=int, default=100, help='number of molecules to process at a time')
 
     p.add_argument('--overwrite', action='store_true', help='overwrite existing files')
     p.add_argument('--save_interval', type=int, default=5, help='number of molecules after which to save processed data')
@@ -40,6 +67,7 @@ def parse_args():
         raise ValueError(f"start_idx must be less than end_idx")
 
     return args
+
 
 if __name__ == "__main__":
 
@@ -74,37 +102,95 @@ if __name__ == "__main__":
     with open(raw_data_file, 'rb') as f:
         raw_data = pickle.load(f)
 
+    # determine if we are processing the entire dataset or just a subset
+    if args.start_idx == 0 and args.end_idx == np.inf:
+        full_dataset = True
+        args.save_interval = np.inf
+    else:
+        full_dataset = False
 
+    if full_dataset:
+        output_dir = processed_data_dir
+    else:
+        output_dir = processed_data_dir / 'chunks'
+        output_dir.mkdir(exist_ok=True)
+
+    # determine output file name
+    if full_dataset:
+        output_file = output_dir / 'geom_processed.pt'
+    else:
+        output_file = output_dir / f'processed_geom_{args.start_idx}_{args.end_idx}.pt'
+
+    # get the directory where we write files for currently running jobs
+    running_dir = processed_data_dir / 'running'
+    running_dir.mkdir(exist_ok=True)
+
+    # get the running file for this job
+    running_file = running_dir / output_file.name
+
+    # setup exit handler
+    setup_exit_handler(running_file)
+
+    # combine all the conformers from all the molecules into a single list
+    all_molecules = []
     all_smiles = []
+    for molecule_chunk in raw_data:
+        all_smiles.append(molecule_chunk[0])
+        for conformer in molecule_chunk[1]:
+            all_molecules.append(conformer)
+
+    # determine start_idx and end_idx for molecule processing
+    if full_dataset:
+        start_idx = 0
+        end_idx = len(all_molecules)
+    else:
+        start_idx = args.start_idx
+        end_idx = args.end_idx
+
+    # get the molecules we are going to process
+    molecules = all_molecules[start_idx:end_idx]
+    all_smiles = all_smiles[start_idx:end_idx]
+
+
+
     all_positions = []
     all_atom_types = []
     all_atom_charges = []
     all_bond_types = []
     all_bond_idxs = []
 
-    tqdm_iterator = tqdm.tqdm(raw_data, desc='Featurizing molecules', total=len(raw_data))
+    mol_featurizer = MoleculeFeaturizer(config['dataset']['atom_map'], n_cpus=args.n_cpus)
+
+    # molecules is a list of rdkit molecules.  now we create an iterator that yields sub-lists of molecules. we do this using itertools:
+    chunk_iterator = chunks(molecules, args.chunk_size)
+    n_chunks = len(molecules) // args.chunk_size + 1
+
+
+
+
+    tqdm_iterator = tqdm.tqdm(chunk_iterator, desc='Featurizing molecules', total=n_chunks)
     failed_molecules_bar = tqdm.tqdm(desc="Failed Molecules", unit="molecules")
 
-    failed_molecules = 0
-    for molecule_list in tqdm_iterator:
+    # create a tqdm bar to report the total number of molecules processed
+    total_molecules_bar = tqdm.tqdm(desc="Total Molecules", unit="molecules", total=len(molecules))
 
-        # molecule_list is a list (smiles_string, *conformers as rdkit objects)
-        smiles_string = molecule_list[0]
-        conformers = molecule_list[1]
+    failed_molecules = 0
+    for molecule_chunk in tqdm_iterator:
 
         # TODO: we should collect all the molecules from each individual list into a single list and then featurize them all at once - this would make the multiprocessing actually useful
-        positions, atom_types, atom_charges, bond_types, bond_idxs, num_failed = featurize_molecules(conformers, atom_map=config['dataset']['atom_map'], n_cpus=args.n_cpus)
-
+        positions, atom_types, atom_charges, bond_types, bond_idxs, num_failed = mol_featurizer.featurize_molecules(molecule_chunk)
+        
         failed_molecules += num_failed
         failed_molecules_bar.update(num_failed)
+        total_molecules_bar.update(len(molecule_chunk))
 
-        all_smiles.append(smiles_string)
         all_positions.extend(positions)
         all_atom_types.extend(atom_types)
         all_atom_charges.extend(atom_charges)
         all_bond_types.extend(bond_types)
         all_bond_idxs.extend(bond_idxs)
 
+        # early stopping - a feature only used for debugging / creating small datasets
         if args.dataset_size is not None and len(all_positions) > args.dataset_size:
             break
 
@@ -117,11 +203,11 @@ if __name__ == "__main__":
     n_bonds_list = torch.tensor(n_bonds_list)
 
     # concatenate all_positions and all_features into single arrays
-    all_positions = torch.concatenate(all_positions, axis=0)
-    all_atom_types = torch.concatenate(all_atom_types, axis=0)
-    all_atom_charges = torch.concatenate(all_atom_charges, axis=0)
-    all_bond_types = torch.concatenate(all_bond_types, axis=0)
-    all_bond_idxs = torch.concatenate(all_bond_idxs, axis=0)
+    all_positions = torch.concatenate(all_positions, dim=0)
+    all_atom_types = torch.concatenate(all_atom_types, dim=0)
+    all_atom_charges = torch.concatenate(all_atom_charges, dim=0)
+    all_bond_types = torch.concatenate(all_bond_types, dim=0)
+    all_bond_idxs = torch.concatenate(all_bond_idxs, dim=1)
 
     # create an array of indicies to keep track of the start_idx and end_idx of each molecule's node features
     node_idx_array = np.zeros((len(n_atoms_list), 2), dtype=int)
