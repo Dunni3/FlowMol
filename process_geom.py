@@ -58,7 +58,7 @@ def parse_args():
     p.add_argument('--overwrite', action='store_true', help='overwrite existing files')
     p.add_argument('--save_interval', type=int, default=5, help='number of molecules after which to save processed data')
 
-    p.add_argument('--dataset_size', type=int, default=None, help='number of molecules in dataset, only used to truncate dataset for debugging')
+    # p.add_argument('--dataset_size', type=int, default=None, help='number of molecules in dataset, only used to truncate dataset for debugging')
 
     args = p.parse_args()
 
@@ -117,9 +117,9 @@ if __name__ == "__main__":
 
     # determine output file name
     if full_dataset:
-        output_file = output_dir / 'geom_processed.pt'
+        output_file = output_dir / f'{args.split_file.stem}.pt'
     else:
-        output_file = output_dir / f'processed_geom_{args.start_idx}_{args.end_idx}.pt'
+        output_file = output_dir / f'{args.split_file.stem}_{args.start_idx}_{args.end_idx}.pt'
 
     # get the directory where we write files for currently running jobs
     running_dir = processed_data_dir / 'running'
@@ -151,6 +151,7 @@ if __name__ == "__main__":
     molecules = all_molecules[start_idx:end_idx]
     all_smiles = all_smiles[start_idx:end_idx]
 
+    dataset_size = config['dataset']['dataset_size']
 
 
     all_positions = []
@@ -179,7 +180,7 @@ if __name__ == "__main__":
 
         # TODO: we should collect all the molecules from each individual list into a single list and then featurize them all at once - this would make the multiprocessing actually useful
         positions, atom_types, atom_charges, bond_types, bond_idxs, num_failed = mol_featurizer.featurize_molecules(molecule_chunk)
-        
+
         failed_molecules += num_failed
         failed_molecules_bar.update(num_failed)
         total_molecules_bar.update(len(molecule_chunk))
@@ -191,7 +192,7 @@ if __name__ == "__main__":
         all_bond_idxs.extend(bond_idxs)
 
         # early stopping - a feature only used for debugging / creating small datasets
-        if args.dataset_size is not None and len(all_positions) > args.dataset_size:
+        if dataset_size is not None and len(all_positions) > dataset_size and full_dataset:
             break
 
     # get number of atoms in every data point
