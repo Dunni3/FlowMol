@@ -1,6 +1,6 @@
 training:
   batch_size: 8
-  num_workers: 1
+  num_workers: 0
   trainer_args:
     max_epochs: 1
     accelerator: gpu
@@ -26,7 +26,7 @@ dataset:
   atom_map: ['C', 'H', 'N', 'O', 'F', 'P', 'S', 'Cl', 'Br', 'I'] # TODO: check the list of atoms contained in geomdrugs
   dataset_name: geom # only geom is supported for now
   n_conformers: 4
-  dataset_size: 
+  dataset_size: 500
 
 checkpointing:
   save_last: True

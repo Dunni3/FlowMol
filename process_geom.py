@@ -117,7 +117,7 @@ if __name__ == "__main__":
 
     # determine output file name
     if full_dataset:
-        output_file = output_dir / f'{args.split_file.stem}.pt'
+        output_file = output_dir / f'{args.split_file.stem}_processed.pt'
     else:
         output_file = output_dir / f'{args.split_file.stem}_{args.start_idx}_{args.end_idx}.pt'
 
@@ -208,7 +208,7 @@ if __name__ == "__main__":
     all_atom_types = torch.concatenate(all_atom_types, dim=0)
     all_atom_charges = torch.concatenate(all_atom_charges, dim=0)
     all_bond_types = torch.concatenate(all_bond_types, dim=0)
-    all_bond_idxs = torch.concatenate(all_bond_idxs, dim=1)
+    all_bond_idxs = torch.concatenate(all_bond_idxs, dim=0)
 
     # create an array of indicies to keep track of the start_idx and end_idx of each molecule's node features
     node_idx_array = np.zeros((len(n_atoms_list), 2), dtype=int)
@@ -230,6 +230,7 @@ if __name__ == "__main__":
         'positions': all_positions,
         'atom_types': all_atom_types,
         'atom_charges': all_atom_charges,
+        'bond_types': all_bond_types,
         'bond_idxs': all_bond_idxs,
         'node_idx_array': node_idx_array,
         'edge_idx_array': edge_idx_array,

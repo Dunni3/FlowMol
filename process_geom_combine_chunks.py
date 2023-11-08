@@ -36,7 +36,7 @@ if __name__ == '__main__':
     n_files = len(list(chunk_dir.iterdir()))
 
     # iterate over chunks
-    smiles, positions, atom_types, atom_charges, bond_idxs, node_idx_array, edge_idx_array = [], [], [], [], [], [], []
+    smiles, positions, atom_types, atom_charges, bond_types, bond_idxs, node_idx_array, edge_idx_array = [], [], [], [], [], [], [], []
     for idx, chunk_file in enumerate(chunk_dir.iterdir()):
 
         # print status
@@ -51,6 +51,7 @@ if __name__ == '__main__':
         chunk_smiles = data_dict['smiles']
         chunk_atom_types = data_dict['atom_types']
         chunk_atom_charges = data_dict['atom_charges']
+        chunk_bond_types = data_dict['bond_types']
         chunk_bond_idxs = data_dict['bond_idxs']
         chunk_node_idx_array = data_dict['node_idx_array']
         chunk_edge_idx_array = data_dict['edge_idx_array']
@@ -60,6 +61,7 @@ if __name__ == '__main__':
         positions.append(chunk_positions)
         atom_types.append(chunk_atom_types)
         atom_charges.append(chunk_atom_charges)
+        bond_types.append(chunk_bond_types)
         bond_idxs.append(chunk_bond_idxs)
         node_idx_array.append(chunk_node_idx_array)
         edge_idx_array.append(chunk_edge_idx_array)
@@ -89,6 +91,7 @@ if __name__ == '__main__':
     positions = torch.cat(positions, dim=0)
     atom_types = torch.cat(atom_types, dim=0)
     atom_charges = torch.cat(atom_charges, dim=0)
+    bond_types = torch.cat(bond_types, dim=0)
     bond_idxs = torch.cat(bond_idxs, dim=1)
     node_idx_array = torch.cat(node_idx_array, dim=0)
     edge_idx_array = torch.cat(edge_idx_array, dim=0)
@@ -113,6 +116,7 @@ if __name__ == '__main__':
         'positions': positions,
         'atom_types': atom_types,
         'atom_charges': atom_charges,
+        'bond_types': bond_types, 
         'bond_idxs': bond_idxs,
         'node_idx_array': node_idx_array,
         'edge_idx_array': edge_idx_array,

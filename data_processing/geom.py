@@ -78,18 +78,23 @@ def featurize_molecule(molecule: Chem.rdchem.Mol, atom_map_dict: Dict[str, int])
         
         atom_charges[i] = atom.GetFormalCharge()
 
-    # get atom types and charges as one-hot vectors
+    # get atom types as one-hot vectors
     atom_types = one_hot(atom_types_idx, num_classes=len(atom_map_dict)).bool()
-    atom_charges = one_hot(atom_charges + 2, num_classes=6).bool()
+
+    atom_charges = atom_charges.type(torch.uint8)
 
 
     # get one-hot encoded of existing bonds only (no non-existing bonds)
     adj = torch.from_numpy(Chem.rdmolops.GetAdjacencyMatrix(molecule, useBO=True))
-    edge_index = adj.nonzero().contiguous().T
-    bond_types = adj[edge_index[0], edge_index[1]]
+    edge_index = adj.triu().nonzero().contiguous() # upper triangular portion of adjacency matrix
+
+    # note that because we take the upper-triangular portion of the adjacency matrix, there is only one edge per bond
+    # at training time for every edge (i,j) in edge_index, we will also add edges (j,i)
+    # we also only retain existing bonds, but then at training time we will add in edges for non-existing bonds
+
+    bond_types = adj[edge_index[:, 0], edge_index[:, 1]]
     bond_types[bond_types == 1.5] = 4
-    bond_types = bond_types.long()
-    edge_attr = one_hot(bond_types, num_classes=5).bool()
-    # TODO: we are getting two edges for every bond .. not sure how we will use edge features / make edge predictions in the model.. deal with this later
+    edge_attr = bond_types.type(torch.uint8)
+    # edge_attr = one_hot(bond_types, num_classes=5).bool() # five bond classes: no bond, single, double, triple, aromatic
 
     return positions, atom_types, atom_charges, edge_attr, edge_index
