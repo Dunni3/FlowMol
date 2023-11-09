@@ -110,7 +110,7 @@ class MolFM(pl.LightningModule):
         # sample atom types, charges from simplex
         # TODO: can we implement OT flow matching for the simplex prior?
         for node_feat in ['a', 'c']:
-            g.ndata[f'{node_feat}_0'] = self.exp_dist.sample(g.ndata['{node_feat}_1_true'].shape)
+            g.ndata[f'{node_feat}_0'] = self.exp_dist.sample(g.ndata[f'{node_feat}_1_true'].shape)
             g.ndata[f'{node_feat}_0'] = g.ndata[f'{node_feat}_0'] / g.ndata[f'{node_feat}_0'].sum(dim=1, keepdim=True)
 
         # sample bond types from simplex prior - make sure the sample for the lower triangle is the same as the upper triangle
