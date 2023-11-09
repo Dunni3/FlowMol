@@ -4,6 +4,7 @@ import torch.optim as optim
 import pytorch_lightning as pl
 import dgl
 import torch.nn.functional as fn
+from torch.distributions import Exponential
 
 from .lr_scheduler import LRScheduler
 from .interpolant_scheduler import InterpolantScheduler
@@ -28,6 +29,8 @@ class MolFM(pl.LightningModule):
         self.n_atom_types = n_atom_types
         self.n_atom_charges = n_atom_charges
         self.n_bond_types = n_bond_types
+
+        self.exp_dist = Exponential(1.0)
         
         # construct histogram of number of atoms in each ligand
         self.n_atoms_hist_file = n_atoms_hist_file
@@ -42,7 +45,7 @@ class MolFM(pl.LightningModule):
     def training_step(self, g: dgl.DGLGraph, batch_idx: int):
 
         epoch_exact = self.current_epoch + batch_idx/self.batches_per_epoch
-        self.sched.step_lr(epoch_exact)
+        self.lr_scheduler.step_lr(epoch_exact)
         losses = self(g)
 
         self.log('epoch_exact', epoch_exact, on_step=True, prog_bar=True)
@@ -63,22 +66,27 @@ class MolFM(pl.LightningModule):
         node_batch_idx = torch.arange(batch_size, device=device)
         node_batch_idx = node_batch_idx.repeat_interleave(g.batch_num_nodes())
 
-        # sample timepoints for each item in the batch
-        t = torch.randint(0, self.n_timesteps, size=(batch_size,), device=device).float() # timesteps
-        t = t / self.n_timesteps
+        # create a mask which selects all of the upper triangle edges from the batched graph
+        edges_per_mol = g.batch_num_edges()
+        ul_pattern = torch.tensor([1,0]).repeat(batch_size)
+        n_edges_pattern = (edges_per_mol/2).int().repeat_interleave(2)
+        upper_edge_mask = ul_pattern.repeat_interleave(n_edges_pattern).bool()
 
-        # sample epsilon for each ligand
-        eps = {
-            'h':torch.randn(g.ndata['h_0'].shape, device=device),
-            'x':torch.randn(g.ndata['x_0'].shape, device=device)
-        }
+        # get initial COM of each molecule and remove the COM from the atom positions
+        init_coms = dgl.readout_nodes(g, feat='x_1_true', op='mean')
+        g.ndata['x_1_true'] = g.ndata['x_1_true'] - init_coms[node_batch_idx]
 
-        # construct noisy versions of the ligand
-        gamma_t = self.gamma(t).to(device=device)
-        g = self.noised_representation(g, node_batch_idx, eps, gamma_t)
+        # sample molecules from prior
+        g = self.sample_prior(g, node_batch_idx, upper_edge_mask)
 
-        # predict the noise that was added
-        eps_h_pred, eps_x_pred = self.dynamics(g, t, node_batch_idx)
+        # sample timepoints for each molecule in the batch
+        t = torch.rand(batch_size, device=device).float()
+
+        # construct interpolated molecules
+        g = self.interpolate(g, t, node_batch_idx)
+
+        # predict the end of the trajectory
+        g = self.vector_field.pred_dst(g, t)
 
         x_loss = (eps['x'] - eps_x_pred).square().sum()
         h_loss = (eps['h'] - eps_h_pred).square().sum()
@@ -90,6 +98,46 @@ class MolFM(pl.LightningModule):
         }
         return losses
     
+    def sample_prior(self, g, node_batch_idx: torch.Tensor, upper_edge_mask: torch.Tensor):
+        """Sample from the prior distribution of the ligand."""
+        # sample atom positions from prior
+        # TODO: we should set the standard deviation of atom position prior to be like the average distance to the COM in the training set
+        # or perhaps the average distance to COM for molecules with the same number of atoms
+        # TODO: can we implement OT flow matching for the prior? equivariant flow-matching?
+        g.ndata['x_0'] = torch.randn_like(g.ndata['x_1_true'])
+        g.ndata['x_0'] = g.ndata['x_0'] - dgl.readout_nodes(g, feat='x_0', op='mean')[node_batch_idx]
+
+        # sample atom types, charges from simplex
+        # TODO: can we implement OT flow matching for the simplex prior?
+        for node_feat in ['a', 'c']:
+            g.ndata[f'{node_feat}_0'] = self.exp_dist.sample(g.ndata['{node_feat}_1_true'].shape)
+            g.ndata[f'{node_feat}_0'] = g.ndata[f'{node_feat}_0'] / g.ndata[f'{node_feat}_0'].sum(dim=1, keepdim=True)
+
+        # sample bond types from simplex prior - make sure the sample for the lower triangle is the same as the upper triangle
+        n_upper_edges = upper_edge_mask.sum()
+        g.edata['e_0'] = torch.zeros_like(g.edata['e_1_true'])
+        e_0_upper = self.exp_dist.sample((n_upper_edges, self.n_bond_types))
+        e_0_upper = e_0_upper / e_0_upper.sum(dim=1, keepdim=True)
+        g.edata['e_0'][upper_edge_mask] = e_0_upper
+        g.edata['e_0'][~upper_edge_mask] = e_0_upper
+
+        return g
+    
+    def interpolate(self, g, t, node_batch_idx):
+        """Interpolate between the prior and terminal distribution."""
+        # TODO: this computation could be made more efficient by concatenating node features and edge features into a single tensor and then interpolate them all at once before splitting them back up
+        interpolant_weights = self.interpolant_scheduler.interpolant_weights(t)
+
+        for node_feat in ['x', 'a', 'c']:
+            src_weight, dst_weight = interpolant_weights[node_feat]
+            g.ndata[f'{node_feat}_t'] = src_weight * g.ndata[f'{node_feat}_0'] + dst_weight * g.ndata[f'{node_feat}_1_true']
+
+        for edge_feat in ['e']:
+            src_weight, dst_weight = interpolant_weights[edge_feat]
+            g.edata[f'{edge_feat}_t'] = src_weight * g.edata[f'{edge_feat}_0'] + dst_weight * g.edata[f'{edge_feat}_1_true']
+
+        return g
+
     def remove_com(self, g: dgl.DGLGraph, batch_idx: torch.Tensor):
         com = dgl.readout_nodes(g, feat='x_0', op='mean')
         raise NotImplementedError
@@ -98,7 +146,7 @@ class MolFM(pl.LightningModule):
 
     def configure_optimizers(self):
         optimizer = optim.Adam(self.parameters(), lr=self.scheduler_config['base_lr'])
-        self.sched = Scheduler(model=self, optimizer=optimizer, **self.scheduler_config)
+        self.lr_scheduler = LRScheduler(model=self, optimizer=optimizer, **self.scheduler_config)
         return optimizer
 
     def build_n_atoms_dist(self, n_atoms_hist_file: str):

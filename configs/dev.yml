@@ -14,7 +14,7 @@ wandb:
   mode: offline # can be disabled, online, offline
   save_dir: runs
 
-scheduler:
+lr_scheduler:
   base_lr: 1.0e-4
   warmup_length: 1
   restart_interval: 0 # 0 means no restart
@@ -40,4 +40,12 @@ terminal_predictor:
   n_convs: 3
   edge_cutoff: 5 # angstroms
   agg_norm_factor: 10
+
+interpolant_scheduler:
+  schedule_type: 'cosine'
+  cosine_params:
+    x: 1
+    e: 1.5
+    a: 2
+    c: 2
 
