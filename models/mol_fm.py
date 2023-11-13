@@ -1,6 +1,7 @@
 from typing import Dict
 import torch
 import torch.optim as optim
+import torch.nn as nn
 import pytorch_lightning as pl
 import dgl
 import torch.nn.functional as fn
@@ -17,7 +18,8 @@ class MolFM(pl.LightningModule):
                  batches_per_epoch: int,
                  n_atoms_hist_file: str,
                  n_atom_charges: int = 6,
-                 n_bond_types: int = 5, 
+                 n_bond_types: int = 5,
+                 time_scaled_loss: bool = True, 
                  lr_scheduler_config: dict = {},
                  interpolant_scheduler_config: dict = {},
                  vector_field_config: dict = {}
@@ -30,6 +32,8 @@ class MolFM(pl.LightningModule):
         self.n_atom_charges = n_atom_charges
         self.n_bond_types = n_bond_types
 
+        self.time_scaled_loss = time_scaled_loss
+
         self.exp_dist = Exponential(1.0)
         
         # construct histogram of number of atoms in each ligand
@@ -39,6 +43,18 @@ class MolFM(pl.LightningModule):
         # create interpolant scheduler and vector field
         self.interpolant_scheduler = InterpolantScheduler(**interpolant_scheduler_config)
         self.vector_field = GVPVectorField(**vector_field_config)
+
+        # loss functions
+        if self.time_scaled_loss:
+            reduction = 'none'
+        else:
+            reduction = 'mean'
+        self.loss_fn_dict = {
+            'x': nn.MSELoss(reduction=reduction),
+            'a': nn.CrossEntropyLoss(reduction=reduction),
+            'c': nn.CrossEntropyLoss(reduction=reduction),
+            'e': nn.CrossEntropyLoss(reduction=reduction),
+        }
 
         self.save_hyperparameters()
 
@@ -62,9 +78,11 @@ class MolFM(pl.LightningModule):
         batch_size = g.batch_size
         device = g.device
 
-        # get batch indicies of every ligand
+        # get batch indicies of every atom and edge
         node_batch_idx = torch.arange(batch_size, device=device)
         node_batch_idx = node_batch_idx.repeat_interleave(g.batch_num_nodes())
+        edge_batch_idx = torch.arange(batch_size, device=device)
+        edge_batch_idx = edge_batch_idx.repeat_interleave(g.batch_num_edges())
 
         # create a mask which selects all of the upper triangle edges from the batched graph
         edges_per_mol = g.batch_num_edges()
@@ -85,17 +103,41 @@ class MolFM(pl.LightningModule):
         # construct interpolated molecules
         g = self.interpolate(g, t, node_batch_idx)
 
+        # get the time-depenedent loss weights resulting from the interpolantation scheme
+        if self.time_scaled_loss:
+            interpolant_loss_weights = self.interpolant_scheduler.loss_weights(t)
+
         # predict the end of the trajectory
-        g = self.vector_field.pred_dst(g, t)
+        dst_dict = self.vector_field.pred_dst(g, t)
 
-        x_loss = (eps['x'] - eps_x_pred).square().sum()
-        h_loss = (eps['h'] - eps_h_pred).square().sum()
+        # compute losses
+        losses = {}
+        for feat in ['x', 'a', 'c', 'e']:
 
-        losses = {
-            'l2_x': x_loss/eps_x_pred.numel(),
-            'l2_h': h_loss/eps_h_pred.numel(),
-            'l2': (x_loss + h_loss)/( eps_x_pred.numel() + eps_h_pred.numel() )
-        }
+            # get the target for this feature
+            if feat == 'e':
+                target = g.edata[f'{feat}_1_true']
+            else:
+                target = g.ndata[f'{feat}_1_true']
+
+            # get the target as class indicies for categorical features
+            if feat in ['a', 'c', 'e']:
+                target = target.argmax(dim=-1)
+
+            if self.time_scaled_loss:
+                weight = interpolant_loss_weights[feat]
+                if feat == 'e':
+                    weight = weight[edge_batch_idx]
+                else:
+                    weight = weight[node_batch_idx]
+            else:
+                weight = 1.0
+
+            losses[feat] = self.loss_fn_dict[feat](dst_dict[feat], target)*weight
+
+            if self.time_scaled_loss:
+                losses[feat] = losses[feat].mean()
+
         return losses
     
     def sample_prior(self, g, node_batch_idx: torch.Tensor, upper_edge_mask: torch.Tensor):

@@ -13,6 +13,7 @@ class GVPVectorField(nn.Module):
                     n_vec_channels: int = 16, 
                     n_hidden_scalars: int = 64,
                     n_hidden_edge_feats: int = 64,
+                    n_recycles: int = 1,
                     n_molecule_updates: int = 2, 
                     convs_per_update: int = 2,
                     n_message_gvps: int = 3, 
@@ -30,6 +31,7 @@ class GVPVectorField(nn.Module):
         self.n_hidden_edge_feats = n_hidden_edge_feats
         self.n_vec_channels = n_vec_channels
         self.message_norm = message_norm
+        self.n_recycles = n_recycles
 
 
         self.scalar_embedding = nn.Sequential(
@@ -66,45 +68,83 @@ class GVPVectorField(nn.Module):
         self.node_postion_updater = NodePositionUpdate(n_hidden_scalars, n_vec_channels, n_gvps=3)
         self.edge_updater = EdgeUpdate(n_hidden_scalars, n_vec_channels, n_hidden_edge_feats)
 
+
+        self.node_output_head = nn.Sequential(
+            nn.Linear(n_hidden_scalars, n_hidden_scalars),
+            nn.SiLU(),
+            nn.Linear(n_hidden_scalars, n_atom_types + n_charges)
+        )
+
+        self.to_edge_logits = nn.Sequential(
+            nn.Linear(n_hidden_edge_feats, n_hidden_edge_feats),
+            nn.SiLU(),
+            nn.Linear(n_hidden_edge_feats, n_bond_types)
+        )
+
     def forward(self, g: dgl.DGLGraph, t: torch.Tensor):
         """Returns the marginal vector field for the given graph."""
         pass
 
-    def pred_dst(self, g: dgl.DGLGraph, t: torch.Tensor, node_batch_idx: torch.Tensor):
+    def pred_dst(self, g: dgl.DGLGraph, t: torch.Tensor, node_batch_idx: torch.Tensor, upper_edge_mask: torch.Tensor):
         """Predict x_1 (trajectory destination) given x_t"""
         device = g.device
 
+        with g.local_scope():
+            # gather node and edge features for input to convolutions
+            node_scalar_features = [
+                g.ndata['a_t'],
+                g.ndata['c_t'],
+                t[node_batch_idx].unsqueeze(-1)
+            ]
+            node_scalar_features = torch.cat(node_scalar_features, dim=-1)
+            node_scalar_features = self.scalar_embedding(node_scalar_features)
 
-        # gather node and edge features for input to convolutions
-        node_scalar_features = [
-            g.ndata['a_t'],
-            g.ndata['c_t'],
-            t[node_batch_idx].unsqueeze(-1)
-        ]
-        node_scalar_features = torch.cat(node_scalar_features, dim=-1)
-        node_scalar_features = self.scalar_embedding(node_scalar_features)
+            node_positions = g.ndata['x_t']
 
-        node_positions = g.ndata['x_t']
+            num_nodes = g.num_nodes()
+            node_vec_features = torch.zeros((num_nodes, self.n_vec_channels, 3), device=device)
 
-        num_nodes = g.num_nodes()
-        node_vec_features = torch.zeros((num_nodes, self.n_vec_channels, 3), device=device)
+            edge_features = g.edata['e_t']
+            edge_features = self.edge_embedding(edge_features)
 
-        edge_features = g.edata['e_t']
-        edge_features = self.edge_embedding(edge_features)
+            for recycle_idx in range(self.n_recycles):
+                for conv_idx, conv in enumerate(self.conv_layers):
 
-        for conv_idx, conv in enumerate(self.conv_layers):
+                    node_scalar_features, node_vec_features = conv(g, 
+                            scalar_feats=node_scalar_features, 
+                            coord_feats=node_positions,
+                            vec_feats=node_vec_features,
+                            edge_feats=edge_features
+                    )
 
-            node_scalar_features, node_vec_features = conv(g, 
-                    scalar_feats=node_scalar_features, 
-                    coord_feats=node_positions,
-                    vec_feats=node_vec_features,
-                    edge_feats=edge_features
-            )
+                    if conv_idx != 0 and (conv_idx + 1) % self.convs_per_update == 0:
+                        node_positions = self.node_postion_updater(node_scalar_features, node_positions, node_vec_features)
+                        edge_features = self.edge_updater(g, node_scalar_features, edge_features)
 
-            if conv_idx != 0 and (conv_idx + 1) % self.convs_per_update == 0:
-                node_positions = self.node_postion_updater(node_scalar_features, node_positions, node_vec_features)
+            
+            # predict final charges and atom type logits
+            node_scalar_features = self.node_output_head(node_scalar_features)
+            atom_charge_logits = node_scalar_features[:, :self.n_charges]
+            atom_type_logits = node_scalar_features[:, self.n_charges:]
 
+            # predict the final edge logits
+            ue_feats = edge_features[upper_edge_mask]
+            le_feats = edge_features[~upper_edge_mask]
+            edge_logits = self.to_edge_logits(ue_feats + le_feats)
 
+            # project node positions back into zero-COM subspace
+            g.ndata['x_1_pred'] = node_positions
+            g.ndata['x_1_pred'] = g.ndata['x_1_pred'] - dgl.readout_nodes(g, feat='x_1_pred', op='mean')[node_batch_idx]
+            node_positions = g.ndata['x_1_pred']
+
+        dst_dict = {
+            'x': node_positions,
+            'c': atom_charge_logits,
+            'a': atom_type_logits,
+            'e': edge_logits
+        }
+
+        return dst_dict
 
 class NodePositionUpdate(nn.Module):
 
@@ -137,8 +177,17 @@ class NodePositionUpdate(nn.Module):
     
 class EdgeUpdate(nn.Module):
 
-    def __init__(self, n_node_scalars, n_node_vecs, n_edge_feats):
-        pass
+    def __init__(self, n_node_scalars, n_edge_feats):
+        
+
+        self.edge_update_fn = nn.Sequential(
+            nn.Linear(n_node_scalars*2 + n_edge_feats, n_edge_feats),
+            nn.SiLU(),
+            nn.Linear(n_edge_feats, n_edge_feats),
+            nn.SiLU(),
+        )
+
+        self.edge_norm = nn.LayerNorm(n_edge_feats)
 
     def forward(self, g: dgl.DGLGraph, node_scalars, edge_feats):
         
@@ -151,3 +200,5 @@ class EdgeUpdate(nn.Module):
             node_scalars[dst_idxs],
             edge_feats
         ]
+
+        edge_feats = self.edge_norm(edge_feats + self.edge_update_fn(torch.cat(mlp_inputs, dim=-1)))
