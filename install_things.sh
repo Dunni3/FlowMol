@@ -15,5 +15,4 @@ mamba install pytorch torchvision torchaudio pytorch-cuda=11.8 -c pytorch -c nvi
 mamba install pytorch-cluster pytorch-scatter -c pyg -y
 mamba install -c dglteam/label/cu118 dgl -y
 mamba install -c conda-forge pytorch-lightning -y
-mamba install -c conda-forge openff-toolkit -y
 mamba install -c conda-forge rdkit -y

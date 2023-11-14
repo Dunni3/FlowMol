@@ -138,6 +138,7 @@ if __name__ == "__main__":
         all_smiles.append(molecule_chunk[0])
         for conformer in molecule_chunk[1]:
             all_molecules.append(conformer)
+    del raw_data
 
     # determine start_idx and end_idx for molecule processing
     if full_dataset:
