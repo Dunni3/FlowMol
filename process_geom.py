@@ -241,3 +241,17 @@ if __name__ == "__main__":
     torch.save(data_dict, output_file)
 
 
+    # create histogram of number of atoms
+    if full_dataset:
+        n_atoms, counts = torch.unique(n_atoms_list, return_counts=True)
+        histogram_file = output_dir / f'{args.split_file.stem}_n_atoms_histogram.pt'
+        torch.save((n_atoms, counts), histogram_file)
+
+
+    # write all_smiles to its own file if we are processing the full dataset
+    if full_dataset:
+        smiles_file = output_dir / f'{args.split_file.stem}_smiles.pkl'
+        with open(smiles_file, 'wb') as f:
+            pickle.dump(all_smiles, f)
+
+
