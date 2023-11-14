@@ -67,19 +67,10 @@ if __name__ == "__main__":
     # get an example item from the dataset
     example_graph: dgl.DGLGraph = test_dataset[0]
 
-    # get the number of features on each node
-    n_atom_features = example_graph.ndata['h_0'].shape[1]
-
     # get the filepath of the n_atoms histogram
     n_atoms_hist_filepath = Path(config['dataset']['processed_data_dir']) / 'n_atoms_histogram.pt'
 
     # create model
-    # model = MolFM(batches_per_epoch=len(dataloader),
-    #               n_atom_features=n_atom_features,
-    #               n_atoms_hist_filepath=n_atoms_hist_filepath,
-    #               scheduler_config=config['scheduler'],
-    #               dynamics_config=config['dynamics'],
-    #               noise_schedule_config=config['noise_schedule'], **config['ligand_edm'])
     n_atom_types = len(config['dataset']['atom_map'])
     model = MolFM(n_atom_types=n_atom_types, batches_per_epoch=len(dataloader), 
                   vector_field_config=config['vector_field'],

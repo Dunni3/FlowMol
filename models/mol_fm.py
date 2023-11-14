@@ -113,7 +113,7 @@ class MolFM(pl.LightningModule):
         t = torch.rand(batch_size, device=device).float()
 
         # construct interpolated molecules
-        g = self.interpolate(g, t, node_batch_idx)
+        g = self.interpolate(g, t, node_batch_idx, edge_batch_idx)
 
         # predict the end of the trajectory
         dst_dict = self.vector_field.pred_dst(g, t)
@@ -180,25 +180,24 @@ class MolFM(pl.LightningModule):
 
         return g
     
-    def interpolate(self, g, t, node_batch_idx):
-        """Interpolate between the prior and terminal distribution."""
+    def interpolate(self, g, t, node_batch_idx, edge_batch_idx):
+        """Interpolate between the prior and true terminal state of the ligand."""
         # TODO: this computation could be made more efficient by concatenating node features and edge features into a single tensor and then interpolate them all at once before splitting them back up
-        interpolant_weights = self.interpolant_scheduler.interpolant_weights(t)
+        src_weights, dst_weights = self.interpolant_scheduler.interpolant_weights(t)
 
-        for node_feat in ['x', 'a', 'c']:
-            src_weight, dst_weight = interpolant_weights[node_feat]
-            g.ndata[f'{node_feat}_t'] = src_weight * g.ndata[f'{node_feat}_0'] + dst_weight * g.ndata[f'{node_feat}_1_true']
+        for feat_idx, feat in enumerate(self.canonical_feat_order):
 
-        for edge_feat in ['e']:
-            src_weight, dst_weight = interpolant_weights[edge_feat]
-            g.edata[f'{edge_feat}_t'] = src_weight * g.edata[f'{edge_feat}_0'] + dst_weight * g.edata[f'{edge_feat}_1_true']
+            if feat == 'e':
+                continue
 
-        return g
+            src_weight, dst_weight = src_weights[feat_idx][node_batch_idx], dst_weights[feat_idx][node_batch_idx]
+            g.ndata[f'{feat}_t'] = src_weight * g.ndata[f'{feat}_0'] + dst_weight * g.ndata[f'{feat}_1_true']
 
-    def remove_com(self, g: dgl.DGLGraph, batch_idx: torch.Tensor):
-        com = dgl.readout_nodes(g, feat='x_0', op='mean')
-        raise NotImplementedError
-        g.ndata['x_0'] = g.ndata['x_0'] - com[batch_idx]
+        e_idx = self.canonical_feat_order.index('e')
+
+        src_weight, dst_weight = src_weights[e_idx][edge_batch_idx], dst_weights[e_idx][edge_batch_idx]
+        g.edata[f'e_t'] = src_weight * g.edata[f'e_0'] + dst_weight * g.edata[f'e_1_true']
+
         return g
 
     def configure_optimizers(self):
