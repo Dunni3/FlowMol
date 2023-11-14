@@ -1,9 +1,10 @@
 import torch
 import torch.nn as nn
 import dgl
+import dgl.function as fn
 from typing import Union
 
-from .gvp import GVPConv, GVP
+from .gvp import GVPConv, GVP, _rbf, _norm_no_nan
 
 class GVPVectorField(nn.Module):
 
@@ -32,6 +33,9 @@ class GVPVectorField(nn.Module):
         self.n_vec_channels = n_vec_channels
         self.message_norm = message_norm
         self.n_recycles = n_recycles
+
+        self.rbf_dmax = rbf_dmax
+        self.rbf_dim = rbf_dim
 
 
         self.scalar_embedding = nn.Sequential(
@@ -107,6 +111,7 @@ class GVPVectorField(nn.Module):
             edge_features = g.edata['e_t']
             edge_features = self.edge_embedding(edge_features)
 
+            x_diff, d = self.precompute_distances(g)
             for recycle_idx in range(self.n_recycles):
                 for conv_idx, conv in enumerate(self.conv_layers):
 
@@ -114,12 +119,16 @@ class GVPVectorField(nn.Module):
                             scalar_feats=node_scalar_features, 
                             coord_feats=node_positions,
                             vec_feats=node_vec_features,
-                            edge_feats=edge_features
+                            edge_feats=edge_features,
+                            x_diff=x_diff,
+                            d=d
                     )
-
                     if conv_idx != 0 and (conv_idx + 1) % self.convs_per_update == 0:
                         node_positions = self.node_postion_updater(node_scalar_features, node_positions, node_vec_features)
                         edge_features = self.edge_updater(g, node_scalar_features, edge_features)
+
+                        if not (conv_idx == len(self.conv_layers) - 1 and recycle_idx == self.n_recycles - 1):
+                            x_diff, d = self.precompute_distances(g, node_positions)
 
             
             # predict final charges and atom type logits
@@ -145,6 +154,24 @@ class GVPVectorField(nn.Module):
         }
 
         return dst_dict
+    
+    def precompute_distances(self, g: dgl.DGLGraph, node_positions=None):
+        """Precompute the pairwise distances between all nodes in the graph."""
+
+        with g.local_scope():
+
+            if node_positions is None:
+                g.ndata['x_d'] = g.ndata['x_t']
+            else:
+                g.ndata['x_d'] = node_positions
+
+            g.apply_edges(fn.u_sub_v("x_d", "x_d", "x_diff"))
+            dij = _norm_no_nan(g.edata['x_diff'], keepdims=True) + 1e-8
+            x_diff = g.edata['x_diff'] / dij
+            d = _rbf(dij.squeeze(1), D_max=self.rbf_dmax, D_count=self.rbf_dim)
+        
+        return x_diff, d
+
 
 class NodePositionUpdate(nn.Module):
 

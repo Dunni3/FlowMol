@@ -13,13 +13,16 @@ from .vector_field import GVPVectorField
 
 class MolFM(pl.LightningModule):
 
+    canonical_feat_order = ['x', 'a', 'c', 'e']
+
     def __init__(self,
                  n_atom_types: int,                  
                  batches_per_epoch: int,
                  n_atoms_hist_file: str,
                  n_atom_charges: int = 6,
                  n_bond_types: int = 5,
-                 time_scaled_loss: bool = True, 
+                 time_scaled_loss: bool = True,
+                 total_loss_weights: Dict[str, float] = {}, 
                  lr_scheduler_config: dict = {},
                  interpolant_scheduler_config: dict = {},
                  vector_field_config: dict = {}
@@ -31,8 +34,15 @@ class MolFM(pl.LightningModule):
         self.n_atom_types = n_atom_types
         self.n_atom_charges = n_atom_charges
         self.n_bond_types = n_bond_types
-
+        self.total_loss_weights = total_loss_weights
         self.time_scaled_loss = time_scaled_loss
+
+        for feat in self.canonical_feat_order:
+            if feat not in total_loss_weights:
+                self.total_loss_weights[feat] = 1.0
+
+                # print warning if the user has not specified a loss weight for a feature
+                print(f'WARNING: no loss weight specified for feature {feat}, using default of 1.0')
 
         self.exp_dist = Exponential(1.0)
         
@@ -41,7 +51,7 @@ class MolFM(pl.LightningModule):
         self.build_n_atoms_dist(n_atoms_hist_file=n_atoms_hist_file)
 
         # create interpolant scheduler and vector field
-        self.interpolant_scheduler = InterpolantScheduler(**interpolant_scheduler_config)
+        self.interpolant_scheduler = InterpolantScheduler(canonical_feat_order=self.canonical_feat_order, **interpolant_scheduler_config)
         self.vector_field = GVPVectorField(**vector_field_config)
 
         # loss functions
@@ -67,11 +77,13 @@ class MolFM(pl.LightningModule):
         self.log('epoch_exact', epoch_exact, on_step=True, prog_bar=True)
 
         for key in losses:
-            if key == 'l2':
-                continue
-            self.log(key, losses[key], on_step=True, prog_bar=True)
+            self.log(f'{key}_loss', losses[key], on_step=True, prog_bar=True)
 
-        return losses['l2']
+        total_loss = torch.zeros(1, device=g.device, requires_grad=True)
+        for feat in self.canonical_feat_order:
+            total_loss = total_loss + self.total_loss_weights[feat]*losses[feat]
+
+        return total_loss
     
     def forward(self, g: dgl.DGLGraph):
         
@@ -103,16 +115,19 @@ class MolFM(pl.LightningModule):
         # construct interpolated molecules
         g = self.interpolate(g, t, node_batch_idx)
 
-        # get the time-depenedent loss weights resulting from the interpolantation scheme
-        if self.time_scaled_loss:
-            interpolant_loss_weights = self.interpolant_scheduler.loss_weights(t)
-
         # predict the end of the trajectory
         dst_dict = self.vector_field.pred_dst(g, t)
 
+        # get the time-dependent loss weights if necessary
+        if self.time_scaled_loss:
+            time_weights = self.interpolant_scheduler.loss_weights(t)
+
         # compute losses
         losses = {}
-        for feat in ['x', 'a', 'c', 'e']:
+        # TODO: we are relying on a canonical ordering of the features here, which is fine, but that canonical ordering 
+        # should be made explicit and instantiated in only one place. Perhaps at construction of this class. Currently it is only defined
+        # in the following line as well as within InterpolantScheduler.__init__
+        for feat_idx, feat in enumerate(['x', 'a', 'c', 'e']):
 
             # get the target for this feature
             if feat == 'e':
@@ -125,7 +140,7 @@ class MolFM(pl.LightningModule):
                 target = target.argmax(dim=-1)
 
             if self.time_scaled_loss:
-                weight = interpolant_loss_weights[feat]
+                weight = time_weights.view(-1, feat_idx)
                 if feat == 'e':
                     weight = weight[edge_batch_idx]
                 else:
@@ -133,8 +148,11 @@ class MolFM(pl.LightningModule):
             else:
                 weight = 1.0
 
+            # compute the losses
             losses[feat] = self.loss_fn_dict[feat](dst_dict[feat], target)*weight
 
+            # when time_scaled_loss is True, we set the reduction to 'none' so that each loss can be scaled by the time-dependent weight.
+            # however, this means that we also need to do the reduction ourselves here.
             if self.time_scaled_loss:
                 losses[feat] = losses[feat].mean()
 

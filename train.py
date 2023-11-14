@@ -13,6 +13,7 @@ import dgl
 import sys
 
 # from models.ligand_edm import LigandEquivariantDiffusion
+from models.mol_fm import MolFM
 from data_processing.dataset import MoleculeDataset
 
 def parse_args():
@@ -65,7 +66,6 @@ if __name__ == "__main__":
     
     # get an example item from the dataset
     example_graph: dgl.DGLGraph = test_dataset[0]
-    sys.exit()
 
     # get the number of features on each node
     n_atom_features = example_graph.ndata['h_0'].shape[1]
@@ -74,12 +74,18 @@ if __name__ == "__main__":
     n_atoms_hist_filepath = Path(config['dataset']['processed_data_dir']) / 'n_atoms_histogram.pt'
 
     # create model
-    model = LigandEquivariantDiffusion(batches_per_epoch=len(dataloader),
-                                       n_atom_features=n_atom_features,
-                                       n_atoms_hist_filepath=n_atoms_hist_filepath,
-                                       scheduler_config=config['scheduler'],
-                                       dynamics_config=config['dynamics'],
-                                       noise_schedule_config=config['noise_schedule'], **config['ligand_edm'])
+    # model = MolFM(batches_per_epoch=len(dataloader),
+    #               n_atom_features=n_atom_features,
+    #               n_atoms_hist_filepath=n_atoms_hist_filepath,
+    #               scheduler_config=config['scheduler'],
+    #               dynamics_config=config['dynamics'],
+    #               noise_schedule_config=config['noise_schedule'], **config['ligand_edm'])
+    n_atom_types = len(config['dataset']['atom_map'])
+    model = MolFM(n_atom_types=n_atom_types, batches_per_epoch=len(dataloader), 
+                  vector_field_config=config['vector_field'],
+                  interpolant_scheduler_config=config['interpolant_scheduler'], 
+                  lr_scheduler_config=config['lr_scheduler'],
+                  **config['mol_fm'])
     
     # get wandb logger config
     wandb_config = config['wandb']

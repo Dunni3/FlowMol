@@ -241,9 +241,14 @@ class GVPConv(nn.Module):
         self.message_layer_norm = GVPLayerNorm(self.scalar_size)
         self.update_layer_norm = GVPLayerNorm(self.scalar_size)
 
+        if isinstance(self.message_norm, str) and self.message_norm not in ['mean', 'sum']:
+            raise ValueError(f"message_norm must be either 'mean', 'sum', or a number, got {self.message_norm}")
+        else:
+            assert isinstance(self.message_norm, (float, int)), "message_norm must be either 'mean', 'sum', or a number"
+
         if self.message_norm == 'mean':
             self.agg_func = fn.mean
-        else:
+        elif self.message_norm == 'sum':
             self.agg_func = fn.sum
 
     def forward(self, g: dgl.DGLGraph, 
@@ -251,7 +256,8 @@ class GVPConv(nn.Module):
                 coord_feats: torch.Tensor,
                 vec_feats: torch.Tensor,
                 edge_feats: torch.Tensor = None,
-                z: Union[float, torch.Tensor] = 1):
+                x_diff: torch.Tensor = None,
+                d: torch.Tensor = None):
         # vec_feat has shape (n_nodes, n_vectors, 3)
 
         with g.local_scope():
@@ -260,39 +266,48 @@ class GVPConv(nn.Module):
             g.ndata['x'] = coord_feats
             g.ndata['v'] = vec_feats
 
+            if x_diff is not None and d is not None:
+                g.edata['x_diff'] = x_diff
+                g.edata['d'] = d
+
             # edge feature
             if self.edge_feat_size > 0:
                 assert edge_feats is not None, "Edge features must be provided."
                 g.edata["a"] = edge_feats
 
-            # get vectors between node positions
-            g.apply_edges(fn.u_sub_v("x", "x", "x_diff"))
+
 
             # normalize x_diff and compute rbf embedding of edge distance
             # dij = torch.norm(g.edges[self.edge_type].data['x_diff'], dim=-1, keepdim=True)
-            dij = _norm_no_nan(g.edata['x_diff'], keepdims=True) + 1e-8
-            g.edata['x_diff'] = g.edata['x_diff'] / dij
-            g.edata['d'] = _rbf(dij.squeeze(1), D_max=self.rbf_dmax, D_count=self.rbf_dim)
+            if 'x_diff' not in g.edata:
+                # get vectors between node positions
+                g.apply_edges(fn.u_sub_v("x", "x", "x_diff"))
+                dij = _norm_no_nan(g.edata['x_diff'], keepdims=True) + 1e-8
+                g.edata['x_diff'] = g.edata['x_diff'] / dij
+                g.edata['d'] = _rbf(dij.squeeze(1), D_max=self.rbf_dmax, D_count=self.rbf_dim)
 
             # compute messages on every edge
             g.apply_edges(self.message, etype=self.edge_type)
 
             # aggregate messages from every edge
-            g.update_all(fn.copy_e("scalar_msg", "m"), self.agg_func("m", "scalar_msg"), etype=self.edge_type)
-            g.update_all(fn.copy_e("vec_msg", "m"), self.agg_func("m", "vec_msg"), etype=self.edge_type)
+            g.update_all(fn.copy_e("scalar_msg", "m"), self.agg_func("m", "scalar_msg"))
+            g.update_all(fn.copy_e("vec_msg", "m"), self.agg_func("m", "vec_msg"))
 
             # get aggregated scalar and vector messages
-            scalar_msg = g.nodes[self.dst_ntype].data["scalar_msg"] / z
-            if isinstance(z, torch.Tensor):
-                z = z.unsqueeze(-1)
-            vec_msg = g.nodes[self.dst_ntype].data["vec_msg"] / z
+            if isinstance(self.message_norm, str):
+                z = 1
+            else:
+                z = self.message_norm
+
+            scalar_msg = g.ndata["scalar_msg"] / z
+            vec_msg = g.ndata["vec_msg"] / z
 
             # dropout scalar and vector messages
             scalar_msg, vec_msg = self.dropout(scalar_msg, vec_msg)
 
             # update scalar and vector features, apply layernorm
-            scalar_feat = g.nodes[self.dst_ntype].data['h'] + scalar_msg
-            vec_feat = g.nodes[self.dst_ntype].data['v'] + vec_msg
+            scalar_feat = g.ndata['h'] + scalar_msg
+            vec_feat = g.ndata['v'] + vec_msg
             scalar_feat, vec_feat = self.message_layer_norm(scalar_feat, vec_feat)
 
             # apply node update function, apply dropout to residuals, apply layernorm

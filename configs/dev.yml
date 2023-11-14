@@ -32,20 +32,32 @@ checkpointing:
   save_last: True
   every_n_train_steps: 5
 
-ligand_edm:
-  n_timesteps: 1000
+mol_fm:
+  time_scaled_loss: True
+  total_loss_weights:
+    x: 1.0
+    a: 1.0
+    c: 1.0
+    e: 1.0
 
-terminal_predictor:
-  hidden_size: 256
-  n_convs: 3
-  edge_cutoff: 5 # angstroms
-  agg_norm_factor: 10
+vector_field:
+  n_vec_channels: 16
+  n_hidden_scalars: 64
+  n_hidden_edge_feats: 64
+  n_recycles: 1
+  n_molecule_updates: 1
+  convs_per_update: 2
+  n_message_gvps: 3
+  n_update_gvps: 3
+  message_norm: 100
+  rbf_dmax: 20
+  rbf_dim: 16
 
 interpolant_scheduler:
   schedule_type: 'cosine'
   cosine_params:
     x: 1
-    e: 1.5
     a: 2
     c: 2
+    e: 1.5
 
