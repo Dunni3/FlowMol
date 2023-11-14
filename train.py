@@ -72,7 +72,9 @@ if __name__ == "__main__":
 
     # create model
     n_atom_types = len(config['dataset']['atom_map'])
-    model = MolFM(n_atom_types=n_atom_types, batches_per_epoch=len(dataloader), 
+    model = MolFM(n_atom_types=n_atom_types, 
+                  batches_per_epoch=len(dataloader), 
+                  n_atoms_hist_file=n_atoms_hist_filepath,
                   vector_field_config=config['vector_field'],
                   interpolant_scheduler_config=config['interpolant_scheduler'], 
                   lr_scheduler_config=config['lr_scheduler'],
