@@ -43,7 +43,6 @@ class InterpolantScheduler(nn.Module):
             self.device = t.device
 
         alpha_t = self.alpha_t(t)
-
         weights = (1 - alpha_t, alpha_t)
         return weights
     

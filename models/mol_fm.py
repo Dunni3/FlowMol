@@ -124,10 +124,7 @@ class MolFM(pl.LightningModule):
 
         # compute losses
         losses = {}
-        # TODO: we are relying on a canonical ordering of the features here, which is fine, but that canonical ordering 
-        # should be made explicit and instantiated in only one place. Perhaps at construction of this class. Currently it is only defined
-        # in the following line as well as within InterpolantScheduler.__init__
-        for feat_idx, feat in enumerate(['x', 'a', 'c', 'e']):
+        for feat_idx, feat in enumerate(self.canonical_feat_order):
 
             # get the target for this feature
             if feat == 'e':
