@@ -11,9 +11,13 @@ from .lr_scheduler import LRScheduler
 from .interpolant_scheduler import InterpolantScheduler
 from .vector_field import GVPVectorField
 
+from data_processing.utils import build_edge_idxs, get_upper_edge_mask, get_batch_idxs
+
 class MolFM(pl.LightningModule):
 
     canonical_feat_order = ['x', 'a', 'c', 'e']
+    node_feats = ['x', 'a', 'c']
+    edge_feats = ['e']
 
     def __init__(self,
                  n_atom_types: int,                  
@@ -37,6 +41,13 @@ class MolFM(pl.LightningModule):
         self.total_loss_weights = total_loss_weights
         self.time_scaled_loss = time_scaled_loss
 
+        # create a dictionary mapping feature -> number of categories
+        self.n_cat_dict = nn.ParameterDict({
+            'a': torch.tensor(n_atom_types),
+            'c': torch.tensor(n_atom_charges),
+            'e': torch.tensor(n_bond_types),
+        })
+
         for feat in self.canonical_feat_order:
             if feat not in total_loss_weights:
                 self.total_loss_weights[feat] = 1.0
@@ -52,7 +63,8 @@ class MolFM(pl.LightningModule):
 
         # create interpolant scheduler and vector field
         self.interpolant_scheduler = InterpolantScheduler(canonical_feat_order=self.canonical_feat_order, **interpolant_scheduler_config)
-        self.vector_field = GVPVectorField(**vector_field_config)
+        self.vector_field = GVPVectorField(n_atom_types=n_atom_types, n_charges=n_atom_charges, n_bond_types=n_bond_types,
+                                           **vector_field_config)
 
         # loss functions
         if self.time_scaled_loss:
@@ -91,16 +103,10 @@ class MolFM(pl.LightningModule):
         device = g.device
 
         # get batch indicies of every atom and edge
-        node_batch_idx = torch.arange(batch_size, device=device)
-        node_batch_idx = node_batch_idx.repeat_interleave(g.batch_num_nodes())
-        edge_batch_idx = torch.arange(batch_size, device=device)
-        edge_batch_idx = edge_batch_idx.repeat_interleave(g.batch_num_edges())
+        node_batch_idx, edge_batch_idx = get_batch_idxs(g)
 
         # create a mask which selects all of the upper triangle edges from the batched graph
-        edges_per_mol = g.batch_num_edges()
-        ul_pattern = torch.tensor([1,0]).repeat(batch_size)
-        n_edges_pattern = (edges_per_mol/2).int().repeat_interleave(2)
-        upper_edge_mask = ul_pattern.repeat_interleave(n_edges_pattern).bool()
+        upper_edge_mask = get_upper_edge_mask(g)
 
         # get initial COM of each molecule and remove the COM from the atom positions
         init_coms = dgl.readout_nodes(g, feat='x_1_true', op='mean')
@@ -161,23 +167,30 @@ class MolFM(pl.LightningModule):
         # TODO: we should set the standard deviation of atom position prior to be like the average distance to the COM in the training set
         # or perhaps the average distance to COM for molecules with the same number of atoms
         # TODO: can we implement OT flow matching for the prior? equivariant flow-matching?
-        g.ndata['x_0'] = torch.randn_like(g.ndata['x_1_true'])
+        num_nodes = g.num_nodes()
+        device = g.device
+        g.ndata['x_0'] = torch.randn(num_nodes, 3, device=device)
         g.ndata['x_0'] = g.ndata['x_0'] - dgl.readout_nodes(g, feat='x_0', op='mean')[node_batch_idx]
 
         # sample atom types, charges from simplex
         # TODO: can we implement OT flow matching for the simplex prior?
         for node_feat in ['a', 'c']:
-            g.ndata[f'{node_feat}_0'] = self.exp_dist.sample(g.ndata[f'{node_feat}_1_true'].shape)
+
+            # get the number of cateogories for this feature
+            n_cats = self.n_cat_dict[node_feat]
+
+            # sample from simplex prior
+            g.ndata[f'{node_feat}_0'] = self.exp_dist.sample(num_nodes, n_cats).to(device)
             g.ndata[f'{node_feat}_0'] = g.ndata[f'{node_feat}_0'] / g.ndata[f'{node_feat}_0'].sum(dim=1, keepdim=True)
 
-        # sample bond types from simplex prior - make sure the sample for the lower triangle is the same as the upper triangle
-        n_upper_edges = upper_edge_mask.sum()
-        g.edata['e_0'] = torch.zeros_like(g.edata['e_1_true'])
+        # sample bond types from simplex prior - making sure the sample for the lower triangle is the same as the upper triangle
+        n_edges = g.num_edges()
+        n_upper_edges = n_edges // 2
+        g.edata['e_0'] = torch.zeros(n_edges, self.n_bond_types, device=device).float()
         e_0_upper = self.exp_dist.sample((n_upper_edges, self.n_bond_types))
         e_0_upper = e_0_upper / e_0_upper.sum(dim=1, keepdim=True)
         g.edata['e_0'][upper_edge_mask] = e_0_upper
         g.edata['e_0'][~upper_edge_mask] = e_0_upper
-
         return g
     
     def interpolate(self, g, t, node_batch_idx, edge_batch_idx):
@@ -224,39 +237,74 @@ class MolFM(pl.LightningModule):
         atoms_per_molecule = self.sample_n_atoms(n_molecules).to(device)
 
         return self.sample(atoms_per_molecule)
+    
+    def integrate(self, g: dgl.DGLGraph, node_batch_idx: torch.Tensor, n_timesteps: int):
+        """Integrate the trajectories of molecules along the vector field."""
+        t = torch.linspace(0, 1, n_timesteps, device=g.device)
 
+        # set x_t = x_0
+        for feat in self.node_feats:
+            g.ndata[f'{feat}_t'] = g.ndata[f'{feat}_0']
+
+        for feat in self.edge_feats:
+            g.edata[f'{feat}_t'] = g.edata[f'{feat}_0']
+
+        for s_idx in range(1,t_i.shape[0]):
+
+            # get the next timepoint (s) and the current timepoint (t)
+            s_i = t[s_idx]
+            t_i = t[s_idx - 1]
+
+            # compute interpolation weights
+            xt_weight = (1 - s_i)/(1 - t_i)
+            x1_weight = 1 - xt_weight
+
+
+            # predict the destination of the trajectory given the current timepoint
+            dst_dict = self.vector_field.pred_dst(
+                g, 
+                torch.full((g.batch_size,), t_i, device=g.device)
+            )
+
+            # TODO: where do the noise schedules come into play here?``
+
+        return g
+    
     def sample(self, n_atoms: torch.Tensor):
         """Sample molecules with the given number of atoms.
         
         Args:
-            n_atoms (torch.Tensor): Tensor of number of atoms in each molecule.
+            n_atoms (torch.Tensor): Tensor of shape (batch_size,) containing the number of atoms in each molecule.
         """
+        batch_size = n_atoms.shape[0]
 
-        # create a graph with the correct number of atoms
-        g = dgl.batch([ dgl.graph(([], []), num_nodes=n) for n in n_atoms ])
+        # get the edge indicies for each unique number of atoms
+        edge_idxs_dict = {}
+        for n_atoms_i in torch.unique(n_atoms):
+            edge_idxs_dict[n_atoms_i] = build_edge_idxs(n_atoms_i)
 
-        # sample random positions and features
-        g.ndata['x_0'] = torch.randn((g.num_nodes(), 3))
-        g.ndata['h_0'] = torch.randn((g.num_nodes(), self.n_atom_features))
+        # construct a graph for each molecule
+        g = []
+        for n_atoms_i in n_atoms:
+            edge_idxs = edge_idxs_dict[n_atoms_i]
+            g_i = dgl.graph((edge_idxs[:,0], edge_idxs[:,1]), num_nodes=n_atoms_i)
+            g.append(g_i)
+            
 
-        batch_size = g.batch_size
+        # batch the graphs
+        g = dgl.batch(g)
 
-        # TODO: is there a better way to let the user control the device rather than it being the device of the n_atoms tensor?
-        device = n_atoms.device
+        # get upper edge mask
+        upper_edge_mask = get_upper_edge_mask(g)
 
-        # remove COM from ligand positions
-        node_batch_idx = torch.arange(batch_size, device=g.device)
-        node_batch_idx = node_batch_idx.repeat_interleave(g.batch_num_nodes())
-        g = self.remove_com(g, node_batch_idx)
+        # compute node_batch_idx
+        node_batch_idx, edge_batch_idx = get_batch_idxs(g)
 
-        # Iteratively sample p(z_s | z_t) for t = 1, ..., T, with s = t - 1.
-        for s in reversed(range(0, self.n_timesteps)):
-            s_arr = torch.full(size=(batch_size,), fill_value=s, device=device)
-            t_arr = s_arr + 1
-            s_arr = s_arr / self.n_timesteps
-            t_arr = t_arr / self.n_timesteps
+        # sample molecules from prior
+        g = self.sample_prior(g, node_batch_idx, upper_edge_mask)
 
-            g = self.sample_p_zs_given_zt(s_arr, t_arr, g, node_batch_idx)
+        # integrate trajectories
+        g = self.integrate(g, node_batch_idx, n_timesteps=self.n_timesteps)
 
         lig_pos = []
         lig_feat = []

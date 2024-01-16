@@ -11,7 +11,7 @@ wandb:
   project: mol-fm
   group: "dev"
   name:
-  mode: disabled # can be disabled, online, offline
+  mode: offline # can be disabled, online, offline
   save_dir: runs
 
 lr_scheduler:

@@ -70,7 +70,7 @@ class GVPVectorField(nn.Module):
         self.conv_layers = nn.ModuleList(self.conv_layers)
 
         self.node_postion_updater = NodePositionUpdate(n_hidden_scalars, n_vec_channels, n_gvps=3)
-        self.edge_updater = EdgeUpdate(n_hidden_scalars, n_vec_channels, n_hidden_edge_feats)
+        self.edge_updater = EdgeUpdate(n_hidden_scalars, n_hidden_edge_feats)
 
 
         self.node_output_head = nn.Sequential(
@@ -89,7 +89,8 @@ class GVPVectorField(nn.Module):
         """Returns the marginal vector field for the given graph."""
         pass
 
-    def pred_dst(self, g: dgl.DGLGraph, t: torch.Tensor, node_batch_idx: torch.Tensor, upper_edge_mask: torch.Tensor):
+    def pred_dst(self, g: dgl.DGLGraph, t: torch.Tensor, 
+                 node_batch_idx: torch.Tensor, upper_edge_mask: torch.Tensor, ):
         """Predict x_1 (trajectory destination) given x_t"""
         device = g.device
 
@@ -176,6 +177,7 @@ class GVPVectorField(nn.Module):
 class NodePositionUpdate(nn.Module):
 
     def __init__(self, n_scalars, n_vec_channels, n_gvps: int = 3):
+        super().__init__()
 
         self.gvps = []
         for i in range(n_gvps):
@@ -205,7 +207,7 @@ class NodePositionUpdate(nn.Module):
 class EdgeUpdate(nn.Module):
 
     def __init__(self, n_node_scalars, n_edge_feats):
-        
+        super().__init__()
 
         self.edge_update_fn = nn.Sequential(
             nn.Linear(n_node_scalars*2 + n_edge_feats, n_edge_feats),

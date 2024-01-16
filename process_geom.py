@@ -167,9 +167,6 @@ if __name__ == "__main__":
     chunk_iterator = chunks(molecules, args.chunk_size)
     n_chunks = len(molecules) // args.chunk_size + 1
 
-
-
-
     tqdm_iterator = tqdm.tqdm(chunk_iterator, desc='Featurizing molecules', total=n_chunks)
     failed_molecules_bar = tqdm.tqdm(desc="Failed Molecules", unit="molecules")
 

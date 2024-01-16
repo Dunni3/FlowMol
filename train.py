@@ -55,25 +55,23 @@ if __name__ == "__main__":
         config = yaml.load(f, Loader=yaml.FullLoader)
 
     # create dataset
+    train_dataset = MoleculeDataset(split='train', dataset_config=config['dataset'])
     test_dataset = MoleculeDataset(split='test', dataset_config=config['dataset'])
 
     # create dataloader
-    dataloader = DataLoader(test_dataset, 
+    train_dataloader = DataLoader(train_dataset, 
                             batch_size=config['training']['batch_size'], 
                             shuffle=True, 
                             collate_fn=dgl.batch, 
                             num_workers=config['training']['num_workers'])
-    
-    # get an example item from the dataset
-    example_graph: dgl.DGLGraph = test_dataset[0]
 
     # get the filepath of the n_atoms histogram
-    n_atoms_hist_filepath = Path(config['dataset']['processed_data_dir']) / 'n_atoms_histogram.pt'
+    n_atoms_hist_filepath = Path(config['dataset']['processed_data_dir']) / 'train_data_n_atoms_histogram.pt'
 
     # create model
     n_atom_types = len(config['dataset']['atom_map'])
     model = MolFM(n_atom_types=n_atom_types, 
-                  batches_per_epoch=len(dataloader), 
+                  batches_per_epoch=len(train_dataloader), 
                   n_atoms_hist_file=n_atoms_hist_filepath,
                   vector_field_config=config['vector_field'],
                   interpolant_scheduler_config=config['interpolant_scheduler'], 
@@ -85,7 +83,7 @@ if __name__ == "__main__":
 
     # if this is a debug run, set the wandb logger mode to disabled
     if args.debug:
-        wandb_config['mode'] = 'disabled'
+        wandb_config['mode'] = 'offline'
         wandb_config['name'] = 'debug_run'
 
     # if we are not resuming a run, generate a run_id
@@ -104,6 +102,7 @@ if __name__ == "__main__":
 
     # create wandb logger
     wandb_logger = WandbLogger(config=config, **wandb_config)
+    wandb_logger.experiment
 
     # get run directory
     run_dir = Path(wandb.run.dir)
@@ -133,4 +132,4 @@ if __name__ == "__main__":
     trainer = pl.Trainer(logger=wandb_logger, **trainer_config, callbacks=[checkpoint_callback])
     
     # train
-    trainer.fit(model, dataloader)
+    trainer.fit(model, train_dataloader)
