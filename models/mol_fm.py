@@ -84,8 +84,13 @@ class MolFM(pl.LightningModule):
 
     def training_step(self, g: dgl.DGLGraph, batch_idx: int):
 
+        # compute epoch as a float
         epoch_exact = self.current_epoch + batch_idx/self.batches_per_epoch
+
+        # update the learning rate
         self.lr_scheduler.step_lr(epoch_exact)
+
+        # compute losses
         losses = self(g)
 
         self.log('epoch_exact', epoch_exact, on_step=True, prog_bar=True)
@@ -304,6 +309,8 @@ class MolFM(pl.LightningModule):
 
         return g
     
+
+    @torch.no_grad()
     def sample(self, n_atoms: torch.Tensor, n_timesteps: int = 20, return_molecules: bool = False):
         """Sample molecules with the given number of atoms.
         
