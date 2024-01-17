@@ -7,7 +7,7 @@ from typing import List
 bond_type_map = [None, Chem.rdchem.BondType.SINGLE, Chem.rdchem.BondType.DOUBLE, Chem.rdchem.BondType.TRIPLE,
              Chem.rdchem.BondType.AROMATIC]
 
-
+# this code is adapted from MiDi: https://github.com/cvignac/MiDi/blob/ba07fc5b1313855c047ba0b90e7aceae47e34e38/midi/analysis/rdkit_functions.py
 def build_molecule(self, g: dgl.DGLGraph, atom_type_map: List[str]):
 
 
