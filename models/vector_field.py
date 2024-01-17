@@ -90,7 +90,7 @@ class GVPVectorField(nn.Module):
         pass
 
     def pred_dst(self, g: dgl.DGLGraph, t: torch.Tensor, 
-                 node_batch_idx: torch.Tensor, upper_edge_mask: torch.Tensor, ):
+                 node_batch_idx: torch.Tensor, upper_edge_mask: torch.Tensor, apply_softmax=False):
         """Predict x_1 (trajectory destination) given x_t"""
         device = g.device
 
@@ -147,12 +147,20 @@ class GVPVectorField(nn.Module):
             g.ndata['x_1_pred'] = g.ndata['x_1_pred'] - dgl.readout_nodes(g, feat='x_1_pred', op='mean')[node_batch_idx]
             node_positions = g.ndata['x_1_pred']
 
+        # build a dictionary of predicted features
         dst_dict = {
             'x': node_positions,
             'c': atom_charge_logits,
             'a': atom_type_logits,
             'e': edge_logits
         }
+
+        # apply softmax to categorical features, if requested
+        # at training time, we don't want to apply softmax because we use cross-entropy loss which includes softmax
+        # at inference time, we want to apply softmax to get a vector which lies on the simplex
+        if apply_softmax:
+            for cat_feat in ['c', 'a', 'e']:
+                dst_dict[cat_feat] = torch.softmax(dst_dict[cat_feat], dim=-1)
 
         return dst_dict
     

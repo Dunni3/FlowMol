@@ -1,4 +1,4 @@
-from typing import Dict
+from typing import Dict, List
 import torch
 import torch.optim as optim
 import torch.nn as nn
@@ -12,6 +12,7 @@ from .interpolant_scheduler import InterpolantScheduler
 from .vector_field import GVPVectorField
 
 from data_processing.utils import build_edge_idxs, get_upper_edge_mask, get_batch_idxs
+from analysis.molecule_builder import build_molecule
 
 class MolFM(pl.LightningModule):
 
@@ -20,7 +21,7 @@ class MolFM(pl.LightningModule):
     edge_feats = ['e']
 
     def __init__(self,
-                 n_atom_types: int,                  
+                 atom_type_map: List[str],               
                  batches_per_epoch: int,
                  n_atoms_hist_file: str,
                  n_atom_charges: int = 6,
@@ -35,7 +36,8 @@ class MolFM(pl.LightningModule):
 
         self.batches_per_epoch = batches_per_epoch
         self.lr_scheduler_config = lr_scheduler_config
-        self.n_atom_types = n_atom_types
+        self.atom_type_map = atom_type_map
+        self.n_atom_types = len(atom_type_map)
         self.n_atom_charges = n_atom_charges
         self.n_bond_types = n_bond_types
         self.total_loss_weights = total_loss_weights
@@ -43,7 +45,7 @@ class MolFM(pl.LightningModule):
 
         # create a dictionary mapping feature -> number of categories
         self.n_cat_dict = nn.ParameterDict({
-            'a': torch.tensor(n_atom_types),
+            'a': torch.tensor(self.n_atom_types),
             'c': torch.tensor(n_atom_charges),
             'e': torch.tensor(n_bond_types),
         })
@@ -63,7 +65,7 @@ class MolFM(pl.LightningModule):
 
         # create interpolant scheduler and vector field
         self.interpolant_scheduler = InterpolantScheduler(canonical_feat_order=self.canonical_feat_order, **interpolant_scheduler_config)
-        self.vector_field = GVPVectorField(n_atom_types=n_atom_types, n_charges=n_atom_charges, n_bond_types=n_bond_types,
+        self.vector_field = GVPVectorField(n_atom_types=self.n_atom_types, n_charges=n_atom_charges, n_bond_types=n_bond_types,
                                            **vector_field_config)
 
         # loss functions
@@ -238,9 +240,15 @@ class MolFM(pl.LightningModule):
 
         return self.sample(atoms_per_molecule)
     
-    def integrate(self, g: dgl.DGLGraph, node_batch_idx: torch.Tensor, n_timesteps: int):
+    def integrate(self, g: dgl.DGLGraph, node_batch_idx: torch.Tensor, upper_edge_mask: torch.Tensor, n_timesteps: int):
         """Integrate the trajectories of molecules along the vector field."""
+
+        # get the timepoint for integration
         t = torch.linspace(0, 1, n_timesteps, device=g.device)
+
+        # get the corresponding alpha values for each timepoint
+        alpha_t = self.interpolant_scheduler.alpha_t(t)
+        alpha_t_prime = self.interpolant_scheduler.alpha_t_prime(t)
 
         # set x_t = x_0
         for feat in self.node_feats:
@@ -254,23 +262,49 @@ class MolFM(pl.LightningModule):
             # get the next timepoint (s) and the current timepoint (t)
             s_i = t[s_idx]
             t_i = t[s_idx - 1]
-
-            # compute interpolation weights
-            xt_weight = (1 - s_i)/(1 - t_i)
-            x1_weight = 1 - xt_weight
-
+            alpha_t_i = alpha_t[s_idx - 1]
+            alpha_t_prime_i = alpha_t_prime[s_idx - 1]
 
             # predict the destination of the trajectory given the current timepoint
             dst_dict = self.vector_field.pred_dst(
                 g, 
-                torch.full((g.batch_size,), t_i, device=g.device)
+                t=torch.full((g.batch_size,), t_i, device=g.device),
+                node_batch_idx=node_batch_idx,
+                upper_edge_mask=upper_edge_mask,
+                apply_softmax=True
             )
 
-            # TODO: where do the noise schedules come into play here?``
+            # compute x_s for each feature and set x_t = x_s
+            for feat_idx, feat in enumerate(self.canonical_feat_order):
+                x1_weight = alpha_t_prime_i[feat_idx]*(s_i - t_i)/(1 - alpha_t_i[feat_idx])
+                xt_weight = 1 - x1_weight
+
+                if feat == "e":
+                    g_data_src = g.edata
+
+                    # set the edge features so that corresponding upper and lower triangle edges have the same value
+                    x1 = torch.zeros_like(g.edata['e_0'])
+                    x1[upper_edge_mask] = dst_dict[feat]
+                    x1[~upper_edge_mask] = dst_dict[feat]
+                else:
+                    g_data_src = g.ndata
+                    x1 = dst_dict[feat]
+
+                g_data_src[f'{feat}_t'] = x1_weight*x1 + xt_weight*g_data_src[f'{feat}_t']
+
+        # set x_1 = x_t
+        for feat in self.canonical_feat_order:
+
+            if feat == "e":
+                g_data_src = g.edata
+            else:
+                g_data_src = g.ndata
+
+            g_data_src[f'{feat}_1'] = g_data_src[f'{feat}_t']
 
         return g
     
-    def sample(self, n_atoms: torch.Tensor):
+    def sample(self, n_atoms: torch.Tensor, n_timesteps: int = 20, return_molecules: bool = False):
         """Sample molecules with the given number of atoms.
         
         Args:
@@ -304,13 +338,16 @@ class MolFM(pl.LightningModule):
         g = self.sample_prior(g, node_batch_idx, upper_edge_mask)
 
         # integrate trajectories
-        g = self.integrate(g, node_batch_idx, n_timesteps=self.n_timesteps)
+        g = self.integrate(g, node_batch_idx, upper_edge_mask=upper_edge_mask, n_timesteps=n_timesteps)
 
-        lig_pos = []
-        lig_feat = []
+        g.edata['ue_mask'] = upper_edge_mask
         g = g.to('cpu')
-        for g_i in dgl.unbatch(g):
-            lig_pos.append(g_i.ndata['x_0'])
-            lig_feat.append(g_i.ndata['h_0'])
 
-        return lig_pos, lig_feat
+        if return_molecules:
+            molecules = []
+            for g_i in dgl.unbatch(g):
+                molecules.append(build_molecule(g_i, self.atom_type_map))
+
+            return molecules
+
+        return g

@@ -69,8 +69,8 @@ if __name__ == "__main__":
     n_atoms_hist_filepath = Path(config['dataset']['processed_data_dir']) / 'train_data_n_atoms_histogram.pt'
 
     # create model
-    n_atom_types = len(config['dataset']['atom_map'])
-    model = MolFM(n_atom_types=n_atom_types, 
+    atom_type_map = config['dataset']['atom_map']
+    model = MolFM(atom_type_map=atom_type_map,
                   batches_per_epoch=len(train_dataloader), 
                   n_atoms_hist_file=n_atoms_hist_filepath,
                   vector_field_config=config['vector_field'],
