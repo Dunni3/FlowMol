@@ -31,8 +31,8 @@ class SampledMolecule:
         self.atom_types = g.ndata['a_1'].argmax(dim=1).item()
         self.atom_charges = g.ndata['c_1'].argmax(dim=1).item()
 
-        # get bond types and atom indicies for every edge
-        bond_types = g.edata['e_1']
+        # get bond types and atom indicies for every edge, convert types from simplex to integer
+        bond_types = g.edata['e_1'].argmax(dim=1)
         bond_src_idxs, bond_dst_idxs = g.edges()
 
         # get just the upper triangle of the adjacency matrix
@@ -40,9 +40,6 @@ class SampledMolecule:
         bond_types = bond_types[upper_edge_mask]
         bond_src_idxs = bond_src_idxs[upper_edge_mask]
         bond_dst_idxs = bond_dst_idxs[upper_edge_mask]
-
-        # convert bond_types from simplex to integer
-        bond_types = bond_types.argmax(dim=1)
 
         # get only non-zero bond types
         bond_mask = bond_types != 0
@@ -91,7 +88,6 @@ class SampledMolecule:
     
     def compute_valencies(self):
         """Compute the valencies of every atom in the molecule. Returns a tensor of shape (num_atoms,)."""
-
         adj = torch.zeros((self.num_atoms, self.num_atoms))
         adjusted_bond_types = self.bond_types.clone()
         adjusted_bond_types[adjusted_bond_types == 4] = 1.5

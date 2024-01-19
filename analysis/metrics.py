@@ -2,6 +2,8 @@ from typing import List
 from .molecule_builder import SampledMolecule
 import torch
 from rdkit import Chem
+from collections import Counter
+import wandb
 
 allowed_bonds = {'H': {0: 1, 1: 0, -1: 0},
                  'C': {0: [3, 4], 1: 3, -1: 3},
@@ -24,7 +26,6 @@ class SampleAnalyzer():
         pass
 
     def analyze_sample(self, sampled_molecules: List[SampledMolecule]):
-        
 
         # compute the atom-level stabiltiy of a molecule. this is the number of atoms that have valid valencies.
         # note that since is computed at the atom level, even if the entire molecule is unstable, we can still get an idea
@@ -42,7 +43,58 @@ class SampleAnalyzer():
         frac_atoms_stable = n_stable_atoms / n_atoms # the fraction of generated atoms that have valid valencies
         frac_mols_stable_valence = n_stable_molecules / n_molecules # the fraction of generated molecules whose atoms all have valid valencies
 
-        # TODO: compute metrics that come from MiDi (connecitivty, fragment size, etc.)
+        # compute validity as determined by rdkit, and the average size of the largest fragment, and the average number of fragments
+        frac_valid_mols, avg_frac_frac, avg_num_components = self.compute_validity(sampled_molecules)
+
+        metrics_dict = {
+            'frac_atoms_stable': frac_atoms_stable,
+            'frac_mols_stable_valence': frac_mols_stable_valence,
+            'frac_valid_mols': frac_valid_mols,
+            'avg_frac_frac': avg_frac_frac,
+            'avg_num_components': avg_num_components
+        }
+        wandb.log(metrics_dict)
+
+    # this function taken from MiDi molecular_metrics.py script
+    def compute_validity(self, sampled_molecules: List[SampledMolecule]):
+        """ generated: list of couples (positions, atom_types)"""
+        n_valid = 0
+        num_components = []
+        frag_fracs = []
+        error_message = Counter()
+        for mol in sampled_molecules:
+            rdmol = mol.rdkit_mol
+            if rdmol is not None:
+                try:
+                    mol_frags = Chem.rdmolops.GetMolFrags(rdmol, asMols=True, sanitizeFrags=False)
+                    num_components.append(len(mol_frags))
+                    if len(mol_frags) > 1:
+                        error_message[4] += 1
+                    largest_mol = max(mol_frags, default=mol, key=lambda m: m.GetNumAtoms())
+                    largest_mol_n_atoms = largest_mol.GetNumAtoms()
+                    largest_frag_frac = largest_mol_n_atoms / mol.num_atoms
+                    frag_fracs.append(largest_frag_frac)
+                    Chem.SanitizeMol(largest_mol)
+                    smiles = Chem.MolToSmiles(largest_mol)
+                    n_valid += 1
+                    error_message[-1] += 1
+                except Chem.rdchem.AtomValenceException:
+                    error_message[1] += 1
+                    # print("Valence error in GetmolFrags")
+                except Chem.rdchem.KekulizeException:
+                    error_message[2] += 1
+                    # print("Can't kekulize molecule")
+                except Chem.rdchem.AtomKekulizeException or ValueError:
+                    error_message[3] += 1
+        print(f"Error messages: AtomValence {error_message[1]}, Kekulize {error_message[2]}, other {error_message[3]}, "
+              f" -- No error {error_message[-1]}")
+        
+
+        frac_valid_mols = n_valid / len(sampled_molecules)
+        avg_frac_frac = sum(frag_fracs) / len(frag_fracs)
+        avg_num_components = sum(num_components) / len(num_components)
+
+        return frac_valid_mols, avg_frac_frac, avg_num_components
 
 
 def check_stability(molecule: SampledMolecule):

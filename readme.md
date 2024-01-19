@@ -9,6 +9,8 @@ python process_geom.py data/raw/test_data.pickle --config configs/dev.yml
 
 # TODO:
 - [ ] implement model saving via pytorch lightning
+- [ ] is there an automatic way to compute loss on a test set?
+- [ ] put model sampling / eval into training loop
 - [ ] do interpolation weights become unstable at the end of integration?
 - [ ] double check derivative of interpolation weights
 - [ ] implement molecule evaluation (frag frac, valid atoms, midi valency calculations)
