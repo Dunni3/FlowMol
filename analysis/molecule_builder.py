@@ -7,60 +7,94 @@ from typing import List
 bond_type_map = [None, Chem.rdchem.BondType.SINGLE, Chem.rdchem.BondType.DOUBLE, Chem.rdchem.BondType.TRIPLE,
              Chem.rdchem.BondType.AROMATIC]
 
-# this code is adapted from MiDi: https://github.com/cvignac/MiDi/blob/ba07fc5b1313855c047ba0b90e7aceae47e34e38/midi/analysis/rdkit_functions.py
-def build_molecule(self, g: dgl.DGLGraph, atom_type_map: List[str]):
 
+class SampledMolecule:
 
-    # get positions, atom types, atom charges
-    positions = g.ndata['x_1'].item()
-    atom_types = g.ndata['a_1'].argmax(dim=1).item()
-    atom_charges = g.ndata['c_1'].argmax(dim=1).item()
+    def __init__(self, g: dgl.DGLGraph, atom_type_map: List[str]):
+        """Represents a molecule sampled from a model. Converts the DGL graph to an rdkit molecule and keeps all associated information."""
 
-    # get bond types and atom indicies for every edge
-    bond_types = g.edata['e_1']
-    bond_src_idxs, bond_dst_idxs = g.edges()
+        # save the graph
+        self.g = g
 
-    # get just the upper triangle of the adjacency matrix
-    upper_edge_mask = g.edata['ue_mask']
-    bond_types = bond_types[upper_edge_mask]
-    bond_src_idxs = bond_src_idxs[upper_edge_mask]
-    bond_dst_idxs = bond_dst_idxs[upper_edge_mask]
+        self.atom_type_map = atom_type_map
+        self.num_atoms = g.num_nodes()
+        self.num_atom_types = len(atom_type_map)
 
-    # convert bond_types from simplex to integer
-    bond_types = bond_types.argmax(dim=1)
+        # extract node-level features
+        self.positions = g.ndata['x_1'].item()
+        self.atom_types = g.ndata['a_1'].argmax(dim=1).item()
+        self.atom_types = [atom_type_map[int(atom)] for atom in self.atom_types]
+        self.atom_charges = g.ndata['c_1'].argmax(dim=1).item() - 2 # implicit assumption that index 0 charge is -2
 
-    # get only non-zero bond types
-    bond_mask = bond_types != 0
-    bond_types = bond_types[bond_mask].item()
-    bond_src_idxs = bond_src_idxs[bond_mask].item()
-    bond_dst_idxs = bond_dst_idxs[bond_mask].item()
+        # extract bonds from edge features
+        self.positions = g.ndata['x_1'].item()
+        self.atom_types = g.ndata['a_1'].argmax(dim=1).item()
+        self.atom_charges = g.ndata['c_1'].argmax(dim=1).item()
 
+        # get bond types and atom indicies for every edge
+        bond_types = g.edata['e_1']
+        bond_src_idxs, bond_dst_idxs = g.edges()
 
-    # create a rdkit molecule and add atoms to it
-    mol = Chem.RWMol()
-    for atom, charge in zip(atom_types, atom_charges):
-        if atom == -1:
-            continue
-        a = Chem.Atom(atom_type_map[int(atom)])
-        if charge != 0:
-            a.SetFormalCharge(charge)
-        mol.AddAtom(a)
+        # get just the upper triangle of the adjacency matrix
+        upper_edge_mask = g.edata['ue_mask']
+        bond_types = bond_types[upper_edge_mask]
+        bond_src_idxs = bond_src_idxs[upper_edge_mask]
+        bond_dst_idxs = bond_dst_idxs[upper_edge_mask]
 
-    # add bonds to rdkit molecule
-    for bond_type, src_idx, dst_idx in zip(bond_types, bond_src_idxs, bond_dst_idxs):
-        mol.AddBond(src_idx, dst_idx, bond_type_map[bond_type])
+        # convert bond_types from simplex to integer
+        bond_types = bond_types.argmax(dim=1)
 
-    try:
-        mol = mol.GetMol()
-    except Chem.KekulizeException:
-        print("Can't kekulize molecule")
-        return None
+        # get only non-zero bond types
+        bond_mask = bond_types != 0
+        bond_types = bond_types[bond_mask].item()
+        bond_src_idxs = bond_src_idxs[bond_mask].item()
+        bond_dst_idxs = bond_dst_idxs[bond_mask].item()
 
-    # Set coordinates
-    # note that the original code bothered to set positions.double() but I don't think that's necessary...just writing this incase I'm wrong
-    conf = Chem.Conformer(mol.GetNumAtoms())
-    for i in range(mol.GetNumAtoms()):
-        conf.SetAtomPosition(i, Point3D(positions[i,0], positions[i,1], positions[i,2]))
-    mol.AddConformer(conf)
+        # save bond information
+        self.bond_types = bond_types
+        self.bond_src_idxs = bond_src_idxs
+        self.bond_dst_idxs = bond_dst_idxs
 
-    return mol
+        # build rdkit molecule
+        self.rdkit_mol = self.build_molecule()
+
+        # compute valencies on every atom
+        self.valencies = self.compute_valencies()
+
+    # this code is adapted from MiDi: https://github.com/cvignac/MiDi/blob/ba07fc5b1313855c047ba0b90e7aceae47e34e38/midi/analysis/rdkit_functions.py
+    def build_molecule(self):
+        # create a rdkit molecule and add atoms to it
+        mol = Chem.RWMol()
+        for atom_type, charge in zip(self.atom_types, self.atom_charges):
+            a = Chem.Atom(atom_type)
+            if charge != 0:
+                a.SetFormalCharge(charge)
+            mol.AddAtom(a)
+
+        # add bonds to rdkit molecule
+        for bond_type, src_idx, dst_idx in zip(self.bond_types, self.bond_src_idxs, self.bond_dst_idxs):
+            mol.AddBond(src_idx, dst_idx, bond_type_map[bond_type])
+
+        try:
+            mol = mol.GetMol()
+        except Chem.KekulizeException:
+            return None
+
+        # Set coordinates
+        # note that the original code bothered to set positions.double() but I don't think that's necessary...just writing this incase I'm wrong
+        conf = Chem.Conformer(mol.GetNumAtoms())
+        for i in range(mol.GetNumAtoms()):
+            conf.SetAtomPosition(i, Point3D(self.positions[i,0], self.positions[i,1], self.positions[i,2]))
+        mol.AddConformer(conf)
+
+        return mol
+    
+    def compute_valencies(self):
+        """Compute the valencies of every atom in the molecule. Returns a tensor of shape (num_atoms,)."""
+
+        adj = torch.zeros((self.num_atoms, self.num_atoms))
+        adjusted_bond_types = self.bond_types.clone()
+        adjusted_bond_types[adjusted_bond_types == 4] = 1.5
+        adj[self.bond_src_idxs, self.bond_dst_idxs] = adjusted_bond_types
+        valencies = torch.sum(adj, dim=-1).long()
+        return valencies
