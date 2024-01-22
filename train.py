@@ -58,10 +58,16 @@ if __name__ == "__main__":
     train_dataset = MoleculeDataset(split='train', dataset_config=config['dataset'])
     test_dataset = MoleculeDataset(split='test', dataset_config=config['dataset'])
 
-    # create dataloader
+    # create dataloaders
     train_dataloader = DataLoader(train_dataset, 
                             batch_size=config['training']['batch_size'], 
                             shuffle=True, 
+                            collate_fn=dgl.batch, 
+                            num_workers=config['training']['num_workers'])
+    
+    val_dataloader = DataLoader(test_dataset, 
+                            batch_size=config['training']['batch_size']*2, 
+                            shuffle=False, 
                             collate_fn=dgl.batch, 
                             num_workers=config['training']['num_workers'])
 
@@ -143,4 +149,4 @@ if __name__ == "__main__":
     trainer = pl.Trainer(logger=wandb_logger, **trainer_config, callbacks=[checkpoint_callback])
     
     # train
-    trainer.fit(model, train_dataloader)
+    trainer.fit(model, train_dataloaders=train_dataloader, val_dataloaders=val_dataloader)
