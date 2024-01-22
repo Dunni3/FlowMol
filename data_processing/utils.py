@@ -22,7 +22,7 @@ def get_upper_edge_mask(g: dgl.DGLGraph):
         # and then those graph-wise edges are concatenated together
         # you can see that this is indeed how the edges are constructed by inspecting data_processing.dataset.MoleculeDataset.__getitem__
         edges_per_mol = g.batch_num_edges()
-        ul_pattern = torch.tensor([1,0]).repeat(g.batch_size)
+        ul_pattern = torch.tensor([1,0]).repeat(g.batch_size).to(g.device)
         n_edges_pattern = (edges_per_mol/2).int().repeat_interleave(2)
         upper_edge_mask = ul_pattern.repeat_interleave(n_edges_pattern).bool()
         return upper_edge_mask

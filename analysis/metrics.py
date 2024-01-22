@@ -44,13 +44,13 @@ class SampleAnalyzer():
         frac_mols_stable_valence = n_stable_molecules / n_molecules # the fraction of generated molecules whose atoms all have valid valencies
 
         # compute validity as determined by rdkit, and the average size of the largest fragment, and the average number of fragments
-        frac_valid_mols, avg_frac_frac, avg_num_components = self.compute_validity(sampled_molecules)
+        frac_valid_mols, avg_frag_frac, avg_num_components = self.compute_validity(sampled_molecules)
 
         metrics_dict = {
             'frac_atoms_stable': frac_atoms_stable,
             'frac_mols_stable_valence': frac_mols_stable_valence,
             'frac_valid_mols': frac_valid_mols,
-            'avg_frac_frac': avg_frac_frac,
+            'avg_frag_frac': avg_frag_frac,
             'avg_num_components': avg_num_components
         }
         return metrics_dict
@@ -91,10 +91,10 @@ class SampleAnalyzer():
         
 
         frac_valid_mols = n_valid / len(sampled_molecules)
-        avg_frac_frac = sum(frag_fracs) / len(frag_fracs)
+        avg_frag_frac = sum(frag_fracs) / len(frag_fracs)
         avg_num_components = sum(num_components) / len(num_components)
 
-        return frac_valid_mols, avg_frac_frac, avg_num_components
+        return frac_valid_mols, avg_frag_frac, avg_num_components
 
 
 def check_stability(molecule: SampledMolecule):

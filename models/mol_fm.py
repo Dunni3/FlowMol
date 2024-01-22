@@ -12,7 +12,7 @@ from .interpolant_scheduler import InterpolantScheduler
 from .vector_field import GVPVectorField
 
 from data_processing.utils import build_edge_idxs, get_upper_edge_mask, get_batch_idxs
-from analysis.molecule_builder import build_molecule
+from analysis.molecule_builder import SampledMolecule
 from analysis.metrics import SampleAnalyzer
 
 class MolFM(pl.LightningModule):
@@ -47,11 +47,11 @@ class MolFM(pl.LightningModule):
         self.time_scaled_loss = time_scaled_loss
 
         # create a dictionary mapping feature -> number of categories
-        self.n_cat_dict = nn.ParameterDict({
-            'a': torch.tensor(self.n_atom_types),
-            'c': torch.tensor(n_atom_charges),
-            'e': torch.tensor(n_bond_types),
-        })
+        self.n_cat_dict = {
+            'a': self.n_atom_types,
+            'c': n_atom_charges,
+            'e': n_bond_types,
+        }
 
         for feat in self.canonical_feat_order:
             if feat not in total_loss_weights:
@@ -228,14 +228,14 @@ class MolFM(pl.LightningModule):
             n_cats = self.n_cat_dict[node_feat]
 
             # sample from simplex prior
-            g.ndata[f'{node_feat}_0'] = self.exp_dist.sample(num_nodes, n_cats).to(device)
+            g.ndata[f'{node_feat}_0'] = self.exp_dist.sample((num_nodes, n_cats)).to(device)
             g.ndata[f'{node_feat}_0'] = g.ndata[f'{node_feat}_0'] / g.ndata[f'{node_feat}_0'].sum(dim=1, keepdim=True)
 
         # sample bond types from simplex prior - making sure the sample for the lower triangle is the same as the upper triangle
         n_edges = g.num_edges()
         n_upper_edges = n_edges // 2
         g.edata['e_0'] = torch.zeros(n_edges, self.n_bond_types, device=device).float()
-        e_0_upper = self.exp_dist.sample((n_upper_edges, self.n_bond_types))
+        e_0_upper = self.exp_dist.sample((n_upper_edges, self.n_bond_types)).to(device)
         e_0_upper = e_0_upper / e_0_upper.sum(dim=1, keepdim=True)
         g.edata['e_0'][upper_edge_mask] = e_0_upper
         g.edata['e_0'][~upper_edge_mask] = e_0_upper
@@ -262,8 +262,8 @@ class MolFM(pl.LightningModule):
         return g
 
     def configure_optimizers(self):
-        optimizer = optim.Adam(self.parameters(), lr=self.scheduler_config['base_lr'])
-        self.lr_scheduler = LRScheduler(model=self, optimizer=optimizer, **self.scheduler_config)
+        optimizer = optim.Adam(self.parameters(), lr=self.lr_scheduler_config['base_lr'])
+        self.lr_scheduler = LRScheduler(model=self, optimizer=optimizer, **self.lr_scheduler_config)
         return optimizer
 
     def build_n_atoms_dist(self, n_atoms_hist_file: str):
@@ -394,7 +394,7 @@ class MolFM(pl.LightningModule):
         if return_molecules:
             molecules = []
             for g_i in dgl.unbatch(g):
-                molecules.append(build_molecule(g_i, self.atom_type_map))
+                molecules.append(SampledMolecule(g_i, self.atom_type_map))
 
             return molecules
 
