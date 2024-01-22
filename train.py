@@ -68,11 +68,17 @@ if __name__ == "__main__":
     # get the filepath of the n_atoms histogram
     n_atoms_hist_filepath = Path(config['dataset']['processed_data_dir']) / 'train_data_n_atoms_histogram.pt'
 
+    # get the sample interval (how many epochs between drawing/evaluating)
+    sample_interval = config['training']['evaluation']['sample_interval']
+    mols_to_sample = config['training']['evaluation']['mols_to_sample']
+
     # create model
     atom_type_map = config['dataset']['atom_map']
     model = MolFM(atom_type_map=atom_type_map,
                   batches_per_epoch=len(train_dataloader), 
                   n_atoms_hist_file=n_atoms_hist_filepath,
+                  sample_interval=sample_interval,
+                  n_mols_to_sample=mols_to_sample,
                   vector_field_config=config['vector_field'],
                   interpolant_scheduler_config=config['interpolant_scheduler'], 
                   lr_scheduler_config=config['lr_scheduler'],
@@ -123,6 +129,11 @@ if __name__ == "__main__":
 
     # get pl trainer config
     trainer_config = config['training']['trainer_args']
+
+    # compute the validation interval and add arguments for the pl.Trainer object accordingly
+    batches_per_epoch = len(train_dataloader)
+    trainer_config['val_check_interval'] = int(config['training']['evaluation']['val_loss_interval'] * batches_per_epoch)
+    trainer_config['check_val_every_n_epoch'] = None
 
     # if this is a debug run, set limit_train_batches to 10
     if args.debug:

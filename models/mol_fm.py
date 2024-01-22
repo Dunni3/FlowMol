@@ -13,6 +13,7 @@ from .vector_field import GVPVectorField
 
 from data_processing.utils import build_edge_idxs, get_upper_edge_mask, get_batch_idxs
 from analysis.molecule_builder import build_molecule
+from analysis.metrics import SampleAnalyzer
 
 class MolFM(pl.LightningModule):
 
@@ -26,6 +27,8 @@ class MolFM(pl.LightningModule):
                  n_atoms_hist_file: str,
                  n_atom_charges: int = 6,
                  n_bond_types: int = 5,
+                 sample_interval: float = 1.0, # how often to sample molecules from the model, measured in epochs
+                 n_mols_to_sample: int = 64, # how many molecules to sample from the model during each sample/eval step during training
                  time_scaled_loss: bool = True,
                  total_loss_weights: Dict[str, float] = {}, 
                  lr_scheduler_config: dict = {},
@@ -80,6 +83,11 @@ class MolFM(pl.LightningModule):
             'e': nn.CrossEntropyLoss(reduction=reduction),
         }
 
+        self.sample_interval = sample_interval # how often to sample molecules from the model, measured in epochs
+        self.n_mols_to_sample = n_mols_to_sample # how many molecules to sample from the model during each sample/eval step during training
+        self.last_sample_marker = 0 # this is the epoch_exact value of the last time we sampled molecules from the model
+        self.sample_analyzer = SampleAnalyzer()
+
         self.save_hyperparameters()
 
     def training_step(self, g: dgl.DGLGraph, batch_idx: int):
@@ -90,15 +98,48 @@ class MolFM(pl.LightningModule):
         # update the learning rate
         self.lr_scheduler.step_lr(epoch_exact)
 
+        # sample and evaluate molecules if necessary
+        if epoch_exact - self.last_sample_marker >= self.sample_interval:
+            self.last_sample_marker = epoch_exact
+            self.eval()
+            with torch.no_grad():
+                sampled_molecules = self.sample_random_sizes(n_molecules=self.n_mols_to_sample, device=g.device, n_timesteps=100)
+            self.train()
+            sampled_mols_metrics = self.sample_analyzer.analyze(sampled_molecules)
+            self.log_dict(sampled_mols_metrics)
+
         # compute losses
         losses = self(g)
 
-        self.log('epoch_exact', epoch_exact, on_step=True, prog_bar=True)
+        # create a dictionary of values to log
+        train_log_dict = {}
+        train_log_dict['epoch_exact'] = epoch_exact
 
         for key in losses:
-            self.log(f'{key}_loss', losses[key], on_step=True, prog_bar=True)
+            train_log_dict[f'{key}_train_loss'] = losses[key]
 
         total_loss = torch.zeros(1, device=g.device, requires_grad=True)
+        for feat in self.canonical_feat_order:
+            total_loss = total_loss + self.total_loss_weights[feat]*losses[feat]
+
+        self.log_dict(train_log_dict)
+
+        return total_loss
+    
+    def validation_step(self, g: dgl.DGLGraph, batch_idx: int):
+        # compute losses
+        losses = self(g)
+
+        # create dictionary of values to log
+        val_log_dict = {}
+
+        for key in losses:
+            val_log_dict[f'{key}_val_loss'] = losses[key]
+
+        self.log(val_log_dict)
+
+        # combine individual losses into a total loss
+        total_loss = torch.zeros(1, device=g.device, requires_grad=False)
         for feat in self.canonical_feat_order:
             total_loss = total_loss + self.total_loss_weights[feat]*losses[feat]
 
@@ -161,7 +202,7 @@ class MolFM(pl.LightningModule):
             # compute the losses
             losses[feat] = self.loss_fn_dict[feat](dst_dict[feat], target)*weight
 
-            # when time_scaled_loss is True, we set the reduction to 'none' so that each loss can be scaled by the time-dependent weight.
+            # when time_scaled_loss is True, we set the reduction to 'none' so that each training example can be scaled by the time-dependent weight.
             # however, this means that we also need to do the reduction ourselves here.
             if self.time_scaled_loss:
                 losses[feat] = losses[feat].mean()
@@ -237,13 +278,13 @@ class MolFM(pl.LightningModule):
         n_atoms = self.n_atoms_dist.sample((n_molecules,))
         return self.n_atoms_map[n_atoms]
 
-    def sample_random_sizes(self, n_molecules: int, device="cuda:0"):
+    def sample_random_sizes(self, n_molecules: int, device="cuda:0", n_timesteps: int = 20, return_molecules=True):
         """Sample n_moceules with the number of atoms sampled from the distribution of the training set."""
 
         # get the number of atoms that will be in each molecules
         atoms_per_molecule = self.sample_n_atoms(n_molecules).to(device)
 
-        return self.sample(atoms_per_molecule)
+        return self.sample(atoms_per_molecule, n_timesteps=n_timesteps, return_molecules=return_molecules, device=device)
     
     def integrate(self, g: dgl.DGLGraph, node_batch_idx: torch.Tensor, upper_edge_mask: torch.Tensor, n_timesteps: int):
         """Integrate the trajectories of molecules along the vector field."""
@@ -311,7 +352,7 @@ class MolFM(pl.LightningModule):
     
 
     @torch.no_grad()
-    def sample(self, n_atoms: torch.Tensor, n_timesteps: int = 20, return_molecules: bool = False):
+    def sample(self, n_atoms: torch.Tensor, n_timesteps: int = 20, return_molecules: bool = True, device="cuda:0"):
         """Sample molecules with the given number of atoms.
         
         Args:
@@ -328,7 +369,7 @@ class MolFM(pl.LightningModule):
         g = []
         for n_atoms_i in n_atoms:
             edge_idxs = edge_idxs_dict[n_atoms_i]
-            g_i = dgl.graph((edge_idxs[:,0], edge_idxs[:,1]), num_nodes=n_atoms_i)
+            g_i = dgl.graph((edge_idxs[:,0], edge_idxs[:,1]), num_nodes=n_atoms_i, device=device)
             g.append(g_i)
             
 

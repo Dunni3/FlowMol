@@ -7,10 +7,10 @@ training:
     devices: 1
     accumulate_grad_batches: 1
 
-evaluation:
-  mols_to_sample: 64 # how many molecules to sample during evaluation
-  sample_interval: 1 # how often to sample molecules during training
-  test_loss_interval: 1 # how often to compute test loss during training
+  evaluation:
+    mols_to_sample: 64 # how many molecules to sample during evaluation
+    sample_interval: 1 # how often to sample molecules during training, measured in epochs
+    val_loss_interval: 1 # how often to compute validation set loss during training, measured in epochs
 
 wandb:
   project: mol-fm

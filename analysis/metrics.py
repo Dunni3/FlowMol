@@ -25,7 +25,7 @@ class SampleAnalyzer():
     def __init__(self):
         pass
 
-    def analyze_sample(self, sampled_molecules: List[SampledMolecule]):
+    def analyze(self, sampled_molecules: List[SampledMolecule]):
 
         # compute the atom-level stabiltiy of a molecule. this is the number of atoms that have valid valencies.
         # note that since is computed at the atom level, even if the entire molecule is unstable, we can still get an idea
@@ -53,7 +53,7 @@ class SampleAnalyzer():
             'avg_frac_frac': avg_frac_frac,
             'avg_num_components': avg_num_components
         }
-        wandb.log(metrics_dict)
+        return metrics_dict
 
     # this function taken from MiDi molecular_metrics.py script
     def compute_validity(self, sampled_molecules: List[SampledMolecule]):
