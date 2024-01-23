@@ -204,7 +204,7 @@ class GVPConv(nn.Module):
 
     """GVP graph convolution on a homogenous graph."""
 
-    def __init__(self, scalar_size: int = 128, vector_size: int = 16,
+    def __init__(self, scalar_size: int = 128, vector_size: int = 16, n_cp_feats: int = 0,
                   scalar_activation=nn.SiLU, vector_activation=nn.Sigmoid,
                   n_message_gvps: int = 1, n_update_gvps: int = 1,
                   use_dst_feats: bool = False, rbf_dmax: float = 20, rbf_dim: int = 16,
@@ -217,6 +217,7 @@ class GVPConv(nn.Module):
         # self.dst_ntype = edge_type[2]
         self.scalar_size = scalar_size
         self.vector_size = vector_size
+        self.n_cp_feats = n_cp_feats
         self.scalar_activation = scalar_activation
         self.vector_activation = vector_activation
         self.n_message_gvps = n_message_gvps
@@ -247,7 +248,8 @@ class GVPConv(nn.Module):
 
             message_gvps.append(
                 GVP(dim_vectors_in=dim_vectors_in, 
-                    dim_vectors_out=vector_size, 
+                    dim_vectors_out=vector_size,
+                    n_cp_feats=n_cp_feats, 
                     dim_feats_in=dim_feats_in, 
                     dim_feats_out=scalar_size, 
                     feats_activation=scalar_activation(), 

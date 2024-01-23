@@ -11,7 +11,8 @@ class GVPVectorField(nn.Module):
     def __init__(self, n_atom_types: int, 
                     n_charges: int = 6, 
                     n_bond_types: int = 5, 
-                    n_vec_channels: int = 16, 
+                    n_vec_channels: int = 16,
+                    n_cp_feats: int = 0, 
                     n_hidden_scalars: int = 64,
                     n_hidden_edge_feats: int = 64,
                     n_recycles: int = 1,
@@ -37,6 +38,8 @@ class GVPVectorField(nn.Module):
         self.rbf_dmax = rbf_dmax
         self.rbf_dim = rbf_dim
 
+        assert n_vec_channels >= 3, 'n_vec_channels must be >= 3'
+
 
         self.scalar_embedding = nn.Sequential(
             nn.Linear(n_atom_types + n_charges + 1, n_hidden_scalars),
@@ -59,6 +62,7 @@ class GVPVectorField(nn.Module):
             self.conv_layers.append(GVPConv(
                 scalar_size=n_hidden_scalars,
                 vector_size=n_vec_channels,
+                n_cp_feats=n_cp_feats,
                 edge_feat_size=n_hidden_edge_feats,
                 n_message_gvps=n_message_gvps,
                 n_update_gvps=n_update_gvps,
@@ -107,7 +111,10 @@ class GVPVectorField(nn.Module):
             node_positions = g.ndata['x_t']
 
             num_nodes = g.num_nodes()
+
+            # initialize the vector features for every node to be zeros, except for the first 3 channels which are the identity matrix
             node_vec_features = torch.zeros((num_nodes, self.n_vec_channels, 3), device=device)
+            node_vec_features[:, :3, :] = torch.eye(3, device=device).unsqueeze(0).repeat(num_nodes, 1, 1)
 
             edge_features = g.edata['e_t']
             edge_features = self.edge_embedding(edge_features)

@@ -51,6 +51,7 @@ vector_field:
   n_recycles: 1
   n_molecule_updates: 1
   convs_per_update: 2
+  n_cp_feats: 3
   n_message_gvps: 3
   n_update_gvps: 3
   message_norm: 100
