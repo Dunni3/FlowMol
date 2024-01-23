@@ -88,7 +88,7 @@ class GVP(nn.Module):
         self.vectors_activation = vectors_activation
 
         self.to_feats_out = nn.Sequential(
-            nn.Linear(dim_h + dim_feats_in, dim_feats_out),
+            nn.Linear(dim_h + n_cp_feats + dim_feats_in, dim_feats_out),
             feats_activation
         )
 
