@@ -1,5 +1,6 @@
 import torch
 from torch import nn, einsum
+from einops import rearrange
 import dgl
 import dgl.function as fn
 from typing import List, Tuple, Union, Dict
@@ -47,6 +48,7 @@ class GVP(nn.Module):
         dim_vectors_out,
         dim_feats_in,
         dim_feats_out,
+        n_cp_feats = 0, # number of cross-product features added to hidden vector features
         hidden_vectors = None,
         feats_activation = nn.SiLU(),
         vectors_activation = nn.Sigmoid(),
@@ -56,16 +58,31 @@ class GVP(nn.Module):
         super().__init__()
         self.dim_vectors_in = dim_vectors_in
         self.dim_feats_in = dim_feats_in
+        self.n_cp_feats = n_cp_feats
 
         self.dim_vectors_out = dim_vectors_out
         dim_h = max(dim_vectors_in, dim_vectors_out) if hidden_vectors is None else hidden_vectors
 
-        # create Wh and Wu matricies
+        # create Wh matrix
         wh_k = 1/math.sqrt(dim_vectors_in)
-        wu_k = 1/math.sqrt(dim_h)
         self.Wh = torch.zeros(dim_vectors_in, dim_h, dtype=torch.float32).uniform_(-wh_k, wh_k)
-        self.Wu = torch.zeros(dim_h, dim_vectors_out, dtype=torch.float32).uniform_(-wu_k, wu_k)
         self.Wh = nn.Parameter(self.Wh)
+
+        # create Wcp matrix if we are using cross-product features
+        if n_cp_feats > 0:
+            wcp_k = 1/math.sqrt(dim_vectors_in)
+            self.Wcp = torch.zeros(dim_vectors_in, n_cp_feats*2, dtype=torch.float32).uniform_(-wcp_k, wcp_k)
+            self.Wcp = nn.Parameter(self.Wcp)
+
+        
+
+        # create Wu matrix
+        if n_cp_feats > 0: # the number of vector features going into Wu is increased by n_cp_feats if we are using cross-product features
+            wu_in_dim = dim_h + n_cp_feats
+        else:
+            wu_in_dim = dim_h
+        wu_k = 1/math.sqrt(wu_in_dim)
+        self.Wu = torch.zeros(wu_in_dim, dim_vectors_out, dtype=torch.float32).uniform_(-wu_k, wu_k)
         self.Wu = nn.Parameter(self.Wu)
 
         self.vectors_activation = vectors_activation
@@ -90,11 +107,27 @@ class GVP(nn.Module):
         feats, vectors = data
         b, n, _, v, c  = *feats.shape, *vectors.shape
 
+        # feats has shape (batch_size, n_feats)
+        # vectors has shape (batch_size, n_vectors, 3)
+
         assert c == 3 and v == self.dim_vectors_in, 'vectors have wrong dimensions'
         assert n == self.dim_feats_in, 'scalar features have wrong dimensions'
 
-        Vh = einsum('b v c, v h -> b h c', vectors, self.Wh)
-        Vu = einsum('b h c, h u -> b u c', Vh, self.Wu)
+        Vh = einsum('b v c, v h -> b h c', vectors, self.Wh) # has shape (batch_size, dim_h, 3)
+        
+        # if we are including cross-product features, compute them here
+        if self.n_cp_feats > 0:
+            # convert dim_vectors_in vectors to n_cp_feats*2 vectors
+            Vcp = einsum('b v c, v p -> b p c', vectors, self.Wcp) # has shape (batch_size, n_cp_feats*2, 3)
+            # split the n_cp_feats*2 vectors into two sets of n_cp_feats vectors
+            cp_src, cp_dst = torch.split(Vcp, self.n_cp_feats, dim=1) # each has shape (batch_size, n_cp_feats, 3)
+            # take the cross product of the two sets of vectors
+            cp = torch.linalg.cross(cp_src, cp_dst, dim=-1) # has shape (batch_size, n_cp_feats, 3)
+
+            # add the cross product features to the hidden vector features
+            Vh = torch.cat((Vh, cp), dim=1) # has shape (batch_size, dim_h + n_cp_feats, 3)
+
+        Vu = einsum('b h c, h u -> b u c', Vh, self.Wu) # has shape (batch_size, dim_vectors_out, 3)
 
         sh = _norm_no_nan(Vh)
 
