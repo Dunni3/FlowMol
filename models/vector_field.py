@@ -35,6 +35,9 @@ class GVPVectorField(nn.Module):
         self.message_norm = message_norm
         self.n_recycles = n_recycles
 
+        self.convs_per_update = convs_per_update
+        self.n_molecule_updates = n_molecule_updates
+
         self.rbf_dmax = rbf_dmax
         self.rbf_dim = rbf_dim
 
@@ -73,7 +76,7 @@ class GVPVectorField(nn.Module):
             )
         self.conv_layers = nn.ModuleList(self.conv_layers)
 
-        self.node_postion_updater = NodePositionUpdate(n_hidden_scalars, n_vec_channels, n_gvps=3)
+        self.node_postion_updater = NodePositionUpdate(n_hidden_scalars, n_vec_channels, n_gvps=3, n_cp_feats=n_cp_feats)
         self.edge_updater = EdgeUpdate(n_hidden_scalars, n_hidden_edge_feats)
 
 
@@ -191,7 +194,7 @@ class GVPVectorField(nn.Module):
 
 class NodePositionUpdate(nn.Module):
 
-    def __init__(self, n_scalars, n_vec_channels, n_gvps: int = 3):
+    def __init__(self, n_scalars, n_vec_channels, n_gvps: int = 3, n_cp_feats: int = 0):
         super().__init__()
 
         self.gvps = []
@@ -210,6 +213,7 @@ class NodePositionUpdate(nn.Module):
                     dim_feats_out=n_scalars,
                     dim_vectors_in=n_vec_channels,
                     dim_vectors_out=vectors_out,
+                    n_cp_feats=n_cp_feats,
                     vectors_activation=vectors_activation
                 )
             )
@@ -217,7 +221,7 @@ class NodePositionUpdate(nn.Module):
 
     def forward(self, scalars: torch.Tensor, positions: torch.Tensor, vectors: torch.Tensor):
         _, vector_updates = self.gvps((scalars, vectors))
-        return positions + vector_updates
+        return positions + vector_updates.squeeze(1)
     
 class EdgeUpdate(nn.Module):
 
@@ -246,3 +250,4 @@ class EdgeUpdate(nn.Module):
         ]
 
         edge_feats = self.edge_norm(edge_feats + self.edge_update_fn(torch.cat(mlp_inputs, dim=-1)))
+        return edge_feats

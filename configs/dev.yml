@@ -3,13 +3,13 @@ training:
   num_workers: 0
   trainer_args:
     max_epochs: 1
-    accelerator: gpu
+    accelerator: cpu
     devices: 1
     accumulate_grad_batches: 1
 
   evaluation:
     mols_to_sample: 64 # how many molecules to sample during evaluation
-    sample_interval: 1 # how often to sample molecules during training, measured in epochs
+    sample_interval: 0.1 # how often to sample molecules during training, measured in epochs
     val_loss_interval: 1 # how often to compute validation set loss during training, measured in epochs
 
 wandb:

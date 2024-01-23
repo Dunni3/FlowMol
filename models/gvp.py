@@ -264,6 +264,7 @@ class GVPConv(nn.Module):
             update_gvps.append(
                 GVP(dim_vectors_in=vector_size, 
                     dim_vectors_out=vector_size, 
+                    n_cp_feats=n_cp_feats,
                     dim_feats_in=scalar_size, 
                     dim_feats_out=scalar_size, 
                     feats_activation=scalar_activation(), 
@@ -283,7 +284,7 @@ class GVPConv(nn.Module):
 
         if self.message_norm == 'mean':
             self.agg_func = fn.mean
-        elif self.message_norm == 'sum':
+        else:
             self.agg_func = fn.sum
 
     def forward(self, g: dgl.DGLGraph, 
@@ -322,7 +323,7 @@ class GVPConv(nn.Module):
                 g.edata['d'] = _rbf(dij.squeeze(1), D_max=self.rbf_dmax, D_count=self.rbf_dim)
 
             # compute messages on every edge
-            g.apply_edges(self.message, etype=self.edge_type)
+            g.apply_edges(self.message)
 
             # aggregate messages from every edge
             g.update_all(fn.copy_e("scalar_msg", "m"), self.agg_func("m", "scalar_msg"))

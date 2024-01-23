@@ -21,15 +21,11 @@ class SampledMolecule:
         self.num_atom_types = len(atom_type_map)
 
         # extract node-level features
-        self.positions = g.ndata['x_1'].item()
-        self.atom_types = g.ndata['a_1'].argmax(dim=1).item()
+        self.positions = g.ndata['x_1']
+        self.atom_types = g.ndata['a_1'].argmax(dim=1)
         self.atom_types = [atom_type_map[int(atom)] for atom in self.atom_types]
-        self.atom_charges = g.ndata['c_1'].argmax(dim=1).item() - 2 # implicit assumption that index 0 charge is -2
+        self.atom_charges = g.ndata['c_1'].argmax(dim=1) - 2 # implicit assumption that index 0 charge is -2
 
-        # extract bonds from edge features
-        self.positions = g.ndata['x_1'].item()
-        self.atom_types = g.ndata['a_1'].argmax(dim=1).item()
-        self.atom_charges = g.ndata['c_1'].argmax(dim=1).item()
 
         # get bond types and atom indicies for every edge, convert types from simplex to integer
         bond_types = g.edata['e_1'].argmax(dim=1)
@@ -43,9 +39,9 @@ class SampledMolecule:
 
         # get only non-zero bond types
         bond_mask = bond_types != 0
-        bond_types = bond_types[bond_mask].item()
-        bond_src_idxs = bond_src_idxs[bond_mask].item()
-        bond_dst_idxs = bond_dst_idxs[bond_mask].item()
+        bond_types = bond_types[bond_mask]
+        bond_src_idxs = bond_src_idxs[bond_mask]
+        bond_dst_idxs = bond_dst_idxs[bond_mask]
 
         # save bond information
         self.bond_types = bond_types
@@ -65,11 +61,13 @@ class SampledMolecule:
         for atom_type, charge in zip(self.atom_types, self.atom_charges):
             a = Chem.Atom(atom_type)
             if charge != 0:
-                a.SetFormalCharge(charge)
+                a.SetFormalCharge(int(charge))
             mol.AddAtom(a)
 
         # add bonds to rdkit molecule
         for bond_type, src_idx, dst_idx in zip(self.bond_types, self.bond_src_idxs, self.bond_dst_idxs):
+            src_idx = int(src_idx)
+            dst_idx = int(dst_idx)
             mol.AddBond(src_idx, dst_idx, bond_type_map[bond_type])
 
         try:
@@ -78,10 +76,11 @@ class SampledMolecule:
             return None
 
         # Set coordinates
-        # note that the original code bothered to set positions.double() but I don't think that's necessary...just writing this incase I'm wrong
         conf = Chem.Conformer(mol.GetNumAtoms())
         for i in range(mol.GetNumAtoms()):
-            conf.SetAtomPosition(i, Point3D(self.positions[i,0], self.positions[i,1], self.positions[i,2]))
+            x, y, z = self.positions[i]
+            x, y, z = float(x), float(y), float(z)
+            conf.SetAtomPosition(i, Point3D(x,y,z))
         mol.AddConformer(conf)
 
         return mol

@@ -136,7 +136,7 @@ class MolFM(pl.LightningModule):
         for key in losses:
             val_log_dict[f'{key}_val_loss'] = losses[key]
 
-        self.log(val_log_dict)
+        self.log_dict(val_log_dict, batch_size=g.batch_size)
 
         # combine individual losses into a total loss
         total_loss = torch.zeros(1, device=g.device, requires_grad=False)
@@ -170,7 +170,7 @@ class MolFM(pl.LightningModule):
         g = self.interpolate(g, t, node_batch_idx, edge_batch_idx)
 
         # predict the end of the trajectory
-        dst_dict = self.vector_field.pred_dst(g, t)
+        dst_dict = self.vector_field.pred_dst(g, t, node_batch_idx=node_batch_idx, upper_edge_mask=upper_edge_mask)
 
         # get the time-dependent loss weights if necessary
         if self.time_scaled_loss:
@@ -182,7 +182,7 @@ class MolFM(pl.LightningModule):
 
             # get the target for this feature
             if feat == 'e':
-                target = g.edata[f'{feat}_1_true']
+                target = g.edata[f'{feat}_1_true'][upper_edge_mask]
             else:
                 target = g.ndata[f'{feat}_1_true']
 
@@ -191,11 +191,12 @@ class MolFM(pl.LightningModule):
                 target = target.argmax(dim=-1)
 
             if self.time_scaled_loss:
-                weight = time_weights.view(-1, feat_idx)
+                weight = time_weights[:, feat_idx]
                 if feat == 'e':
                     weight = weight[edge_batch_idx]
                 else:
                     weight = weight[node_batch_idx]
+                weight = weight.unsqueeze(-1)
             else:
                 weight = 1.0
 
@@ -251,12 +252,11 @@ class MolFM(pl.LightningModule):
             if feat == 'e':
                 continue
 
-            src_weight, dst_weight = src_weights[feat_idx][node_batch_idx], dst_weights[feat_idx][node_batch_idx]
+            src_weight, dst_weight = src_weights[:, feat_idx][node_batch_idx].unsqueeze(-1), dst_weights[:, feat_idx][node_batch_idx].unsqueeze(-1)
             g.ndata[f'{feat}_t'] = src_weight * g.ndata[f'{feat}_0'] + dst_weight * g.ndata[f'{feat}_1_true']
 
         e_idx = self.canonical_feat_order.index('e')
-
-        src_weight, dst_weight = src_weights[e_idx][edge_batch_idx], dst_weights[e_idx][edge_batch_idx]
+        src_weight, dst_weight = src_weights[:, e_idx][edge_batch_idx].unsqueeze(-1), dst_weights[:, e_idx][edge_batch_idx].unsqueeze(-1)
         g.edata[f'e_t'] = src_weight * g.edata[f'e_0'] + dst_weight * g.edata[f'e_1_true']
 
         return g
@@ -303,7 +303,7 @@ class MolFM(pl.LightningModule):
         for feat in self.edge_feats:
             g.edata[f'{feat}_t'] = g.edata[f'{feat}_0']
 
-        for s_idx in range(1,t_i.shape[0]):
+        for s_idx in range(1,t.shape[0]):
 
             # get the next timepoint (s) and the current timepoint (t)
             s_i = t[s_idx]
@@ -363,13 +363,13 @@ class MolFM(pl.LightningModule):
         # get the edge indicies for each unique number of atoms
         edge_idxs_dict = {}
         for n_atoms_i in torch.unique(n_atoms):
-            edge_idxs_dict[n_atoms_i] = build_edge_idxs(n_atoms_i)
+            edge_idxs_dict[int(n_atoms_i)] = build_edge_idxs(n_atoms_i)
 
         # construct a graph for each molecule
         g = []
         for n_atoms_i in n_atoms:
-            edge_idxs = edge_idxs_dict[n_atoms_i]
-            g_i = dgl.graph((edge_idxs[:,0], edge_idxs[:,1]), num_nodes=n_atoms_i, device=device)
+            edge_idxs = edge_idxs_dict[int(n_atoms_i)]
+            g_i = dgl.graph((edge_idxs[0], edge_idxs[1]), num_nodes=n_atoms_i, device=device)
             g.append(g_i)
             
 
