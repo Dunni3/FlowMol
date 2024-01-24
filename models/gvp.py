@@ -1,6 +1,5 @@
 import torch
 from torch import nn, einsum
-from einops import rearrange
 import dgl
 import dgl.function as fn
 from typing import List, Tuple, Union, Dict

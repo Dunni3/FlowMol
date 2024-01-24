@@ -2,6 +2,7 @@
 /.vscode/*
 /data/*
 runs/
+slurm_output/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

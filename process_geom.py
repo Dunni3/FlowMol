@@ -219,8 +219,8 @@ if __name__ == "__main__":
     edge_idx_array[1:, 0] = edge_idx_array[:-1, 1]
 
     all_positions = all_positions.type(torch.float32)
-    all_atom_charges = all_atom_charges.type(torch.uint8)
-    all_bond_idxs = all_bond_idxs.type(torch.uint8)
+    all_atom_charges = all_atom_charges.type(int)
+    all_bond_idxs = all_bond_idxs.type(int)
 
     # create a dictionary to store all the data
     data_dict = {

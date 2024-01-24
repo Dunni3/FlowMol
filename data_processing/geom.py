@@ -81,8 +81,7 @@ def featurize_molecule(molecule: Chem.rdchem.Mol, atom_map_dict: Dict[str, int])
     # get atom types as one-hot vectors
     atom_types = one_hot(atom_types_idx, num_classes=len(atom_map_dict)).bool()
 
-    atom_charges = atom_charges.type(torch.uint8)
-
+    atom_charges = atom_charges.type(int)
 
     # get one-hot encoded of existing bonds only (no non-existing bonds)
     adj = torch.from_numpy(Chem.rdmolops.GetAdjacencyMatrix(molecule, useBO=True))
@@ -94,7 +93,7 @@ def featurize_molecule(molecule: Chem.rdchem.Mol, atom_map_dict: Dict[str, int])
 
     bond_types = adj[edge_index[:, 0], edge_index[:, 1]]
     bond_types[bond_types == 1.5] = 4
-    edge_attr = bond_types.type(torch.uint8)
+    edge_attr = bond_types.type(int)
     # edge_attr = one_hot(bond_types, num_classes=5).bool() # five bond classes: no bond, single, double, triple, aromatic
 
     return positions, atom_types, atom_charges, edge_attr, edge_index

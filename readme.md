@@ -17,7 +17,8 @@ python process_geom.py data/raw/test_data.pickle --config configs/dev.yml
 - [ ] make interpolants stochastic + add score-matching loss
 - [ ] does epoch_exact get aligned with the vaidaiton loss parameters even if i don't log epoch_exact during validaiton steps? (i think so, need to see if plots come out ok on wandb)
 - [ ] multi-gpu training will fail / be bottlenecked because we do periodic sampling inside of the training_step call. an option to avoid this is to do the periodic sampling inside the validation_step, possibly.
-
+- [ ] map every dataset entry back to the original rdkit molecule?
+- [ ] reprocess datasets
 
 ## multi-gpu training and where to put the periodic sampling
 - periodic sampling is done inside of the training_step call. this means that if we have multiple gpus, we will be doing the sampling multiple times. this is a bottleneck.

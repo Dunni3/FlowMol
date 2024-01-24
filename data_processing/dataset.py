@@ -68,7 +68,12 @@ class MoleculeDataset(torch.utils.data.Dataset):
 
         # one-hot encode edge labels and atom charges
         edge_labels = one_hot(edge_labels.to(torch.int64), num_classes=5).float()
-        atom_charges = one_hot(atom_charges + 2, num_classes=6) # hard-coded assumption that charges are in range [-2, 3]
+        try:
+            atom_charges = one_hot(atom_charges + 2, num_classes=6) # hard-coded assumption that charges are in range [-2, 3]
+        except Exception as e:
+            print('an atom charge outside of the expected range was encountered')
+            print(f'max atom charge: {atom_charges.max()}, min atom charge: {atom_charges.min()}')
+            raise e
 
         # create a dgl graph
         g = dgl.graph((edges[0], edges[1]), num_nodes=n_atoms)

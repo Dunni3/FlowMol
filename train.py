@@ -73,7 +73,7 @@ if __name__ == "__main__":
 
     # create dataset
     train_dataset = MoleculeDataset(split='train', dataset_config=config['dataset'])
-    test_dataset = MoleculeDataset(split='test', dataset_config=config['dataset'])
+    val_dataset = MoleculeDataset(split='val', dataset_config=config['dataset'])
 
     # create dataloaders
     train_dataloader = DataLoader(train_dataset, 
@@ -82,11 +82,12 @@ if __name__ == "__main__":
                             collate_fn=dgl.batch, 
                             num_workers=config['training']['num_workers'])
     
-    val_dataloader = DataLoader(test_dataset, 
+    val_dataloader = DataLoader(val_dataset, 
                             batch_size=config['training']['batch_size']*2, 
-                            shuffle=False, 
+                            shuffle=True, 
                             collate_fn=dgl.batch, 
-                            num_workers=config['training']['num_workers'])
+                            # num_workers=config['training']['num_workers'],
+                            num_workers=0)
 
     # get the filepath of the n_atoms histogram
     n_atoms_hist_filepath = Path(config['dataset']['processed_data_dir']) / 'train_data_n_atoms_histogram.pt'

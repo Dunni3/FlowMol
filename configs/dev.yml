@@ -6,6 +6,7 @@ training:
     accelerator: gpu
     devices: 1
     accumulate_grad_batches: 1
+    limit_val_batches: 0.1
 
   evaluation:
     mols_to_sample: 64 # how many molecules to sample during evaluation
