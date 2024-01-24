@@ -90,6 +90,6 @@ class SampledMolecule:
         adj = torch.zeros((self.num_atoms, self.num_atoms))
         adjusted_bond_types = self.bond_types.clone()
         adjusted_bond_types[adjusted_bond_types == 4] = 1.5
-        adj[self.bond_src_idxs, self.bond_dst_idxs] = adjusted_bond_types
+        adj[self.bond_src_idxs, self.bond_dst_idxs] = adjusted_bond_types.float()
         valencies = torch.sum(adj, dim=-1).long()
         return valencies

@@ -3,7 +3,7 @@ training:
   num_workers: 0
   trainer_args:
     max_epochs: 1
-    accelerator: cpu
+    accelerator: gpu
     devices: 1
     accumulate_grad_batches: 1
 

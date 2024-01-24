@@ -107,9 +107,6 @@ def check_stability(molecule: SampledMolecule):
     n_stable_atoms = 0
     mol_stable = True
     for i, (atom_type, valency, charge) in enumerate(zip(atom_types, valencies, molecule.atom_charges)):
-        atom_type = atom_type.item()
-        valency = valency.item()
-        charge = charge.item()
         possible_bonds = allowed_bonds[atom_type]
         if type(possible_bonds) == int:
             is_stable = possible_bonds == valency
