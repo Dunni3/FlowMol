@@ -123,6 +123,7 @@ class MolFM(pl.LightningModule):
             total_loss = total_loss + self.total_loss_weights[feat]*losses[feat]
 
         self.log_dict(train_log_dict)
+        self.log('train_total_loss', total_loss, prog_bar=True, on_step=True)
 
         return total_loss
     
@@ -142,6 +143,8 @@ class MolFM(pl.LightningModule):
         total_loss = torch.zeros(1, device=g.device, requires_grad=False)
         for feat in self.canonical_feat_order:
             total_loss = total_loss + self.total_loss_weights[feat]*losses[feat]
+
+        self.log('val_total_loss', total_loss, prog_bar=True, batch_size=g.batch_size, on_step=True)
 
         return total_loss
     

@@ -2,26 +2,27 @@ training:
   batch_size: 8
   num_workers: 0
   trainer_args:
-    max_epochs: 1
+    max_epochs: 2
     accelerator: gpu
     devices: 1
     accumulate_grad_batches: 1
 
   evaluation:
     mols_to_sample: 64 # how many molecules to sample during evaluation
-    sample_interval: 0.1 # how often to sample molecules during training, measured in epochs
+    sample_interval: 1 # how often to sample molecules during training, measured in epochs
     val_loss_interval: 1 # how often to compute validation set loss during training, measured in epochs
 
 wandb:
   project: mol-fm
   group: "dev"
   name:
-  mode: offline # can be disabled, online, offline
+  mode: online # can be disabled, online, offline
   save_dir: runs
 
 lr_scheduler:
+  # to turn off warmup and restarts, set both warmup_length and restart_interval to 0
   base_lr: 1.0e-4
-  warmup_length: 1
+  warmup_length: 0
   restart_interval: 0 # 0 means no restart
   restart_type: 'linear'
 
@@ -34,7 +35,8 @@ dataset:
 
 checkpointing:
   save_last: True
-  every_n_train_steps: 5
+  monitor: 'val_total_loss'
+  every_n_epochs: 1
 
 mol_fm:
   time_scaled_loss: True

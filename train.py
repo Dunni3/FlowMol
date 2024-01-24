@@ -19,7 +19,7 @@ from data_processing.dataset import MoleculeDataset
 def parse_args():
     p = argparse.ArgumentParser(description='Training Script')
     p.add_argument('--config', type=Path, default=None)
-    p.add_argument('--resume', type=Path, default=None, help='path to checkpoint file')
+    p.add_argument('--resume', type=Path, default=None, help='Path to run directory or checkpoint file to resume from')
 
     # TODO: make these arguments do something
     p.add_argument('--batch_size', type=int, default=64)
@@ -29,7 +29,7 @@ def parse_args():
     # create a boolean argument for whether or not this is a debug run
     p.add_argument('--debug', action='store_true')
 
-    p.add_argument('--seed', type=int, default=42)
+    p.add_argument('--seed', type=int, default=None)
 
 
     args = p.parse_args()
@@ -45,13 +45,30 @@ if __name__ == "__main__":
     
     # TODO: implement resuming
     if args.resume is not None:
-        raise NotImplementedError
+        # determine if we are resuming from a run directory or a checkpoint file
+        if args.resume.is_dir():
+            # we are resuming from a run directory
+            # get the config file from the run directory
+            run_dir = args.resume
+            ckpt_file = str(run_dir / 'files' / 'checkpoints' / 'last.ckpt')
+        elif args.resume.is_file():
+            run_dir = args.resume.parent.parent.parent 
+            ckpt_file = str(args.resume)
+        else:
+            raise ValueError('resume argument must be a run directory or a checkpoint file that must already exist')
+        
+        config_file = run_dir / 'files' / 'user_generated_config.yaml'
+    else:
+        config_file = args.config
+        ckpt_file = None
+
 
     # set seed
-    pl.seed_everything(args.seed)
+    if args.seed is not None:
+        pl.seed_everything(args.seed)
     
     # process config file into dictionary
-    with open(args.config, 'r') as f:
+    with open(config_file, 'r') as f:
         config = yaml.load(f, Loader=yaml.FullLoader)
 
     # create dataset
@@ -81,14 +98,14 @@ if __name__ == "__main__":
     # create model
     atom_type_map = config['dataset']['atom_map']
     model = MolFM(atom_type_map=atom_type_map,
-                  batches_per_epoch=len(train_dataloader), 
-                  n_atoms_hist_file=n_atoms_hist_filepath,
-                  sample_interval=sample_interval,
-                  n_mols_to_sample=mols_to_sample,
-                  vector_field_config=config['vector_field'],
-                  interpolant_scheduler_config=config['interpolant_scheduler'], 
-                  lr_scheduler_config=config['lr_scheduler'],
-                  **config['mol_fm'])
+                batches_per_epoch=len(train_dataloader), 
+                n_atoms_hist_file=n_atoms_hist_filepath,
+                sample_interval=sample_interval,
+                n_mols_to_sample=mols_to_sample,
+                vector_field_config=config['vector_field'],
+                interpolant_scheduler_config=config['interpolant_scheduler'], 
+                lr_scheduler_config=config['lr_scheduler'],
+                **config['mol_fm'])
     
     # get wandb logger config
     wandb_config = config['wandb']
@@ -114,13 +131,16 @@ if __name__ == "__main__":
 
     # create wandb logger
     wandb_logger = WandbLogger(config=config, **wandb_config)
-    wandb_logger.experiment
+    wandb_logger.experiment # not sure why this line is here...
 
     # get run directory
     run_dir = Path(wandb.run.dir)
-    checkpoints_dir = run_dir / 'checkpoints'
+
+    # print the run directory
+    print('Results are being written to: ', run_dir)
 
     # create ModelCheckpoint callback
+    checkpoints_dir = run_dir / 'checkpoints'
     checkpoint_config = config['checkpointing']
     checkpoint_config['dirpath'] = str(checkpoints_dir)
     checkpoint_callback = pl.callbacks.ModelCheckpoint(**checkpoint_config)
@@ -130,7 +150,8 @@ if __name__ == "__main__":
     if args.resume is None:
         config['resume'] = {}
         config['resume']['run_id'] = run_id
-        with open(run_dir / 'config.yaml', 'w') as f:
+        config['wandb']['name'] = wandb.run.name
+        with open(run_dir / 'user_generated_config.yaml', 'w') as f:
             yaml.dump(config, f)
 
     # get pl trainer config
@@ -149,4 +170,4 @@ if __name__ == "__main__":
     trainer = pl.Trainer(logger=wandb_logger, **trainer_config, callbacks=[checkpoint_callback])
     
     # train
-    trainer.fit(model, train_dataloaders=train_dataloader, val_dataloaders=val_dataloader)
+    trainer.fit(model, train_dataloaders=train_dataloader, val_dataloaders=val_dataloader, ckpt_path=ckpt_file)
