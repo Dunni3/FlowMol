@@ -209,18 +209,18 @@ if __name__ == "__main__":
     all_bond_idxs = torch.concatenate(all_bond_idxs, dim=0)
 
     # create an array of indicies to keep track of the start_idx and end_idx of each molecule's node features
-    node_idx_array = np.zeros((len(n_atoms_list), 2), dtype=int)
+    node_idx_array = torch.zeros((len(n_atoms_list), 2), dtype=torch.int32)
     node_idx_array[:, 1] = torch.cumsum(n_atoms_list, dim=0)
     node_idx_array[1:, 0] = node_idx_array[:-1, 1]
 
     # create an array of indicies to keep track of the start_idx and end_idx of each molecule's edge features
-    edge_idx_array = torch.zeros((len(n_bonds_list), 2), dtype=int)
+    edge_idx_array = torch.zeros((len(n_bonds_list), 2), dtype=torch.int32)
     edge_idx_array[:, 1] = torch.cumsum(n_bonds_list, dim=0)
     edge_idx_array[1:, 0] = edge_idx_array[:-1, 1]
 
     all_positions = all_positions.type(torch.float32)
-    all_atom_charges = all_atom_charges.type(int)
-    all_bond_idxs = all_bond_idxs.type(int)
+    all_atom_charges = all_atom_charges.type(torch.int32)
+    all_bond_idxs = all_bond_idxs.type(torch.int32)
 
     # create a dictionary to store all the data
     data_dict = {
