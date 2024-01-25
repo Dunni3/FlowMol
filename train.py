@@ -132,15 +132,28 @@ if __name__ == "__main__":
 
     # create wandb logger
     wandb_logger = WandbLogger(config=config, **wandb_config)
-    # wandb_logger.experiment # not sure why this line is here...
+    wandb_logger.experiment # not sure why this line is here...
+
+    # get run directory
+    run_dir = Path(wandb.run.dir)
+
+    # print the run directory
+    print('Results are being written to: ', run_dir)
 
     # create ModelCheckpoint callback
-    # checkpoints_dir = run_dir / 'checkpoints'
+    checkpoints_dir = run_dir / 'checkpoints'
     checkpoint_config = config['checkpointing']
-    # checkpoint_config['dirpath'] = str(checkpoints_dir)
-    checkpoint_config['every_n_train_steps'] = 50
+    checkpoint_config['dirpath'] = str(checkpoints_dir)
     checkpoint_callback = pl.callbacks.ModelCheckpoint(**checkpoint_config)
 
+    # save the config file to the run directory
+    # include the run_id so we can resume this run later
+    if args.resume is None:
+        config['resume'] = {}
+        config['resume']['run_id'] = run_id
+        config['wandb']['name'] = wandb.run.name
+        with open(run_dir / 'user_generated_config.yaml', 'w') as f:
+            yaml.dump(config, f)
 
     # get pl trainer config
     trainer_config = config['training']['trainer_args']
@@ -156,24 +169,6 @@ if __name__ == "__main__":
 
     # create trainer
     trainer = pl.Trainer(logger=wandb_logger, **trainer_config, callbacks=[checkpoint_callback])
-
-    if trainer.global_rank == 0:
-        wandb_logger.experiment
-
-        # get run directory
-        run_dir = Path(wandb.run.dir)
-
-        # print the run directory
-        print('Results are being written to: ', run_dir)
-
-        # save the config file to the run directory
-        # include the run_id so we can resume this run later
-        if args.resume is None:
-            config['resume'] = {}
-            config['resume']['run_id'] = run_id
-            config['wandb']['name'] = wandb.run.name
-            with open(run_dir / 'user_generated_config.yaml', 'w') as f:
-                yaml.dump(config, f)
     
     # train
     trainer.fit(model, train_dataloaders=train_dataloader, val_dataloaders=val_dataloader, ckpt_path=ckpt_file)
