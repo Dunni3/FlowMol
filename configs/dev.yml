@@ -1,4 +1,5 @@
 training:
+  output_dir: runs/
   batch_size: 8
   num_workers: 0
   trainer_args:
@@ -6,7 +7,7 @@ training:
     accelerator: gpu
     devices: 1
     accumulate_grad_batches: 1
-    limit_val_batches: 0.1
+    limit_val_batches: 0.01
 
   evaluation:
     mols_to_sample: 64 # how many molecules to sample during evaluation
@@ -18,7 +19,6 @@ wandb:
   group: "dev"
   name:
   mode: online # can be disabled, online, offline
-  save_dir: runs
 
 lr_scheduler:
   # to turn off warmup and restarts, set both warmup_length and restart_interval to 0
@@ -36,8 +36,8 @@ dataset:
 
 checkpointing:
   save_last: True
-  monitor: 'val_total_loss'
-  every_n_epochs: 1
+  # monitor: 'val_total_loss'
+  # every_n_epochs: 1
 
 mol_fm:
   time_scaled_loss: True
