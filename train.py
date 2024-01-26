@@ -99,8 +99,13 @@ if __name__ == "__main__":
 
     # create model
     atom_type_map = config['dataset']['atom_map']
+    try:
+        num_devices = config['training']['trainer_args']['devices']
+    except KeyError:
+        num_devices = 1
+    batches_per_epoch = len(train_dataloader) // num_devices
     model = MolFM(atom_type_map=atom_type_map,
-                batches_per_epoch=len(train_dataloader), 
+                batches_per_epoch=batches_per_epoch, 
                 n_atoms_hist_file=n_atoms_hist_filepath,
                 sample_interval=sample_interval,
                 n_mols_to_sample=mols_to_sample,
