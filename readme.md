@@ -8,17 +8,17 @@ python process_geom.py data/raw/test_data.pickle --config configs/dev.yml
 ```
 
 # TODO:
-- [ ] implement model saving via pytorch lightning - current checkpointing is done every n epochs - want something better probably
-- [ ] is there an automatic way to compute loss on a test set?
-- [ ] put model sampling / eval into training loop
+- [ x] implement model saving via pytorch lightning - current checkpointing is done every n epochs - want something better probably
+- [ x] is there an automatic way to compute loss on a test set?
+- [ x] put model sampling / eval into training loop
 - [ ] do interpolation weights become unstable at the end of integration?
 - [ ] double check derivative of interpolation weights
-- [ ] implement molecule evaluation (frag frac, valid atoms, midi valency calculations)
+- [ x] implement molecule evaluation (frag frac, valid atoms, midi valency calculations)
 - [ ] make interpolants stochastic + add score-matching loss
-- [ ] does epoch_exact get aligned with the vaidaiton loss parameters even if i don't log epoch_exact during validaiton steps? (i think so, need to see if plots come out ok on wandb)
-- [ ] multi-gpu training will fail / be bottlenecked because we do periodic sampling inside of the training_step call. an option to avoid this is to do the periodic sampling inside the validation_step, possibly.
-- [ ] map every dataset entry back to the original rdkit molecule?
-- [ ] reprocess datasets
+- [ ] check if validation data is properly aligned with training epoch
+- [ ] script for sampling/saving/visualization
+- [ ] implement/test fractional epoch sampling interval
+
 
 ## multi-gpu training and where to put the periodic sampling
 - periodic sampling is done inside of the training_step call. this means that if we have multiple gpus, we will be doing the sampling multiple times. this is a bottleneck.

@@ -1,0 +1,75 @@
+training:
+  output_dir: runs/
+  batch_size: 8
+  num_workers: 4
+  trainer_args:
+    max_epochs: 2
+    accelerator: gpu
+    devices: 4
+    num_nodes: 1
+    strategy: ddp_find_unused_parameters_true
+    accumulate_grad_batches: 2
+    limit_val_batches: 0.01
+    
+
+  evaluation:
+    mols_to_sample: 64 # how many molecules to sample during evaluation
+    sample_interval: 0.1 # how often to sample molecules during training, measured in epochs
+    val_loss_interval: 0.05 # how often to compute validation set loss during training, measured in epochs
+
+wandb:
+  project: mol-fm
+  group: "dev"
+  name:
+  mode: online # can be disabled, online, offline
+
+lr_scheduler:
+  # to turn off warmup and restarts, set both warmup_length and restart_interval to 0
+  base_lr: 1.0e-4
+  warmup_length: 0
+  restart_interval: 0 # 0 means no restart
+  restart_type: 'linear'
+
+dataset:
+  raw_data_dir: data/raw/
+  processed_data_dir: data/geom/
+  atom_map: ['C', 'H', 'N', 'O', 'F', 'P', 'S', 'Cl', 'Br', 'I'] # TODO: check the list of atoms contained in geomdrugs
+  dataset_name: geom # only geom is supported for now
+  dataset_size:
+
+checkpointing:
+  save_last: True
+  monitor: 'val_total_loss'
+  every_n_epochs: 1
+
+mol_fm:
+  position_prior_std: 1.0
+  time_scaled_loss: True
+  total_loss_weights:
+    x: 1.0
+    a: 1.0
+    c: 1.0
+    e: 1.0
+
+vector_field:
+  n_vec_channels: 12
+  n_hidden_scalars: 64
+  n_hidden_edge_feats: 64
+  n_recycles: 2
+  n_molecule_updates: 1
+  convs_per_update: 3
+  n_cp_feats: 4
+  n_message_gvps: 3
+  n_update_gvps: 3
+  message_norm: 100
+  rbf_dmax: 20
+  rbf_dim: 16
+
+interpolant_scheduler:
+  schedule_type: 'cosine'
+  cosine_params:
+    x: 1
+    a: 2
+    c: 2
+    e: 1.5
+
