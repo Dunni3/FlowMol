@@ -30,6 +30,7 @@ class MolFM(pl.LightningModule):
                  sample_interval: float = 1.0, # how often to sample molecules from the model, measured in epochs
                  n_mols_to_sample: int = 64, # how many molecules to sample from the model during each sample/eval step during training
                  time_scaled_loss: bool = True,
+                 position_prior_std: float = 1.0,
                  total_loss_weights: Dict[str, float] = {}, 
                  lr_scheduler_config: dict = {},
                  interpolant_scheduler_config: dict = {},
@@ -45,6 +46,7 @@ class MolFM(pl.LightningModule):
         self.n_bond_types = n_bond_types
         self.total_loss_weights = total_loss_weights
         self.time_scaled_loss = time_scaled_loss
+        self.position_prior_std = position_prior_std
 
         # create a dictionary mapping feature -> number of categories
         self.n_cat_dict = {
@@ -229,7 +231,7 @@ class MolFM(pl.LightningModule):
         # TODO: can we implement OT flow matching for the prior? equivariant flow-matching?
         num_nodes = g.num_nodes()
         device = g.device
-        g.ndata['x_0'] = torch.randn(num_nodes, 3, device=device)
+        g.ndata['x_0'] = torch.randn(num_nodes, 3, device=device)*self.position_prior_std
         g.ndata['x_0'] = g.ndata['x_0'] - dgl.readout_nodes(g, feat='x_0', op='mean')[node_batch_idx]
 
         # sample atom types, charges from simplex

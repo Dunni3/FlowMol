@@ -40,6 +40,7 @@ checkpointing:
   # every_n_epochs: 1
 
 mol_fm:
+  position_prior_std: 1.0
   time_scaled_loss: True
   total_loss_weights:
     x: 1.0
