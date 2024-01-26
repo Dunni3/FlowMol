@@ -17,7 +17,7 @@ training:
 wandb:
   project: mol-fm
   group: "dev"
-  name:
+  name: "dev run"
   mode: online # can be disabled, online, offline
 
 lr_scheduler:

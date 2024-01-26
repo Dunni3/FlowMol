@@ -88,12 +88,18 @@ class MolFM(pl.LightningModule):
         self.last_sample_marker = 0 # this is the epoch_exact value of the last time we sampled molecules from the model
         self.sample_analyzer = SampleAnalyzer()
 
+
+        # record the last epoch value for training steps -  this is really hacky but it lets me
+        # align the validation losses with the correspoding training epoch value on W&B
+        self.last_epoch_exact = 0
+
         self.save_hyperparameters()
 
     def training_step(self, g: dgl.DGLGraph, batch_idx: int):
 
         # compute epoch as a float
         epoch_exact = self.current_epoch + batch_idx/self.batches_per_epoch
+        self.last_epoch_exact = epoch_exact
 
         # update the learning rate
         self.lr_scheduler.step_lr(epoch_exact)
@@ -122,8 +128,8 @@ class MolFM(pl.LightningModule):
         for feat in self.canonical_feat_order:
             total_loss = total_loss + self.total_loss_weights[feat]*losses[feat]
 
-        self.log_dict(train_log_dict)
-        self.log('train_total_loss', total_loss, prog_bar=True, on_step=True)
+        self.log_dict(train_log_dict, sync_dist=True)
+        self.log('train_total_loss', total_loss, prog_bar=True, on_step=True, sync_dist=True)
 
         return total_loss
     
@@ -132,19 +138,21 @@ class MolFM(pl.LightningModule):
         losses = self(g)
 
         # create dictionary of values to log
-        val_log_dict = {}
+        val_log_dict = {
+            'epoch_exact': self.last_epoch_exact
+        }
 
         for key in losses:
             val_log_dict[f'{key}_val_loss'] = losses[key]
 
-        self.log_dict(val_log_dict, batch_size=g.batch_size)
+        self.log_dict(val_log_dict, batch_size=g.batch_size, sync_dist=True)
 
         # combine individual losses into a total loss
         total_loss = torch.zeros(1, device=g.device, requires_grad=False)
         for feat in self.canonical_feat_order:
             total_loss = total_loss + self.total_loss_weights[feat]*losses[feat]
 
-        self.log('val_total_loss', total_loss, prog_bar=True, batch_size=g.batch_size, on_step=True)
+        self.log('val_total_loss', total_loss, prog_bar=True, batch_size=g.batch_size, on_step=True, sync_dist=True)
 
         return total_loss
     
