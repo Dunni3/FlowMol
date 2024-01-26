@@ -291,15 +291,15 @@ class MolFM(pl.LightningModule):
         n_atoms = self.n_atoms_dist.sample((n_molecules,))
         return self.n_atoms_map[n_atoms]
 
-    def sample_random_sizes(self, n_molecules: int, device="cuda:0", n_timesteps: int = 20, return_molecules=True):
+    def sample_random_sizes(self, n_molecules: int, device="cuda:0", n_timesteps: int = 20, visualize=False):
         """Sample n_moceules with the number of atoms sampled from the distribution of the training set."""
 
         # get the number of atoms that will be in each molecules
         atoms_per_molecule = self.sample_n_atoms(n_molecules).to(device)
 
-        return self.sample(atoms_per_molecule, n_timesteps=n_timesteps, return_molecules=return_molecules, device=device)
+        return self.sample(atoms_per_molecule, n_timesteps=n_timesteps, device=device, visualize=visualize)
     
-    def integrate(self, g: dgl.DGLGraph, node_batch_idx: torch.Tensor, upper_edge_mask: torch.Tensor, n_timesteps: int):
+    def integrate(self, g: dgl.DGLGraph, node_batch_idx: torch.Tensor, upper_edge_mask: torch.Tensor, n_timesteps: int, visualize=False):
         """Integrate the trajectories of molecules along the vector field."""
 
         # get the timepoint for integration
@@ -315,6 +315,17 @@ class MolFM(pl.LightningModule):
 
         for feat in self.edge_feats:
             g.edata[f'{feat}_t'] = g.edata[f'{feat}_0']
+
+
+        # if visualizing the trajectory, create a datastructure to store the trajectory
+        if visualize:
+            traj_frames = {}
+            for feat in self.canonical_feat_order:
+                if feat == "e":
+                    data_src = g.edata
+                else:
+                    data_src = g.ndata
+                traj_frames[feat] = [ data_src[f'{feat}_0'].detach().cpu() ]
 
         for s_idx in range(1,t.shape[0]):
 
@@ -351,6 +362,17 @@ class MolFM(pl.LightningModule):
 
                 g_data_src[f'{feat}_t'] = x1_weight*x1 + xt_weight*g_data_src[f'{feat}_t']
 
+                if visualize:
+                    frame = g_data_src[f'{feat}_t'].detach().cpu()
+                    if feat == 'e':
+                        split_sizes = g.batch_num_edges()
+                    else:
+                        split_sizes = g.batch_num_nodes()
+                    split_sizes = split_sizes.detach().cpu().tolist()
+                    frame = g_data_src[f'{feat}_t'].detach().cpu()
+                    frame = torch.split(frame, split_sizes)
+                    traj_frames[feat].append(frame)
+
         # set x_1 = x_t
         for feat in self.canonical_feat_order:
 
@@ -361,11 +383,29 @@ class MolFM(pl.LightningModule):
 
             g_data_src[f'{feat}_1'] = g_data_src[f'{feat}_t']
 
+        if visualize:
+
+            # currently, traj_frames[key] is a list of lists. each sublist contains the frame for every molecule in the batch
+            # we want to rearrange this so that traj_frames is a list of dictionaries, where each dictionary contains the frames for a single molecule
+            n_frames = len(traj_frames['x'])
+            reshaped_traj_frames = []
+            for mol_idx in range(g.batch_size):
+                molecule_dict = {}
+                for feat in self.canonical_feat_order:
+                    feat_traj = []
+                    for frame_idx in range(n_frames):
+                        feat_traj.append(traj_frames[feat][frame_idx][mol_idx])
+                    molecule_dict[feat] = torch.stack(feat_traj)
+                reshaped_traj_frames.append(molecule_dict)
+
+
+            return g, reshaped_traj_frames
+        
         return g
     
 
     @torch.no_grad()
-    def sample(self, n_atoms: torch.Tensor, n_timesteps: int = 20, return_molecules: bool = True, device="cuda:0"):
+    def sample(self, n_atoms: torch.Tensor, n_timesteps: int = 20, device="cuda:0", visualize=False):
         """Sample molecules with the given number of atoms.
         
         Args:
@@ -399,16 +439,24 @@ class MolFM(pl.LightningModule):
         g = self.sample_prior(g, node_batch_idx, upper_edge_mask)
 
         # integrate trajectories
-        g = self.integrate(g, node_batch_idx, upper_edge_mask=upper_edge_mask, n_timesteps=n_timesteps)
+        itg_result = self.integrate(g, node_batch_idx, upper_edge_mask=upper_edge_mask, n_timesteps=n_timesteps, visualize=visualize)
+
+        if visualize:
+            g, traj_frames = itg_result
+        else:
+            g = itg_result
 
         g.edata['ue_mask'] = upper_edge_mask
         g = g.to('cpu')
 
-        if return_molecules:
-            molecules = []
-            for g_i in dgl.unbatch(g):
-                molecules.append(SampledMolecule(g_i, self.atom_type_map))
 
-            return molecules
+        molecules = []
+        for mol_idx, g_i in enumerate(dgl.unbatch(g)):
 
-        return g
+            args = [g_i, self.atom_type_map]
+            if visualize:
+                args.append(traj_frames[mol_idx])
+
+            molecules.append(SampledMolecule(*args))
+
+        return molecules

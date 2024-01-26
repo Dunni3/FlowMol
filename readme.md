@@ -18,7 +18,9 @@ python process_geom.py data/raw/test_data.pickle --config configs/dev.yml
 - [ ] check if validation data is properly aligned with training epoch
 - [ ] script for sampling/saving/visualization
 - [ ] implement/test fractional epoch sampling interval
-
+- [ ] what happens in analysis.molecule_builder.SampledMolecule.build_molecule if we don't convert RW mol to regular mol before adding conformer?
+- [ ] how to write trajectories to SDF file?
+  
 
 ## multi-gpu training and where to put the periodic sampling
 - periodic sampling is done inside of the training_step call. this means that if we have multiple gpus, we will be doing the sampling multiple times. this is a bottleneck.

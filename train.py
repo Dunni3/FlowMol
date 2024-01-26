@@ -1,7 +1,6 @@
 import argparse
 from pathlib import Path
 import yaml
-import torch
 import dgl
 from torch.utils.data import DataLoader
 import pytorch_lightning as pl

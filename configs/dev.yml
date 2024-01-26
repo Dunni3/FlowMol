@@ -11,7 +11,7 @@ training:
 
   evaluation:
     mols_to_sample: 64 # how many molecules to sample during evaluation
-    sample_interval: 1 # how often to sample molecules during training, measured in epochs
+    sample_interval: 0.05 # how often to sample molecules during training, measured in epochs
     val_loss_interval: 1 # how often to compute validation set loss during training, measured in epochs
 
 wandb:
@@ -30,6 +30,7 @@ lr_scheduler:
 dataset:
   raw_data_dir: data/raw/
   processed_data_dir: data/geom_dev
+  # in order to disbale explicit hydrogens, just remove 'H' from atom_map
   atom_map: ['C', 'H', 'N', 'O', 'F', 'P', 'S', 'Cl', 'Br', 'I'] # TODO: check the list of atoms contained in geomdrugs
   dataset_name: geom # only geom is supported for now
   dataset_size: 500

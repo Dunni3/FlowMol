@@ -17,6 +17,11 @@ class MoleculeFeaturizer():
         else:
             self.pool = Pool(self.n_cpus)
 
+        if 'H' in atom_map:
+            self.explicit_hydrogens = True
+        else:    
+            self.explicit_hydrogens = False
+
     def featurize_molecules(self, molecules):
 
 
@@ -59,7 +64,11 @@ class MoleculeFeaturizer():
 
 
 
-def featurize_molecule(molecule: Chem.rdchem.Mol, atom_map_dict: Dict[str, int]):
+def featurize_molecule(molecule: Chem.rdchem.Mol, atom_map_dict: Dict[str, int], explicit_hydrogens=False):
+
+    # if explicit_hydrogens is False, remove all hydrogens from the molecule
+    if not explicit_hydrogens:
+        molecule = Chem.RemoveHs(molecule)
 
     # get positions
     positions = molecule.GetConformer().GetPositions()
