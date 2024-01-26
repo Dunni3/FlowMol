@@ -323,9 +323,15 @@ class MolFM(pl.LightningModule):
             for feat in self.canonical_feat_order:
                 if feat == "e":
                     data_src = g.edata
+                    split_sizes = g.batch_num_edges()
                 else:
                     data_src = g.ndata
-                traj_frames[feat] = [ data_src[f'{feat}_0'].detach().cpu() ]
+                    split_sizes = g.batch_num_nodes()
+
+                split_sizes = split_sizes.detach().cpu().tolist()
+                init_frame = data_src[f'{feat}_0'].detach().cpu()
+                init_frame = torch.split(init_frame, split_sizes)
+                traj_frames[feat] = [ init_frame ]
 
         for s_idx in range(1,t.shape[0]):
 

@@ -80,6 +80,7 @@ if __name__ == "__main__":
         
         # write molecules to sdf file
         sdf_writer = Chem.SDWriter(str(output_file))
+        sdf_writer.SetKekulize(False)
         for mol in molecules:
             rdkit_mol = mol.rdkit_mol
             if rdkit_mol is not None:
@@ -92,6 +93,7 @@ if __name__ == "__main__":
             print(f'Writing molecule {mol_idx} to {mol_output_file}')
 
             sdf_writer = Chem.SDWriter(str(mol_output_file))
+            sdf_writer.SetKekulize(False)
             for traj_mol in mol.traj_mols:
                 sdf_writer.write(traj_mol)
             sdf_writer.close()

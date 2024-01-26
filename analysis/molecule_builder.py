@@ -45,20 +45,22 @@ class SampledMolecule:
         valencies = torch.sum(adj, dim=-1).long()
         return valencies
     
-    def process_traj_frames(self, traj_frames: List[Dict[str: torch.Tensor]]):
+    def process_traj_frames(self, traj_frames: Dict[str, torch.Tensor]):
         """Converts the trajectory frames to a list of rdkit molecules."""
         # convert the frames to a list of rdkit molecules
         g_dummy = copy_graph(self.g)
 
+        n_frames = traj_frames['x'].shape[0]
+
         traj_mols = []
-        for frame in traj_frames:
+        for frame_idx in range(n_frames):
 
             # put current frame data into graph
             for feat in traj_frames.keys():
                 if feat == 'e':
-                    g_dummy.edata['e_1'] = traj_frames[feat][frame]
+                    g_dummy.edata['e_1'] = traj_frames[feat][frame_idx]
                 else:
-                    g_dummy.ndata[f'{feat}_1'] = traj_frames[feat][frame]
+                    g_dummy.ndata[f'{feat}_1'] = traj_frames[feat][frame_idx]
 
             # extract mol data from graph
             positions, atom_types, atom_charges, bond_types, bond_src_idxs, bond_dst_idxs = extract_moldata_from_graph(g_dummy, self.atom_type_map)

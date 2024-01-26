@@ -34,6 +34,11 @@ class InterpolantScheduler(nn.Module):
         # self.cosine_params is a tensor of shape (n_feats,) containing the cosine parameters for each feature
         self.cosine_params = cosine_params
 
+    def update_device(self, t):
+        if self.schedule_type == 'cosine' and t.device != self.device:
+            self.cosine_params = self.cosine_params.to(t.device)
+            self.device = t.device
+
     def interpolant_weights(self, t: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
         """
         Returns the weights for x_0 and x_1 in the interpolation between x_0 and x_1.
@@ -43,9 +48,7 @@ class InterpolantScheduler(nn.Module):
         # the tensor at index 0 is the weight for x_0
         # the tensor at index 1 is the weight for x_1
 
-        if self.schedule_type == 'cosine' and t.device != self.device:
-            self.cosine_params = self.cosine_params.to(t.device)
-            self.device = t.device
+        self.update_device()
 
         alpha_t = self.alpha_t(t)
         weights = (1 - alpha_t, alpha_t)
@@ -64,12 +67,16 @@ class InterpolantScheduler(nn.Module):
     def cosine_alpha_t(self, t: torch.Tensor) -> Dict[str, torch.Tensor]:
         # t has shape (n_timepoints,)
         # alpha_t has shape (n_timepoints, n_feats) containing the alpha_t for each feature
+        self.update_device(t)
+
         nu = self.cosine_params
         t = t.unsqueeze(-1)
         alpha_t = 1 - torch.cos(torch.pi*0.5*torch.pow(t, nu)).square()
         return alpha_t
     
     def cosine_alpha_t_prime(self, t: torch.Tensor) -> Dict[str, torch.Tensor]:
+        self.update_device(t)
+
         nu = self.cosine_params
         t = t.unsqueeze(-1)
         sin_input = torch.pi*torch.pow(t, nu)
