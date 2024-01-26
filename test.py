@@ -89,6 +89,7 @@ if __name__ == "__main__":
         print('visualize flag set to True, writing a seprate output file for each molecule trajectory')
         for mol_idx, mol in enumerate(molecules):
             mol_output_file = output_file.parent / f'{output_file.stem}_{mol_idx}{output_file.suffix}'
+            print(f'Writing molecule {mol_idx} to {mol_output_file}')
 
             sdf_writer = Chem.SDWriter(str(mol_output_file))
             for traj_mol in mol.traj_mols:
