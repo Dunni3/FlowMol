@@ -20,7 +20,7 @@ training:
 wandb:
   project: mol-fm
   group: "dev"
-  name:
+  name: no-identity-vec-feat
   mode: online # can be disabled, online, offline
 
 lr_scheduler:
@@ -39,6 +39,7 @@ dataset:
 
 checkpointing:
   save_last: True
+  save_top_k: 3
   monitor: 'val_total_loss'
   every_n_epochs: 1
 

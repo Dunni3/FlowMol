@@ -48,7 +48,7 @@ class InterpolantScheduler(nn.Module):
         # the tensor at index 0 is the weight for x_0
         # the tensor at index 1 is the weight for x_1
 
-        self.update_device()
+        self.update_device(t)
 
         alpha_t = self.alpha_t(t)
         weights = (1 - alpha_t, alpha_t)

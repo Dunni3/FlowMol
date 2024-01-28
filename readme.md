@@ -8,18 +8,12 @@ python process_geom.py data/raw/test_data.pickle --config configs/dev.yml
 ```
 
 # TODO:
-- [ x] implement model saving via pytorch lightning - current checkpointing is done every n epochs - want something better probably
-- [ x] is there an automatic way to compute loss on a test set?
-- [ x] put model sampling / eval into training loop
 - [ ] do interpolation weights become unstable at the end of integration?
 - [ ] double check derivative of interpolation weights
-- [ x] implement molecule evaluation (frag frac, valid atoms, midi valency calculations)
 - [ ] make interpolants stochastic + add score-matching loss
-- [ ] check if validation data is properly aligned with training epoch
-- [ ] script for sampling/saving/visualization
-- [ ] implement/test fractional epoch sampling interval
-- [ ] what happens in analysis.molecule_builder.SampledMolecule.build_molecule if we don't convert RW mol to regular mol before adding conformer?
-- [ ] how to write trajectories to SDF file?
+- [ ] play with time loss weights
+- [ ] play with prior position distribution variance
+- [ ] implement OT alignment
   
 
 ## multi-gpu training and where to put the periodic sampling

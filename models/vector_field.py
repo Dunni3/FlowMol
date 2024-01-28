@@ -115,9 +115,11 @@ class GVPVectorField(nn.Module):
 
             num_nodes = g.num_nodes()
 
-            # initialize the vector features for every node to be zeros, except for the first 3 channels which are the identity matrix
+            # initialize the vector features for every node to be zeros
             node_vec_features = torch.zeros((num_nodes, self.n_vec_channels, 3), device=device)
-            node_vec_features[:, :3, :] = torch.eye(3, device=device).unsqueeze(0).repeat(num_nodes, 1, 1)
+            # i thought setting the first three channels to the identity matrix would be a good idea,
+            # but this actually breaks rotational equivariance
+            # node_vec_features[:, :3, :] = torch.eye(3, device=device).unsqueeze(0).repeat(num_nodes, 1, 1)
 
             edge_features = g.edata['e_t']
             edge_features = self.edge_embedding(edge_features)
