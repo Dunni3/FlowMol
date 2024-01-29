@@ -13,7 +13,9 @@ python process_geom.py data/raw/test_data.pickle --config configs/dev.yml
 - [ ] make interpolants stochastic + add score-matching loss
 - [ ] play with time loss weights
 - [ ] play with prior position distribution variance
-- [ ] implement OT alignment
+- [ ] implement batch sampler
+- [ ] implement OT computation at training time
+- [ ] implement non-uniform bond-order prior - compute the variance of the random step that gurantees a certain P(no bond)
   
 
 ## multi-gpu training and where to put the periodic sampling

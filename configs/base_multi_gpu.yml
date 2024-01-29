@@ -20,7 +20,7 @@ training:
 wandb:
   project: mol-fm
   group: "dev"
-  name: no-identity-vec-feat
+  name: no-recycle-4std
   mode: online # can be disabled, online, offline
 
 lr_scheduler:
@@ -44,7 +44,7 @@ checkpointing:
   every_n_epochs: 1
 
 mol_fm:
-  position_prior_std: 1.0
+  position_prior_std: 4.0
   time_scaled_loss: True
   total_loss_weights:
     x: 1.0
@@ -56,9 +56,9 @@ vector_field:
   n_vec_channels: 12
   n_hidden_scalars: 64
   n_hidden_edge_feats: 64
-  n_recycles: 2
-  n_molecule_updates: 1
-  convs_per_update: 3
+  n_recycles: 1
+  n_molecule_updates: 2
+  convs_per_update: 2
   n_cp_feats: 4
   n_message_gvps: 3
   n_update_gvps: 3
