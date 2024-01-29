@@ -8,12 +8,12 @@ python process_geom.py data/raw/test_data.pickle --config configs/dev.yml
 ```
 
 # TODO:
-- [ ] do interpolation weights become unstable at the end of integration?
+- [ ] do interpolation weights become unstable at the end of integration? - compute interpolation of a single molecule and visualize
 - [ ] double check derivative of interpolation weights
 - [ ] make interpolants stochastic + add score-matching loss
 - [ ] play with time loss weights
 - [ ] play with prior position distribution variance
-- [ ] implement batch sampler
+- [ ] implement batch sampler: use the solution presented here https://discuss.pytorch.org/t/using-distributedsampler-in-combination-with-batch-sampler-to-make-sure-batches-have-sentences-of-similar-length/119824/3
 - [ ] implement OT computation at training time
 - [ ] implement non-uniform bond-order prior - compute the variance of the random step that gurantees a certain P(no bond)
   
