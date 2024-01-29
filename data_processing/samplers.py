@@ -25,6 +25,25 @@ class SameSizeMoleculeSampler(Sampler):
 
     def __iter__(self):
 
+        # for each unique number of nodes, get the dataset indicies of all graphs in self.idxs that have that number of nodes
         n_nodes_idxs_map = {}
-        for n_nodes in self.num_nodes.unique():
+        n_nodes_unique = self.num_nodes.unique()
+        for n_nodes in n_nodes_unique:
             n_nodes_idxs_map[int(n_nodes)] = self.idxs[torch.where(self.num_nodes == n_nodes)[0]]
+
+
+        # yield batches of indicies where all members of the batch have the same number of nodes
+        for _ in range(len(self)):
+            n_nodes_idx = torch.randint(low=0, high=len(n_nodes_unique), size=(1,))
+            n_nodes = n_nodes_unique[n_nodes_idx]
+            idxs_with_n_nodes = n_nodes_idxs_map[int(n_nodes)]
+            if idxs_with_n_nodes.shape[0] <= self.batch_size:
+                batch_idxs = idxs_with_n_nodes
+            else:
+                subsample_idxs = torch.randperm(len(idxs_with_n_nodes))[:self.batch_size]
+                batch_idxs = idxs_with_n_nodes[subsample_idxs]
+            yield batch_idxs
+            
+
+    def __len__(self):
+        return self.idxs.shape[0] // self.batch_size
