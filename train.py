@@ -14,7 +14,7 @@ import sys
 
 # from models.ligand_edm import LigandEquivariantDiffusion
 from models.mol_fm import MolFM
-from data_processing.dataset import MoleculeDataset
+from data_processing.data_module import MoleculeDataModule
 
 def parse_args():
     p = argparse.ArgumentParser(description='Training Script')
@@ -71,23 +71,20 @@ if __name__ == "__main__":
     with open(config_file, 'r') as f:
         config = yaml.load(f, Loader=yaml.FullLoader)
 
-    # create dataset
-    train_dataset = MoleculeDataset(split='train', dataset_config=config['dataset'])
-    val_dataset = MoleculeDataset(split='val', dataset_config=config['dataset'])
+    # determine if we are doing distributed training
+    if config['training']['trainer_args']['devices'] > 1:
+        distributed = True
+    else:
+        distributed = False
 
-    # create dataloaders
-    train_dataloader = DataLoader(train_dataset, 
-                            batch_size=config['training']['batch_size'], 
-                            shuffle=True, 
-                            collate_fn=dgl.batch, 
-                            num_workers=config['training']['num_workers'])
-    
-    val_dataloader = DataLoader(val_dataset, 
-                            batch_size=config['training']['batch_size']*2, 
-                            shuffle=True, 
-                            collate_fn=dgl.batch, 
-                            # num_workers=config['training']['num_workers'],
-                            num_workers=0)
+    # create data module
+    batch_size = config['training']['batch_size']
+    num_workers = config['training']['num_workers']
+    data_module = MoleculeDataModule(dataset_config=config['dataset'],
+                                     prior_config=config['mol_fm']['prior_config'],
+                                     batch_size=batch_size, 
+                                     num_workers=num_workers, 
+                                     distributed=distributed)
 
     # get the filepath of the n_atoms histogram
     n_atoms_hist_filepath = Path(config['dataset']['processed_data_dir']) / 'train_data_n_atoms_histogram.pt'
@@ -102,9 +99,7 @@ if __name__ == "__main__":
         num_devices = config['training']['trainer_args']['devices']
     except KeyError:
         num_devices = 1
-    batches_per_epoch = len(train_dataloader) // num_devices
-    model = MolFM(atom_type_map=atom_type_map,
-                batches_per_epoch=batches_per_epoch, 
+    model = MolFM(atom_type_map=atom_type_map, 
                 n_atoms_hist_file=n_atoms_hist_filepath,
                 sample_interval=sample_interval,
                 n_mols_to_sample=mols_to_sample,
@@ -168,16 +163,16 @@ if __name__ == "__main__":
     trainer_config = config['training']['trainer_args']
 
     # compute the validation interval and add arguments for the pl.Trainer object accordingly
-    batches_per_epoch = len(train_dataloader)
-    trainer_config['val_check_interval'] = int(config['training']['evaluation']['val_loss_interval'] * batches_per_epoch)
-    trainer_config['check_val_every_n_epoch'] = None
+    trainer_config['val_check_interval'] = config['training']['evaluation']['val_loss_interval']
+    trainer_config['check_val_every_n_epoch'] = 1
 
     # if this is a debug run, set limit_train_batches to 10
     if args.debug:
         trainer_config['limit_train_batches'] = 100
 
     # create trainer
+    trainer_config['use_distributed_sampler'] = False
     trainer = pl.Trainer(logger=wandb_logger, **trainer_config, callbacks=[checkpoint_callback])
     
     # train
-    trainer.fit(model, train_dataloaders=train_dataloader, val_dataloaders=val_dataloader, ckpt_path=ckpt_file)
+    trainer.fit(model, datamodule=data_module, ckpt_path=ckpt_file)

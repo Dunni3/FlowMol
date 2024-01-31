@@ -4,11 +4,16 @@ import torch
 
 class SameSizeMoleculeSampler(Sampler):
 
-    def __init__(self, dataset: MoleculeDataset, batch_size, idxs: torch.Tensor = None, shuffle: bool = True):
+    def __init__(self, dataset: MoleculeDataset, batch_size: int, idxs: torch.Tensor = None, shuffle: bool = True, n_node_cutoff: int = 90, cutoff_batch_size: int = 4):
         super().__init__(dataset)
         self.dataset: MoleculeDataset = dataset
         self.batch_size = batch_size
         self.shuffle = shuffle
+        self.n_node_cutoff = n_node_cutoff
+        self.cutoff_batch_size = cutoff_batch_size
+
+        if shuffle == False:
+            raise NotImplementedError('shuffle=False is not implemented yet')
         
         if idxs is None:
             self.idxs = torch.arange(len(dataset))
@@ -27,23 +32,54 @@ class SameSizeMoleculeSampler(Sampler):
 
         # for each unique number of nodes, get the dataset indicies of all graphs in self.idxs that have that number of nodes
         n_nodes_idxs_map = {}
-        n_nodes_unique = self.num_nodes.unique()
-        for n_nodes in n_nodes_unique:
+        for n_nodes in self.num_nodes.unique():
             n_nodes_idxs_map[int(n_nodes)] = self.idxs[torch.where(self.num_nodes == n_nodes)[0]]
+
+        # compute weights on each number of nodes based on the number of examples in the dataset with that number of nodes
+        n_nodes_arr = []
+        n_examples_arr = []
+        for n_nodes, idxs_with_n_nodes in n_nodes_idxs_map.items():
+            n_nodes_arr.append(n_nodes)
+            n_examples_arr.append(idxs_with_n_nodes.shape[0])
+        n_nodes_arr = torch.tensor(n_nodes_arr)
+        n_examples_arr = torch.tensor(n_examples_arr)
+        weights = n_examples_arr / n_examples_arr.sum()
 
 
         # yield batches of indicies where all members of the batch have the same number of nodes
         for _ in range(len(self)):
-            n_nodes_idx = torch.randint(low=0, high=len(n_nodes_unique), size=(1,))
-            n_nodes = n_nodes_unique[n_nodes_idx]
+            n_nodes_idx = torch.multinomial(weights, num_samples=1)
+            n_nodes = n_nodes_arr[n_nodes_idx]
+
+            if n_nodes > self.n_node_cutoff:
+                batch_size = self.cutoff_batch_size
+            else:
+                batch_size = self.batch_size
+
             idxs_with_n_nodes = n_nodes_idxs_map[int(n_nodes)]
-            if idxs_with_n_nodes.shape[0] <= self.batch_size:
+            if idxs_with_n_nodes.shape[0] <= batch_size:
                 batch_idxs = idxs_with_n_nodes
             else:
-                subsample_idxs = torch.randperm(len(idxs_with_n_nodes))[:self.batch_size]
+                subsample_idxs = torch.randperm(len(idxs_with_n_nodes))[:batch_size]
                 batch_idxs = idxs_with_n_nodes[subsample_idxs]
             yield batch_idxs
             
 
     def __len__(self):
         return self.idxs.shape[0] // self.batch_size
+
+
+class SameSizeDistributedMoleculeSampler(DistributedSampler):
+
+    def __init__(self, dataset: MoleculeDataset, batch_size: int, num_replicas=None, rank=None, shuffle=True, seed=0, drop_last=False):
+        super().__init__(dataset, num_replicas, rank, shuffle, seed, drop_last)
+        self.batch_size = batch_size
+
+    def __iter__(self):
+        indicies = list(super().__iter__())
+        indicies = torch.tensor(indicies)
+        batch_sampler = SameSizeMoleculeSampler(self.dataset, self.batch_size, idxs=indicies, shuffle=self.shuffle)
+        return iter(batch_sampler)
+    
+    def __len__(self):
+        return self.num_samples // self.batch_size

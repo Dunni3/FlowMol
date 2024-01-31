@@ -2,6 +2,7 @@ import torch
 from pathlib import Path
 import dgl
 from torch.nn.functional import one_hot
+from data_processing.priors import compute_ot_prior
 
 # create a function named collate that takes a list of samples from the dataset and combines them into a batch
 # this might not be necessary. I think we can pass the argument collate_fn=dgl.batch to the DataLoader
@@ -10,8 +11,11 @@ def collate(graphs):
 
 class MoleculeDataset(torch.utils.data.Dataset):
 
-    def __init__(self, split: str, dataset_config: dict):
+    def __init__(self, split: str, dataset_config: dict, prior_config: dict):
         super(MoleculeDataset, self).__init__()
+
+        self.prior_config = prior_config
+        self.use_ot_node_feats: bool = prior_config['ot_node_feats']
 
         processed_data_dir: Path = Path(dataset_config['processed_data_dir'])
 
@@ -45,6 +49,9 @@ class MoleculeDataset(torch.utils.data.Dataset):
         atom_types = self.atom_types[node_start_idx:node_end_idx].float()
         atom_charges = self.atom_charges[node_start_idx:node_end_idx].long()
 
+        # remove COM from positions
+        positions = positions - positions.mean(dim=0, keepdim=True)
+
         # get data pertaining to edges for this molecule
         bond_types = self.bond_types[edge_start_idx:edge_end_idx].int()
         bond_idxs = self.bond_idxs[edge_start_idx:edge_end_idx].long()
@@ -69,7 +76,7 @@ class MoleculeDataset(torch.utils.data.Dataset):
         # one-hot encode edge labels and atom charges
         edge_labels = one_hot(edge_labels.to(torch.int64), num_classes=5).float()
         try:
-            atom_charges = one_hot(atom_charges + 2, num_classes=6) # hard-coded assumption that charges are in range [-2, 3]
+            atom_charges = one_hot(atom_charges + 2, num_classes=6).float() # hard-coded assumption that charges are in range [-2, 3]
         except Exception as e:
             print('an atom charge outside of the expected range was encountered')
             print(f'max atom charge: {atom_charges.max()}, min atom charge: {atom_charges.min()}')
@@ -85,6 +92,19 @@ class MoleculeDataset(torch.utils.data.Dataset):
         g.ndata['x_1_true'] = positions
         g.ndata['a_1_true'] = atom_types
         g.ndata['c_1_true'] = atom_charges
+
+        # sample prior with OT alignment on node features if necessary
+        if self.use_ot_node_feats:
+            dst_dict = {
+                'x': positions,
+                'a': atom_types,
+                'c': atom_charges
+            }
+
+            prior_node_feats = compute_ot_prior(dst_dict, self.prior_config['position_std'])
+
+            for feat in prior_node_feats:
+                g.ndata[f'{feat}_0'] = prior_node_feats[feat]
 
 
         return g

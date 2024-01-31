@@ -3,16 +3,16 @@ training:
   batch_size: 8
   num_workers: 0
   trainer_args:
-    max_epochs: 2
+    max_epochs: 3
     accelerator: gpu
     devices: 1
     accumulate_grad_batches: 1
-    limit_val_batches: 0.01
+    limit_val_batches: 0.25
 
   evaluation:
     mols_to_sample: 64 # how many molecules to sample during evaluation
-    sample_interval: 0.05 # how often to sample molecules during training, measured in epochs
-    val_loss_interval: 1 # how often to compute validation set loss during training, measured in epochs
+    sample_interval: 1.0 # how often to sample molecules during training, measured in epochs
+    val_loss_interval: 0.5 # how often to compute validation set loss during training, measured in epochs
 
 wandb:
   project: mol-fm
@@ -41,13 +41,17 @@ checkpointing:
   # every_n_epochs: 1
 
 mol_fm:
-  position_prior_std: 1.0
   time_scaled_loss: True
   total_loss_weights:
     x: 1.0
     a: 1.0
     c: 1.0
     e: 1.0
+  prior_config:
+    ot_node_feats: True
+    position_std: 1.0
+    biased_edge_prior: False
+    edge_bias_center: [0.8]
 
 vector_field:
   n_vec_channels: 16

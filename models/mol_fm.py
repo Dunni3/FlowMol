@@ -23,22 +23,20 @@ class MolFM(pl.LightningModule):
 
     def __init__(self,
                  atom_type_map: List[str],               
-                 batches_per_epoch: int,
                  n_atoms_hist_file: str,
                  n_atom_charges: int = 6,
                  n_bond_types: int = 5,
                  sample_interval: float = 1.0, # how often to sample molecules from the model, measured in epochs
                  n_mols_to_sample: int = 64, # how many molecules to sample from the model during each sample/eval step during training
                  time_scaled_loss: bool = True,
-                 position_prior_std: float = 1.0,
                  total_loss_weights: Dict[str, float] = {}, 
                  lr_scheduler_config: dict = {},
                  interpolant_scheduler_config: dict = {},
-                 vector_field_config: dict = {}
+                 vector_field_config: dict = {},
+                 prior_config: dict = {}
                  ):
         super().__init__()
 
-        self.batches_per_epoch = batches_per_epoch
         self.lr_scheduler_config = lr_scheduler_config
         self.atom_type_map = atom_type_map
         self.n_atom_types = len(atom_type_map)
@@ -46,7 +44,7 @@ class MolFM(pl.LightningModule):
         self.n_bond_types = n_bond_types
         self.total_loss_weights = total_loss_weights
         self.time_scaled_loss = time_scaled_loss
-        self.position_prior_std = position_prior_std
+        self.prior_config = prior_config
 
         # create a dictionary mapping feature -> number of categories
         self.n_cat_dict = {
@@ -98,6 +96,10 @@ class MolFM(pl.LightningModule):
         self.save_hyperparameters()
 
     def training_step(self, g: dgl.DGLGraph, batch_idx: int):
+
+        # check if self has the attribute batches_per_epoch
+        if not hasattr(self, 'batches_per_epoch'):
+            self.batches_per_epoch = len(self.trainer.train_dataloader)
 
         # compute epoch as a float
         epoch_exact = self.current_epoch + batch_idx/self.batches_per_epoch
@@ -170,11 +172,14 @@ class MolFM(pl.LightningModule):
         upper_edge_mask = get_upper_edge_mask(g)
 
         # get initial COM of each molecule and remove the COM from the atom positions
-        init_coms = dgl.readout_nodes(g, feat='x_1_true', op='mean')
-        g.ndata['x_1_true'] = g.ndata['x_1_true'] - init_coms[node_batch_idx]
+        # this step is now done in MoleculeDataset.__getitem__ method, a necessary adjustment to do OT alignment on
+        # the prior during the __getitem__ method
+        # init_coms = dgl.readout_nodes(g, feat='x_1_true', op='mean')
+        # g.ndata['x_1_true'] = g.ndata['x_1_true'] - init_coms[node_batch_idx]
 
         # sample molecules from prior
         g = self.sample_prior(g, node_batch_idx, upper_edge_mask)
+        raise NotImplementedError
 
         # sample timepoints for each molecule in the batch
         t = torch.rand(batch_size, device=device).float()
