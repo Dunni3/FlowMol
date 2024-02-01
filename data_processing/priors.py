@@ -16,7 +16,9 @@ def compute_ot_prior(dst_dict, pos_prior_std: float = 4.0):
         if feat in cat_features:
             prior_feat = uniform_simplex_prior(dst_feat.shape[0], d=dst_feat.shape[1])
         else:
+            assert feat == 'x', "there is a non-categorical feature that is not position, this is not supported yet."
             prior_feat = torch.randn(dst_feat.shape) * pos_prior_std
+            prior_feat = prior_feat - prior_feat.mean(dim=0, keepdim=True)
 
         # solve assignment problem
         cost_mat = torch.cdist(dst_feat, prior_feat, p=2)
