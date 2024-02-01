@@ -103,7 +103,10 @@ class MoleculeDataset(torch.utils.data.Dataset):
                 'c': atom_charges
             }
 
-            prior_node_feats = compute_ot_prior(dst_dict, self.prior_config['position_std'])
+            prior_node_feats = compute_ot_prior(dst_dict, 
+                                                pos_prior_std=self.prior_config['position_std'],
+                                                rotate_positions=self.prior_config['rotate_positions']
+                                                )
 
             for feat in prior_node_feats:
                 g.ndata[f'{feat}_0'] = prior_node_feats[feat]

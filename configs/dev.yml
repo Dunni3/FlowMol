@@ -49,6 +49,7 @@ mol_fm:
     e: 1.0
   prior_config:
     ot_node_feats: True
+    rotate_positions: True
     position_std: 1.0
     biased_edge_prior: True
     no_bond_prob: 0.75
