@@ -2,7 +2,7 @@ import torch
 from pathlib import Path
 import dgl
 from torch.nn.functional import one_hot
-from data_processing.priors import compute_ot_prior
+from data_processing.priors import compute_ot_prior, biased_simplex_prior, uniform_simplex_prior
 
 # create a function named collate that takes a list of samples from the dataset and combines them into a batch
 # this might not be necessary. I think we can pass the argument collate_fn=dgl.batch to the DataLoader
@@ -14,8 +14,10 @@ class MoleculeDataset(torch.utils.data.Dataset):
     def __init__(self, split: str, dataset_config: dict, prior_config: dict):
         super(MoleculeDataset, self).__init__()
 
+        # unpack some configs regarding the prior
         self.prior_config = prior_config
         self.use_ot_node_feats: bool = prior_config['ot_node_feats']
+        self.use_biased_edge_prior: bool = prior_config['biased_edge_prior']
 
         processed_data_dir: Path = Path(dataset_config['processed_data_dir'])
 
@@ -64,7 +66,7 @@ class MoleculeDataset(torch.utils.data.Dataset):
         adj[bond_idxs[:,0], bond_idxs[:,1]] = bond_types
 
         # get upper triangle of adjacency matrix
-        upper_edge_idxs = torch.triu_indices(n_atoms, n_atoms, offset=1)
+        upper_edge_idxs = torch.triu_indices(n_atoms, n_atoms, offset=1) # has shape (2, n_upper_edges)
         upper_edge_labels = adj[upper_edge_idxs[0], upper_edge_idxs[1]]
 
         # get lower triangle edges by swapping source and destination of upper_edge_idxs
@@ -74,7 +76,7 @@ class MoleculeDataset(torch.utils.data.Dataset):
         edge_labels = torch.cat((upper_edge_labels, upper_edge_labels))
 
         # one-hot encode edge labels and atom charges
-        edge_labels = one_hot(edge_labels.to(torch.int64), num_classes=5).float()
+        edge_labels = one_hot(edge_labels.to(torch.int64), num_classes=5).float() # hard-coded assumption of 5 bond types
         try:
             atom_charges = one_hot(atom_charges + 2, num_classes=6).float() # hard-coded assumption that charges are in range [-2, 3]
         except Exception as e:
@@ -106,5 +108,19 @@ class MoleculeDataset(torch.utils.data.Dataset):
             for feat in prior_node_feats:
                 g.ndata[f'{feat}_0'] = prior_node_feats[feat]
 
+        # sample the prior for the edge features
+        # note the hard-coded assumption of 5 bond types
+        n_upper_edges = upper_edge_idxs.shape[1]
+        if self.use_biased_edge_prior:
+            edge_prior = biased_simplex_prior(n_upper_edges, 
+                                              zero_order_weight=self.prior_config['no_bond_prob'], 
+                                              std=self.prior_config['bond_order_std'], 
+                                              d=5)
+        else:
+            edge_prior = uniform_simplex_prior(n_upper_edges, d=5)
+
+        g.edata['e_0'] = torch.zeros_like(g.edata['e_1_true'])
+        g.edata['e_0'][:n_upper_edges] = edge_prior # edge_prior has shape (n_upper_edges, 5)
+        g.edata['e_0'][n_upper_edges:] = edge_prior
 
         return g

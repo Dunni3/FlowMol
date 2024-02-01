@@ -12,6 +12,7 @@ from .interpolant_scheduler import InterpolantScheduler
 from .vector_field import GVPVectorField
 
 from data_processing.utils import build_edge_idxs, get_upper_edge_mask, get_batch_idxs
+from data_processing.priors import uniform_simplex_prior, biased_simplex_prior
 from analysis.molecule_builder import SampledMolecule
 from analysis.metrics import SampleAnalyzer
 
@@ -44,7 +45,22 @@ class MolFM(pl.LightningModule):
         self.n_bond_types = n_bond_types
         self.total_loss_weights = total_loss_weights
         self.time_scaled_loss = time_scaled_loss
+
+        # unpack some features of the prior
         self.prior_config = prior_config
+        try:
+            self.position_prior_std: float = prior_config['position_std']
+            self.biased_edge_prior: bool = prior_config['biased_edge_prior']
+        except KeyError:
+            print('WARNING: position_std or biased_edge_prior not found in prior_config dictionary, using default values')
+            self.position_prior_std = 1.0
+            self.biased_edge_prior = False
+
+        # check that essential features are in the prior_config dictionary
+        if self.biased_edge_prior:
+            for key in ['no_bond_prob', 'bond_order_std']:
+                if key not in prior_config:
+                    raise ValueError(f'biased_edge_prior is set to True, but {key} is not in the prior_config dictionary')
 
         # create a dictionary mapping feature -> number of categories
         self.n_cat_dict = {
@@ -178,8 +194,10 @@ class MolFM(pl.LightningModule):
         # g.ndata['x_1_true'] = g.ndata['x_1_true'] - init_coms[node_batch_idx]
 
         # sample molecules from prior
-        g = self.sample_prior(g, node_batch_idx, upper_edge_mask)
-        raise NotImplementedError
+        # we used to sample the prior in the forward pass at training time,
+        # but now at training time we sample the prior in the __getitem__ method of MoleculeDataset
+        # this is so that we can compute OT alignments in parallel (since they cannot be done in batch)
+        # g = self.sample_prior(g, node_batch_idx, upper_edge_mask)
 
         # sample timepoints for each molecule in the batch
         t = torch.rand(batch_size, device=device).float()
@@ -233,7 +251,6 @@ class MolFM(pl.LightningModule):
         # sample atom positions from prior
         # TODO: we should set the standard deviation of atom position prior to be like the average distance to the COM in the training set
         # or perhaps the average distance to COM for molecules with the same number of atoms
-        # TODO: can we implement OT flow matching for the prior? equivariant flow-matching?
         num_nodes = g.num_nodes()
         device = g.device
         g.ndata['x_0'] = torch.randn(num_nodes, 3, device=device)*self.position_prior_std
@@ -247,15 +264,22 @@ class MolFM(pl.LightningModule):
             n_cats = self.n_cat_dict[node_feat]
 
             # sample from simplex prior
-            g.ndata[f'{node_feat}_0'] = self.exp_dist.sample((num_nodes, n_cats)).to(device)
-            g.ndata[f'{node_feat}_0'] = g.ndata[f'{node_feat}_0'] / g.ndata[f'{node_feat}_0'].sum(dim=1, keepdim=True)
+            g.ndata[f'{node_feat}_0'] = uniform_simplex_prior(num_nodes, d=n_cats).to(device)
 
         # sample bond types from simplex prior - making sure the sample for the lower triangle is the same as the upper triangle
         n_edges = g.num_edges()
         n_upper_edges = n_edges // 2
         g.edata['e_0'] = torch.zeros(n_edges, self.n_bond_types, device=device).float()
-        e_0_upper = self.exp_dist.sample((n_upper_edges, self.n_bond_types)).to(device)
-        e_0_upper = e_0_upper / e_0_upper.sum(dim=1, keepdim=True)
+        # e_0_upper = self.exp_dist.sample((n_upper_edges, self.n_bond_types)).to(device)
+        # e_0_upper = e_0_upper / e_0_upper.sum(dim=1, keepdim=True)
+        
+        if self.biased_edge_prior:
+            e_0_upper = biased_simplex_prior(n_upper_edges, 
+                                             zero_order_weight=self.prior_config['no_bond_prob'], 
+                                             std=self.prior_config['bond_order_std'], 
+                                             d=5).to(device)
+        else:
+            e_0_upper = uniform_simplex_prior(n_upper_edges, d=5).to(device)
         g.edata['e_0'][upper_edge_mask] = e_0_upper
         g.edata['e_0'][~upper_edge_mask] = e_0_upper
         return g

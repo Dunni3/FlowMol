@@ -50,8 +50,9 @@ mol_fm:
   prior_config:
     ot_node_feats: True
     position_std: 1.0
-    biased_edge_prior: False
-    edge_bias_center: [0.8]
+    biased_edge_prior: True
+    no_bond_prob: 0.75
+    bond_order_std: 0.2
 
 vector_field:
   n_vec_channels: 16

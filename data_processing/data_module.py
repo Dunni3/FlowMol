@@ -14,13 +14,14 @@ class MoleculeDataModule(pl.LightningDataModule):
         self.dataset_config = dataset_config
         self.batch_size = batch_size
         self.num_workers = num_workers
+        self.prior_config = prior_config
         self.save_hyperparameters()
 
     def setup(self, stage: str):
 
         if stage == 'fit':
-            self.train_dataset = MoleculeDataset('train', self.dataset_config)
-            self.val_dataset = MoleculeDataset('val', self.dataset_config)
+            self.train_dataset = MoleculeDataset('train', self.dataset_config, prior_config=self.prior_config)
+            self.val_dataset = MoleculeDataset('val', self.dataset_config, prior_config=self.prior_config)
 
     def train_dataloader(self):
         # at one point in time, I wrote custom batch samplers for sampling batches of molecules which had the same number of atoms

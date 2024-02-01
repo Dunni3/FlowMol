@@ -6,7 +6,6 @@ from torch.nn.functional import softmax
 def compute_ot_prior(dst_dict, pos_prior_std: float = 4.0):
     prior_dict = {}
     cat_features = ['a', 'c', 'e']
-    exp_dist = Exponential(torch.tensor(1.0))
 
     for feat in dst_dict.keys():
 
@@ -15,8 +14,7 @@ def compute_ot_prior(dst_dict, pos_prior_std: float = 4.0):
 
         # sample prior
         if feat in cat_features:
-            prior_feat = exp_dist.sample(dst_feat.shape)
-            prior_feat = prior_feat / prior_feat.sum(dim=1, keepdim=True)
+            prior_feat = uniform_simplex_prior(dst_feat.shape[0], d=dst_feat.shape[1])
         else:
             prior_feat = torch.randn(dst_feat.shape) * pos_prior_std
 
@@ -31,7 +29,7 @@ def compute_ot_prior(dst_dict, pos_prior_std: float = 4.0):
 
 def biased_simplex_prior(n_samples, zero_order_weight: float = 0.75, std: float = 0.2, d=5):
     """
-    Generate samples from a simplex which are biased towards the 0-indexed category
+    Generate samples from a simplex which are biased towards the 0-indexed category.
     """
     non_zero_weight = (1 - zero_order_weight) / (d - 1)
     mu = torch.ones(d)*non_zero_weight
@@ -39,3 +37,12 @@ def biased_simplex_prior(n_samples, zero_order_weight: float = 0.75, std: float 
     simplex_sample = mu.unsqueeze(0) + torch.randn(n_samples, d)*std
     simplex_sample = softmax(simplex_sample/(1/d), dim=1)
     return simplex_sample
+
+def uniform_simplex_prior(n_samples, d=5):
+    """
+    Generate samples from a uniform distribution on a simplex.
+    """
+    exp_dist = Exponential(torch.tensor(1.0))
+    sample = exp_dist.sample((n_samples, d))
+    sample = sample / sample.sum(dim=1, keepdim=True)
+    return sample
