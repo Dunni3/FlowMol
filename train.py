@@ -4,7 +4,7 @@ import yaml
 import dgl
 from torch.utils.data import DataLoader
 import pytorch_lightning as pl
-from pytorch_lightning.callbacks import LearningRateMonitor
+from pytorch_lightning.callbacks import LearningRateMonitor, TQDMProgressBar
 from pytorch_lightning import seed_everything
 from pytorch_lightning.loggers import WandbLogger
 from pytorch_lightning.utilities import rank_zero_only
@@ -172,7 +172,8 @@ if __name__ == "__main__":
 
     # create trainer
     trainer_config['use_distributed_sampler'] = True
-    trainer = pl.Trainer(logger=wandb_logger, **trainer_config, callbacks=[checkpoint_callback])
+    pbar_callback = TQDMProgressBar(refresh_rate=20)
+    trainer = pl.Trainer(logger=wandb_logger, **trainer_config, callbacks=[checkpoint_callback, pbar_callback])
     
     # train
     trainer.fit(model, datamodule=data_module, ckpt_path=ckpt_file)
