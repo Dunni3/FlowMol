@@ -171,7 +171,7 @@ if __name__ == "__main__":
         trainer_config['limit_train_batches'] = 100
 
     # create trainer
-    trainer_config['use_distributed_sampler'] = False
+    trainer_config['use_distributed_sampler'] = True
     trainer = pl.Trainer(logger=wandb_logger, **trainer_config, callbacks=[checkpoint_callback])
     
     # train
