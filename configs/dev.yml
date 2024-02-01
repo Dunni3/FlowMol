@@ -27,13 +27,21 @@ lr_scheduler:
   restart_interval: 0 # 0 means no restart
   restart_type: 'linear'
 
+# dataset:
+#   raw_data_dir: data/raw/
+#   processed_data_dir: data/geom_dev
+#   # in order to disbale explicit hydrogens, just remove 'H' from atom_map
+#   atom_map: ['C', 'H', 'N', 'O', 'F', 'P', 'S', 'Cl', 'Br', 'I'] # TODO: check the list of atoms contained in geomdrugs
+#   dataset_name: geom # only geom is supported for now
+#   dataset_size: 500
+
 dataset:
-  raw_data_dir: data/raw/
-  processed_data_dir: data/geom_dev
+  raw_data_dir: data/qm9_raw
+  processed_data_dir: data/qm9
   # in order to disbale explicit hydrogens, just remove 'H' from atom_map
-  atom_map: ['C', 'H', 'N', 'O', 'F', 'P', 'S', 'Cl', 'Br', 'I'] # TODO: check the list of atoms contained in geomdrugs
-  dataset_name: geom # only geom is supported for now
-  dataset_size: 500
+  atom_map: ['C', 'H', 'N', 'O', 'F',] 
+  dataset_name: qm9 # must be qm9 or geom
+  dataset_size: 
 
 checkpointing:
   save_last: True

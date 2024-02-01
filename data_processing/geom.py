@@ -64,7 +64,7 @@ class MoleculeFeaturizer():
 
 
 
-def featurize_molecule(molecule: Chem.rdchem.Mol, atom_map_dict: Dict[str, int], explicit_hydrogens=False):
+def featurize_molecule(molecule: Chem.rdchem.Mol, atom_map_dict: Dict[str, int], explicit_hydrogens=True):
 
     # if explicit_hydrogens is False, remove all hydrogens from the molecule
     if not explicit_hydrogens:
