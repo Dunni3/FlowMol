@@ -205,7 +205,7 @@ if __name__ == "__main__":
     train, val, test = np.split(df.sample(frac=1, random_state=42), [n_train, n_val + n_train])
     
 
-    split_names = ['train', 'val', 'test']
+    split_names = ['train_data', 'val_data', 'test_data']
     for split_df, split_name in zip([train, val, test], split_names):
         process_split(split_df, split_name, args, dataset_config)
 

@@ -21,7 +21,7 @@ class MoleculeDataset(torch.utils.data.Dataset):
 
         processed_data_dir: Path = Path(dataset_config['processed_data_dir'])
 
-        if dataset_config['dataset_name'] == 'geom':
+        if dataset_config['dataset_name'] in ['geom', 'qm9']:
             data_file = processed_data_dir / f'{split}_data_processed.pt'
         else:
             raise NotImplementedError('unsupported dataset_name')
