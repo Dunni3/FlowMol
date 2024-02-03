@@ -22,11 +22,6 @@ def parse_args():
     p.add_argument('--config', type=Path, default=None)
     p.add_argument('--resume', type=Path, default=None, help='Path to run directory or checkpoint file to resume from')
 
-    # TODO: make these arguments do something
-    p.add_argument('--batch_size', type=int, default=64)
-    p.add_argument('--lr', type=float, default=1e-4)
-    p.add_argument('--warmup_length', type=float, default=1)
-
     # create a boolean argument for whether or not this is a debug run
     p.add_argument('--debug', action='store_true')
 

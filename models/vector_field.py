@@ -156,7 +156,7 @@ class GVPVectorField(nn.Module):
                         else:
                             updater_idx = 0
 
-                        node_positions = self.node_postion_updaters[updater_idx](node_scalar_features, node_positions, node_vec_features)
+                        node_positions = self.node_position_updaters[updater_idx](node_scalar_features, node_positions, node_vec_features)
                         edge_features = self.edge_updaters[updater_idx](g, node_scalar_features, edge_features)
 
                         if not (conv_idx == len(self.conv_layers) - 1 and recycle_idx == self.n_recycles - 1):
