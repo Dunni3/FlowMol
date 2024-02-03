@@ -20,6 +20,7 @@ class GVPVectorField(nn.Module):
                     convs_per_update: int = 2,
                     n_message_gvps: int = 3, 
                     n_update_gvps: int = 3,
+                    separate_mol_updaters: bool = False,
                     message_norm: Union[float, str] = 100,
                     rbf_dmax = 20,
                     rbf_dim = 16
@@ -34,6 +35,7 @@ class GVPVectorField(nn.Module):
         self.n_vec_channels = n_vec_channels
         self.message_norm = message_norm
         self.n_recycles = n_recycles
+        self.separate_mol_updaters: bool = separate_mol_updaters
 
         self.convs_per_update = convs_per_update
         self.n_molecule_updates = n_molecule_updates
@@ -76,8 +78,16 @@ class GVPVectorField(nn.Module):
             )
         self.conv_layers = nn.ModuleList(self.conv_layers)
 
-        self.node_postion_updater = NodePositionUpdate(n_hidden_scalars, n_vec_channels, n_gvps=3, n_cp_feats=n_cp_feats)
-        self.edge_updater = EdgeUpdate(n_hidden_scalars, n_hidden_edge_feats)
+        # create molecule update layers
+        self.node_position_updaters = nn.ModuleList([])
+        self.edge_updaters = nn.ModuleList([])
+        if self.separate_mol_updaters:
+            n_updaters = n_molecule_updates
+        else:
+            n_updaters = 1
+        for _ in range(n_updaters):
+            self.node_position_updaters.append(NodePositionUpdate(n_hidden_scalars, n_vec_channels, n_gvps=3, n_cp_feats=n_cp_feats))
+            self.edge_updaters.append(EdgeUpdate(n_hidden_scalars, n_hidden_edge_feats))
 
 
         self.node_output_head = nn.Sequential(
@@ -128,6 +138,7 @@ class GVPVectorField(nn.Module):
             for recycle_idx in range(self.n_recycles):
                 for conv_idx, conv in enumerate(self.conv_layers):
 
+                    # perform a single convolution which updates node scalar and vector features (but not positions)
                     node_scalar_features, node_vec_features = conv(g, 
                             scalar_feats=node_scalar_features, 
                             coord_feats=node_positions,
@@ -136,9 +147,17 @@ class GVPVectorField(nn.Module):
                             x_diff=x_diff,
                             d=d
                     )
+
+                    # every convs_per_update convolutions, update the node positions and edge features
                     if conv_idx != 0 and (conv_idx + 1) % self.convs_per_update == 0:
-                        node_positions = self.node_postion_updater(node_scalar_features, node_positions, node_vec_features)
-                        edge_features = self.edge_updater(g, node_scalar_features, edge_features)
+
+                        if self.separate_mol_updaters:
+                            updater_idx = conv_idx // self.convs_per_update
+                        else:
+                            updater_idx = 0
+
+                        node_positions = self.node_postion_updaters[updater_idx](node_scalar_features, node_positions, node_vec_features)
+                        edge_features = self.edge_updaters[updater_idx](g, node_scalar_features, edge_features)
 
                         if not (conv_idx == len(self.conv_layers) - 1 and recycle_idx == self.n_recycles - 1):
                             x_diff, d = self.precompute_distances(g, node_positions)

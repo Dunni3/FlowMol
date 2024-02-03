@@ -15,6 +15,7 @@ import sys
 # from models.ligand_edm import LigandEquivariantDiffusion
 from models.mol_fm import MolFM
 from data_processing.data_module import MoleculeDataModule
+from data_processing.sweep_config import merge_config_and_args, register_hyperparameter_args
 
 def parse_args():
     p = argparse.ArgumentParser(description='Training Script')
@@ -31,6 +32,8 @@ def parse_args():
 
     p.add_argument('--seed', type=int, default=None)
 
+    # create command line arguments for model hyperparameters
+    register_hyperparameter_args(p)
 
     args = p.parse_args()
 
@@ -70,6 +73,9 @@ if __name__ == "__main__":
     # process config file into dictionary
     with open(config_file, 'r') as f:
         config = yaml.load(f, Loader=yaml.FullLoader)
+
+    # merge the config file with the command line arguments
+    config = merge_config_and_args(config, args)
 
     # determine if we are doing distributed training
     if config['training']['trainer_args']['devices'] > 1:
