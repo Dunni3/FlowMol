@@ -136,29 +136,25 @@ if __name__ == "__main__":
     wandb_logger = WandbLogger(config=config, **wandb_config)
     # wandb_logger.experiment # not sure why this line is here...
 
-    # get run directory
-    run_dir = output_dir / run_id
-    if rank_zero_only.rank == 0:
+    # save the config file to the run directory
+    # include the run_id so we can resume this run later
+    if args.resume is None and rank_zero_only.rank == 0:
+        wandb_logger.experiment
+        run_id = wandb_logger.experiment.id
+        config['resume'] = {}
+        config['resume']['run_id'] = run_id
+        config['wandb']['name'] = wandb_logger.experiment.name
+        run_dir = output_dir / f'{wandb_logger.experiment.name}_{run_id}'
         run_dir.mkdir(parents=True, exist_ok=True)
-
-        # print the run directory
         print('Results are being written to: ', run_dir)
+        with open(run_dir / 'config.yaml', 'w') as f:
+            yaml.dump(config, f)
 
     # create ModelCheckpoint callback
     checkpoints_dir = run_dir / 'checkpoints'
     checkpoint_config = config['checkpointing']
     checkpoint_config['dirpath'] = str(checkpoints_dir)
     checkpoint_callback = pl.callbacks.ModelCheckpoint(**checkpoint_config)
-
-    # save the config file to the run directory
-    # include the run_id so we can resume this run later
-    if args.resume is None and rank_zero_only.rank == 0:
-        wandb_logger.experiment
-        config['resume'] = {}
-        config['resume']['run_id'] = run_id
-        config['wandb']['name'] = wandb.run.name
-        with open(run_dir / 'config.yaml', 'w') as f:
-            yaml.dump(config, f)
 
     # get pl trainer config
     trainer_config = config['training']['trainer_args']
