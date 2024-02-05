@@ -11,8 +11,9 @@ ENV_NAME=$(basename "$CONDA_PREFIX")
 echo "Installing things into the environment '$ENV_NAME'"
 
 set -e
-mamba install pytorch torchvision torchaudio pytorch-cuda=11.8 -c pytorch -c nvidia -y
+mamba install pytorch torchvision torchaudio pytorch-cuda=12.1 -c pytorch -c nvidia -y
 mamba install pytorch-cluster pytorch-scatter -c pyg -y
-mamba install -c dglteam/label/cu118 dgl -y
+mamba install -c dglteam/label/cu121 dgl -y
 mamba install -c conda-forge pytorch-lightning -y
 mamba install -c conda-forge rdkit -y
+pip install wandb --no-input
