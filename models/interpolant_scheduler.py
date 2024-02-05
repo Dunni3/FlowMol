@@ -34,6 +34,11 @@ class InterpolantScheduler(nn.Module):
         # self.cosine_params is a tensor of shape (n_feats,) containing the cosine parameters for each feature
         self.cosine_params = cosine_params
 
+        if schedule_type == 'cosine' and (cosine_params < 1.0).any():
+            self.clamp_t = True
+        else:
+            self.clamp_t = False
+
     def update_device(self, t):
         if self.schedule_type == 'cosine' and t.device != self.device:
             self.cosine_params = self.cosine_params.to(t.device)
@@ -76,6 +81,9 @@ class InterpolantScheduler(nn.Module):
     
     def cosine_alpha_t_prime(self, t: torch.Tensor) -> Dict[str, torch.Tensor]:
         self.update_device(t)
+
+        if self.clamp_t:
+            t = torch.clamp_(t, min=1e-9)
 
         nu = self.cosine_params
         t = t.unsqueeze(-1)
