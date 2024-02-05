@@ -17,7 +17,7 @@ def register_hyperparameter_args(p: argparse.ArgumentParser) -> argparse.Argumen
     # prior parameters
     p.add_argument('--ot_node_feats', type=str, default=None, help='whether to solve assignment problem on node features, true or false')
     p.add_argument('--rotate_positions', type=str, default=None, help='whether to rotate positions for prior alignment, true or false')
-    p.add_argument('--positions_std', type=float, default=None, help='standard deviation of prior distribution for positions')
+    p.add_argument('--position_std', type=float, default=None, help='standard deviation of prior distribution for positions')
     p.add_argument('--biased_edge_prior', type=str, default=None, help='whether to use a biased edge prior, true or false')
     p.add_argument('--no_bond_prob', type=float, default=None, help='probability of no bond for biased edge prior')
     p.add_argument('--bond_order_std', type=float, default=None, help='standard deviation of noising for biased edge prior')
@@ -36,6 +36,9 @@ def register_hyperparameter_args(p: argparse.ArgumentParser) -> argparse.Argumen
     p.add_argument('--message_norm', type=str, default=None, help='how to normalize messages, number or "mean"')
     p.add_argument('--rbf_dmax', type=float, default=None, help='maximum distance for RBF kernel')
     p.add_argument('--rbf_dim', type=int, default=None, help='dimension of RBF kernel')
+
+    # mol-fm configs
+    p.add_argument('--time_scaled_loss', type=str, default=None, help='whether to scale loss by time, true or false')
 
 
 
@@ -68,7 +71,7 @@ def merge_config_and_args(config: dict, args: argparse.Namespace) -> dict:
             config['mol_fm']['prior_config'][arg] = strtobool(getattr(args, arg))
 
     # prior parameters which are numeric
-    for arg in ['positions_std', 'no_bond_prob', 'bond_order_std']:
+    for arg in ['position_std', 'no_bond_prob', 'bond_order_std']:
         if getattr(args, arg) is not None:
             config['mol_fm']['prior_config'][arg] = getattr(args, arg)
 
@@ -78,7 +81,7 @@ def merge_config_and_args(config: dict, args: argparse.Namespace) -> dict:
             config['vector_field'][arg] = strtobool(getattr(args, arg))
 
     # vector field configs which are numeric
-    for arg in ['n_vec_channels', 'n_hidden_scalars', 'n_hidden_edge_feats', 'n_recycles', 'n_molecule_updates', 'convs_per_update', 'n_cp_feats', 'n_message_gvps', 'n_update_gvps', 'rbf_dim']:
+    for arg in ['n_vec_channels', 'n_hidden_scalars', 'n_hidden_edge_feats', 'n_recycles', 'n_molecule_updates', 'convs_per_update', 'n_cp_feats', 'n_message_gvps', 'n_update_gvps', 'rbf_dim', 'rbf_dmax']:
         if getattr(args, arg) is not None:
             config['vector_field'][arg] = getattr(args, arg)
 
@@ -88,6 +91,11 @@ def merge_config_and_args(config: dict, args: argparse.Namespace) -> dict:
         if message_norm.isnumeric():
             message_norm = float(message_norm)
         config['vector_field']['message_norm'] = message_norm
+
+    # mol-fm configs
+    if args.time_scaled_loss is not None:
+        config['mol_fm']['time_scaled_loss'] = strtobool(args.time_scaled_loss)
+    
 
     return config
     

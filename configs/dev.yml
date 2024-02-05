@@ -1,7 +1,7 @@
 training:
   output_dir: runs/
   batch_size: 8
-  num_workers: 0
+  num_workers: 2
   trainer_args:
     max_epochs: 3
     accelerator: gpu
