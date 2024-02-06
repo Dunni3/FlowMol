@@ -396,7 +396,8 @@ class MolFM(pl.LightningModule):
                 t=torch.full((g.batch_size,), t_i, device=g.device),
                 node_batch_idx=node_batch_idx,
                 upper_edge_mask=upper_edge_mask,
-                apply_softmax=True
+                apply_softmax=True,
+                remove_com=True
             )
 
             # if we are using the se(3)-quotient subspace, then we need to align the current positions (x_t) to the predicted positions (x_1)

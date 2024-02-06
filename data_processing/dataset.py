@@ -53,8 +53,7 @@ class MoleculeDataset(torch.utils.data.Dataset):
         atom_charges = self.atom_charges[node_start_idx:node_end_idx].long()
 
         # remove COM from positions
-        if self.x_subspace == 'com-free':
-            positions = positions - positions.mean(dim=0, keepdim=True)
+        positions = positions - positions.mean(dim=0, keepdim=True)
 
         # get data pertaining to edges for this molecule
         bond_types = self.bond_types[edge_start_idx:edge_end_idx].int()

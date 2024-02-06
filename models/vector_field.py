@@ -109,7 +109,7 @@ class GVPVectorField(nn.Module):
         pass
 
     def pred_dst(self, g: dgl.DGLGraph, t: torch.Tensor, 
-                 node_batch_idx: torch.Tensor, upper_edge_mask: torch.Tensor, apply_softmax=False):
+                 node_batch_idx: torch.Tensor, upper_edge_mask: torch.Tensor, apply_softmax=False, remove_com=False):
         """Predict x_1 (trajectory destination) given x_t"""
         device = g.device
 
@@ -176,7 +176,7 @@ class GVPVectorField(nn.Module):
             edge_logits = self.to_edge_logits(ue_feats + le_feats)
 
             # project node positions back into zero-COM subspace
-            if self.x_subspace == 'com-free':
+            if remove_com:
                 g.ndata['x_1_pred'] = node_positions
                 g.ndata['x_1_pred'] = g.ndata['x_1_pred'] - dgl.readout_nodes(g, feat='x_1_pred', op='mean')[node_batch_idx]
                 node_positions = g.ndata['x_1_pred']
