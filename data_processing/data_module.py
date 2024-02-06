@@ -26,6 +26,15 @@ class MoleculeDataModule(pl.LightningDataModule):
             self.val_dataset = MoleculeDataset('val', self.dataset_config, prior_config=self.prior_config)
 
     def train_dataloader(self):
+        dataloader = DataLoader(self.train_dataset, 
+                                batch_size=self.batch_size, 
+                                shuffle=True, 
+                                collate_fn=dgl.batch, 
+                                num_workers=self.num_workers)
+
+        return dataloader
+    
+        # i wrote the following code under the assumption that we had to align predictions to the target, but i don't think this is true
         if self.x_subspace == 'se3-quotient':
             # if we are using the se3-quotient subspace, then we need to do same-size sampling so that we can efficiently compute rigid aligments during training
             if self.distributed:
@@ -47,6 +56,13 @@ class MoleculeDataModule(pl.LightningDataModule):
         return dataloader
     
     def val_dataloader(self):
+        dataloader = DataLoader(self.train_dataset, 
+                                batch_size=self.batch_size*2, 
+                                shuffle=True, 
+                                collate_fn=dgl.batch, 
+                                num_workers=self.num_workers)
+        return dataloader
+
         if self.x_subspace == 'se3-quotient':
             # if we are using the se3-quotient subspace, then we need to do same-size sampling so that we can efficiently compute rigid aligments during training
             if self.distributed:

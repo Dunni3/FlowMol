@@ -174,7 +174,7 @@ if __name__ == "__main__":
 
     # create trainer
     if distributed and x_subspace == 'se3-quotient':
-        trainer_config['use_distributed_sampler'] = False
+        trainer_config['use_distributed_sampler'] = True
     else:
         trainer_config['use_distributed_sampler'] = True
         
