@@ -20,6 +20,7 @@ class GVPVectorField(nn.Module):
                     convs_per_update: int = 2,
                     n_message_gvps: int = 3, 
                     n_update_gvps: int = 3,
+                    x_subspace: str = 'se3-quotient',
                     separate_mol_updaters: bool = False,
                     message_norm: Union[float, str] = 100,
                     rbf_dmax = 20,
@@ -35,6 +36,7 @@ class GVPVectorField(nn.Module):
         self.n_vec_channels = n_vec_channels
         self.message_norm = message_norm
         self.n_recycles = n_recycles
+        self.x_subspace = x_subspace
         self.separate_mol_updaters: bool = separate_mol_updaters
 
         self.convs_per_update = convs_per_update
@@ -174,9 +176,10 @@ class GVPVectorField(nn.Module):
             edge_logits = self.to_edge_logits(ue_feats + le_feats)
 
             # project node positions back into zero-COM subspace
-            g.ndata['x_1_pred'] = node_positions
-            g.ndata['x_1_pred'] = g.ndata['x_1_pred'] - dgl.readout_nodes(g, feat='x_1_pred', op='mean')[node_batch_idx]
-            node_positions = g.ndata['x_1_pred']
+            if self.x_subspace == 'com-free':
+                g.ndata['x_1_pred'] = node_positions
+                g.ndata['x_1_pred'] = g.ndata['x_1_pred'] - dgl.readout_nodes(g, feat='x_1_pred', op='mean')[node_batch_idx]
+                node_positions = g.ndata['x_1_pred']
 
         # build a dictionary of predicted features
         dst_dict = {

@@ -4,13 +4,12 @@ import torch
 
 class SameSizeMoleculeSampler(Sampler):
 
-    def __init__(self, dataset: MoleculeDataset, batch_size: int, idxs: torch.Tensor = None, shuffle: bool = True, n_node_cutoff: int = 90, cutoff_batch_size: int = 4):
+    def __init__(self, dataset: MoleculeDataset, batch_size: int, idxs: torch.Tensor = None, shuffle: bool = True, max_num_edges: int = 40000):
         super().__init__(dataset)
         self.dataset: MoleculeDataset = dataset
         self.batch_size = batch_size
         self.shuffle = shuffle
-        self.n_node_cutoff = n_node_cutoff
-        self.cutoff_batch_size = cutoff_batch_size
+        self.max_num_edges = max_num_edges
 
         if shuffle == False:
             raise NotImplementedError('shuffle=False is not implemented yet')
@@ -51,8 +50,11 @@ class SameSizeMoleculeSampler(Sampler):
             n_nodes_idx = torch.multinomial(weights, num_samples=1)
             n_nodes = n_nodes_arr[n_nodes_idx]
 
-            if n_nodes > self.n_node_cutoff:
-                batch_size = self.cutoff_batch_size
+            # compute the batch size so that the number of edges in the batch is less than or equal to self.max_num_edges
+            n_edges_per_mol = n_nodes**2 - n_nodes
+            n_edges = n_edges_per_mol*self.batch_size
+            if n_edges > self.max_num_edges:
+                batch_size = self.max_num_edges // n_edges_per_mol
             else:
                 batch_size = self.batch_size
 
@@ -62,6 +64,7 @@ class SameSizeMoleculeSampler(Sampler):
             else:
                 subsample_idxs = torch.randperm(len(idxs_with_n_nodes))[:batch_size]
                 batch_idxs = idxs_with_n_nodes[subsample_idxs]
+
             yield batch_idxs
             
 

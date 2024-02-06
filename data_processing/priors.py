@@ -4,7 +4,7 @@ import torch
 from torch.nn.functional import softmax
 
 @torch.no_grad()
-def compute_ot_prior(dst_dict, pos_prior_std: float = 4.0, rotate_positions: bool = False):
+def compute_ot_prior(dst_dict, pos_prior_std: float = 4.0, x_subspace: str = 'se3-quotient'):
     prior_dict = {}
     cat_features = ['a', 'c', 'e']
 
@@ -19,7 +19,8 @@ def compute_ot_prior(dst_dict, pos_prior_std: float = 4.0, rotate_positions: boo
         else:
             assert feat == 'x', "there is a non-categorical feature that is not position, this is not supported yet."
             prior_feat = torch.randn(dst_feat.shape) * pos_prior_std
-            prior_feat = prior_feat - prior_feat.mean(dim=0, keepdim=True)
+            if x_subspace == 'com-free':
+                prior_feat = prior_feat - prior_feat.mean(dim=0, keepdim=True)
 
         # solve assignment problem
         cost_mat = torch.cdist(dst_feat, prior_feat, p=2)
@@ -28,9 +29,14 @@ def compute_ot_prior(dst_dict, pos_prior_std: float = 4.0, rotate_positions: boo
         # reorder prior to according to optimal assignment
         prior_feat = prior_feat[prior_idx]
 
-        if feat == 'x' and rotate_positions:
+        if feat == 'x':
+            if x_subspace == 'se3-quotient':
+                pre_centered = False
+            elif x_subspace == 'com-free':
+                pre_centered = True
+
             # perform rigid alignment
-            prior_feat = rigid_alignment(prior_feat, dst_feat, pre_centered=True)
+            prior_feat = rigid_alignment(prior_feat, dst_feat, pre_centered=pre_centered)
 
         prior_dict[feat] = prior_feat
 
@@ -57,7 +63,6 @@ def uniform_simplex_prior(n_samples, d=5):
     return sample
 
 
-@torch.no_grad()
 def rigid_alignment(x_0, x_1, pre_centered=False):
     """
     See: https://en.wikipedia.org/wiki/Kabsch_algorithm
@@ -92,6 +97,76 @@ def rigid_alignment(x_0, x_1, pre_centered=False):
 
     # apply rotation to x_0_c
     x_0_aligned = x_0_c.mm(R.T)
+
+    # move x_0_aligned to its original frame
+    x_0_aligned = x_0_aligned + x_0_mean
+
+    # apply the translation
+    x_0_aligned = x_0_aligned + t
+
+    return x_0_aligned
+
+def batched_rigid_alignment(x_0, x_1, pre_centered=False):
+    """
+    See: https://en.wikipedia.org/wiki/Kabsch_algorithm
+    Alignment of two point clouds using the Kabsch algorithm.
+    Based on: https://gist.github.com/bougui505/e392a371f5bab095a3673ea6f4976cc8
+    """
+    assert x_0.shape == x_1.shape, "x_0 and x_1 must have the same shape"
+
+    if len(x_0.shape) == 2:
+        n, d = x_0.shape
+        b = 1
+        x_0 = x_0.unsqueeze(0)
+        x_1 = x_1.unsqueeze(0)
+         
+    elif len(x_0.shape) == 3:
+        b, n, d = x_0.shape
+
+    # remove COM from data and record initial COM
+    if pre_centered:
+        x_0_mean = torch.zeros(b, 1, d)
+        x_1_mean = torch.zeros(b, 1, d)
+        x_0_c = x_0 
+        x_1_c = x_1
+    else:
+        x_0_mean = x_0.mean(dim=1, keepdim=True)
+        x_1_mean = x_1.mean(dim=1, keepdim=True)
+        x_0_c = x_0 - x_0_mean
+        x_1_c = x_1 - x_1_mean
+
+    # Covariance matrix
+    # x_0_c has shape (b, n, d) as does x_1_c
+    # H shold have shape (b, d, d)
+    # below is the line for the unbatched version, followed by the batched version
+    # H = x_0_c.T.mm(x_1_c)
+    H = torch.einsum('bnd,bnm->bdm', x_0_c, x_1_c)    
+    
+    U, S, V = torch.svd(H)
+    # Rotation matrix
+    # U and V both have shape (b, d, d)
+    # R should have shape (b, d, d)
+    # below is the line for the unbatched version, followed by the batched version
+    # R = V.mm(U.T)
+    R = torch.einsum('bxy,bjk->bxj', V, U)
+
+    # Translation vector
+    if pre_centered:
+        t = torch.zeros(b, 1, d)
+    else:
+        # R has shape (b, d, d)
+        # x_0_mean has shape (b, 1, d)
+        # t = x_1_mean - R.mm(x_0_mean.T).T # has shape (b, 1, D)
+        t = x_1_mean - torch.einsum('bxy,bjk->bjy', R, x_0_mean)
+        
+
+    # apply rotation to x_0_c
+    # x_0_c has shape (b, n, d)
+    # R has shape (b, d, d)
+    # x_0_aligned should have shape (b, n, d)
+    # below is the line for the unbatched version, followed by the batched version
+    # x_0_aligned = x_0_c.mm(R.T)
+    x_0_aligned = torch.einsum('bxy,bjk->bxk', x_0_c, R)
 
     # move x_0_aligned to its original frame
     x_0_aligned = x_0_aligned + x_0_mean

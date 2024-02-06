@@ -11,13 +11,14 @@ def collate(graphs):
 
 class MoleculeDataset(torch.utils.data.Dataset):
 
-    def __init__(self, split: str, dataset_config: dict, prior_config: dict):
+    def __init__(self, split: str, dataset_config: dict, prior_config: dict, x_subspace: str = 'se3-quotient'):
         super(MoleculeDataset, self).__init__()
 
         # unpack some configs regarding the prior
         self.prior_config = prior_config
-        self.use_ot_node_feats: bool = prior_config['ot_node_feats']
+        self.use_ot_node_feats: bool = True
         self.use_biased_edge_prior: bool = prior_config['biased_edge_prior']
+        self.x_subspace = x_subspace
 
         processed_data_dir: Path = Path(dataset_config['processed_data_dir'])
 
@@ -52,7 +53,8 @@ class MoleculeDataset(torch.utils.data.Dataset):
         atom_charges = self.atom_charges[node_start_idx:node_end_idx].long()
 
         # remove COM from positions
-        positions = positions - positions.mean(dim=0, keepdim=True)
+        if self.x_subspace == 'com-free':
+            positions = positions - positions.mean(dim=0, keepdim=True)
 
         # get data pertaining to edges for this molecule
         bond_types = self.bond_types[edge_start_idx:edge_end_idx].int()
@@ -105,7 +107,7 @@ class MoleculeDataset(torch.utils.data.Dataset):
 
             prior_node_feats = compute_ot_prior(dst_dict, 
                                                 pos_prior_std=self.prior_config['position_std'],
-                                                rotate_positions=self.prior_config['rotate_positions']
+                                                x_subspace=self.x_subspace
                                                 )
 
             for feat in prior_node_feats:

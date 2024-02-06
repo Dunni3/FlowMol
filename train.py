@@ -78,11 +78,16 @@ if __name__ == "__main__":
     else:
         distributed = False
 
+    # get the x_subspace of the model
+    x_subspace = config['mol_fm']['x_subspace']
+
     # create data module
     batch_size = config['training']['batch_size']
     num_workers = config['training']['num_workers']
     data_module = MoleculeDataModule(dataset_config=config['dataset'],
                                      prior_config=config['mol_fm']['prior_config'],
+                                     x_subspace=x_subspace,
+                                     max_num_edges=int(config['training']['max_num_edges']),
                                      batch_size=batch_size, 
                                      num_workers=num_workers, 
                                      distributed=distributed)
@@ -168,8 +173,18 @@ if __name__ == "__main__":
         trainer_config['limit_train_batches'] = 100
 
     # create trainer
-    trainer_config['use_distributed_sampler'] = True
-    pbar_callback = TQDMProgressBar(refresh_rate=20)
+    if distributed and x_subspace == 'se3-quotient':
+        trainer_config['use_distributed_sampler'] = False
+    else:
+        trainer_config['use_distributed_sampler'] = True
+        
+    # set refresh rate for progress bar via TQDMProgressBar callback
+    if args.debug:
+        refresh_rate = 1
+    else:
+        refresh_rate = 20
+    pbar_callback = TQDMProgressBar(refresh_rate=refresh_rate)
+
     trainer = pl.Trainer(logger=wandb_logger, **trainer_config, callbacks=[checkpoint_callback, pbar_callback])
     
     # train

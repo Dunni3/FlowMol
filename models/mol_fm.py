@@ -12,9 +12,10 @@ from .interpolant_scheduler import InterpolantScheduler
 from .vector_field import GVPVectorField
 
 from data_processing.utils import build_edge_idxs, get_upper_edge_mask, get_batch_idxs
-from data_processing.priors import uniform_simplex_prior, biased_simplex_prior
+from data_processing.priors import uniform_simplex_prior, biased_simplex_prior, batched_rigid_alignment, rigid_alignment
 from analysis.molecule_builder import SampledMolecule
 from analysis.metrics import SampleAnalyzer
+from einops import rearrange
 
 class MolFM(pl.LightningModule):
 
@@ -30,6 +31,7 @@ class MolFM(pl.LightningModule):
                  sample_interval: float = 1.0, # how often to sample molecules from the model, measured in epochs
                  n_mols_to_sample: int = 64, # how many molecules to sample from the model during each sample/eval step during training
                  time_scaled_loss: bool = True,
+                 x_subspace: str = 'se3-quotient',
                  total_loss_weights: Dict[str, float] = {}, 
                  lr_scheduler_config: dict = {},
                  interpolant_scheduler_config: dict = {},
@@ -45,6 +47,10 @@ class MolFM(pl.LightningModule):
         self.n_bond_types = n_bond_types
         self.total_loss_weights = total_loss_weights
         self.time_scaled_loss = time_scaled_loss
+        self.x_subspace = x_subspace
+
+        if x_subspace not in ['se3-quotient', 'com-free']:
+            raise ValueError(f'x_subspace must be either "se3-quotient" or "com-free", but got {x_subspace}')
 
         # unpack some features of the prior
         self.prior_config = prior_config
@@ -84,7 +90,7 @@ class MolFM(pl.LightningModule):
 
         # create interpolant scheduler and vector field
         self.interpolant_scheduler = InterpolantScheduler(canonical_feat_order=self.canonical_feat_order, **interpolant_scheduler_config)
-        self.vector_field = GVPVectorField(n_atom_types=self.n_atom_types, n_charges=n_atom_charges, n_bond_types=n_bond_types,
+        self.vector_field = GVPVectorField(n_atom_types=self.n_atom_types, n_charges=n_atom_charges, n_bond_types=n_bond_types, x_subspace=x_subspace,
                                            **vector_field_config)
 
         # loss functions
@@ -212,6 +218,18 @@ class MolFM(pl.LightningModule):
         if self.time_scaled_loss:
             time_weights = self.interpolant_scheduler.loss_weights(t)
 
+        # if we are using the se(3)-quotient subspace, then we need to align the predicted positions with the true positions
+        if self.x_subspace == 'se3-quotient':
+            batch_num_nodes = g.batch_num_nodes()
+            n = int(batch_num_nodes[0])
+            assert batch_num_nodes.unique().shape[0] == 1, "all molecules in the batch must have the same number of atoms"
+            x_1_pred = dst_dict['x']
+            x_1_pred = rearrange(x_1_pred, '(b n) d -> b n d', b=batch_size, n=n, d=3)
+            x_1_true = g.ndata['x_1_true']
+            x_1_true = rearrange(x_1_true, '(b n) d -> b n d', b=batch_size, n=n, d=3)
+            x_1_pred = batched_rigid_alignment(x_1_pred, x_1_true)
+            dst_dict['x'] = rearrange(x_1_pred, 'b n d -> (b n) d')
+            
         # compute losses
         losses = {}
         for feat_idx, feat in enumerate(self.canonical_feat_order):
@@ -254,7 +272,9 @@ class MolFM(pl.LightningModule):
         num_nodes = g.num_nodes()
         device = g.device
         g.ndata['x_0'] = torch.randn(num_nodes, 3, device=device)*self.position_prior_std
-        g.ndata['x_0'] = g.ndata['x_0'] - dgl.readout_nodes(g, feat='x_0', op='mean')[node_batch_idx]
+
+        if self.x_subspace == 'com-free':
+            g.ndata['x_0'] = g.ndata['x_0'] - dgl.readout_nodes(g, feat='x_0', op='mean')[node_batch_idx]
 
         # sample atom types, charges from simplex
         # TODO: can we implement OT flow matching for the simplex prior?
@@ -378,6 +398,31 @@ class MolFM(pl.LightningModule):
                 upper_edge_mask=upper_edge_mask,
                 apply_softmax=True
             )
+
+            # if we are using the se(3)-quotient subspace, then we need to align the current positions (x_t) to the predicted positions (x_1)
+            if self.x_subspace == 'se3-quotient':
+                batch_num_nodes = g.batch_num_nodes()
+
+                # if all of the molecules in the batch have the same number of atoms, then we can use batched_rigid_alignment
+                if batch_num_nodes.unique().shape[0] == 1:
+                    n = int(batch_num_nodes[0])
+                    x_t = g.ndata['x_t']
+                    x_t = rearrange(x_t, '(b n) d -> b n d', b=g.batch_size, n=n, d=3)
+                    x_1 = dst_dict['x']
+                    x_1 = rearrange(x_1, '(b n) d -> b n d', b=g.batch_size, n=n, d=3)
+                    x_t = batched_rigid_alignment(x_t, x_1)
+                    g.ndata['x_t'] = rearrange(x_t, 'b n d -> (b n) d')
+                else:
+                # otherwise, we need to unbatch the graph and align each molecule individually
+                    g_unbatched = dgl.unbatch(g)
+                    x_1_unbatched = dst_dict['x'].split(batch_num_nodes.tolist())
+                    for mol_idx, g_i in enumerate(g_unbatched):
+                        n = g_i.num_nodes()
+                        x_t = g_i.ndata['x_t']
+                        x_1 = x_1_unbatched[mol_idx]
+                        x_t = rigid_alignment(x_t, x_1)
+                        g_unbatched[mol_idx].ndata['x_t'] = x_t
+                    g = dgl.batch(g_unbatched)
 
             # compute x_s for each feature and set x_t = x_s
             for feat_idx, feat in enumerate(self.canonical_feat_order):

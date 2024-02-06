@@ -1,13 +1,14 @@
 training:
   output_dir: runs/
-  batch_size: 8
+  batch_size: 32
   num_workers: 2
+  max_num_edges: 4.0e+5
   trainer_args:
     max_epochs: 3
     accelerator: gpu
     devices: 1
     accumulate_grad_batches: 1
-    limit_val_batches: 0.25
+    limit_val_batches: 0.05
 
   evaluation:
     mols_to_sample: 64 # how many molecules to sample during evaluation
@@ -49,6 +50,7 @@ checkpointing:
   # every_n_epochs: 1
 
 mol_fm:
+  x_subspace: 'se3-quotient' # can be "com-free" or "se30-quotient"
   time_scaled_loss: True
   total_loss_weights:
     x: 1.0
@@ -56,8 +58,6 @@ mol_fm:
     c: 1.0
     e: 1.0
   prior_config:
-    ot_node_feats: True
-    rotate_positions: True
     position_std: 1.0
     biased_edge_prior: True
     no_bond_prob: 0.75
