@@ -219,16 +219,17 @@ class MolFM(pl.LightningModule):
             time_weights = self.interpolant_scheduler.loss_weights(t)
 
         # if we are using the se(3)-quotient subspace, then we need to align the predicted positions with the true positions
-        if self.x_subspace == 'se3-quotient':
-            batch_num_nodes = g.batch_num_nodes()
-            n = int(batch_num_nodes[0])
-            assert batch_num_nodes.unique().shape[0] == 1, "all molecules in the batch must have the same number of atoms"
-            x_1_pred = dst_dict['x']
-            x_1_pred = rearrange(x_1_pred, '(b n) d -> b n d', b=batch_size, n=n, d=3)
-            x_1_true = g.ndata['x_1_true']
-            x_1_true = rearrange(x_1_true, '(b n) d -> b n d', b=batch_size, n=n, d=3)
-            x_1_pred = batched_rigid_alignment(x_1_pred, x_1_true)
-            dst_dict['x'] = rearrange(x_1_pred, 'b n d -> (b n) d')
+        # just kidding, now we dont!!
+        # if self.x_subspace == 'se3-quotient':
+        #     batch_num_nodes = g.batch_num_nodes()
+        #     n = int(batch_num_nodes[0])
+        #     assert batch_num_nodes.unique().shape[0] == 1, "all molecules in the batch must have the same number of atoms"
+        #     x_1_pred = dst_dict['x']
+        #     x_1_pred = rearrange(x_1_pred, '(b n) d -> b n d', b=batch_size, n=n, d=3)
+        #     x_1_true = g.ndata['x_1_true']
+        #     x_1_true = rearrange(x_1_true, '(b n) d -> b n d', b=batch_size, n=n, d=3)
+        #     x_1_pred = batched_rigid_alignment(x_1_pred, x_1_true)
+        #     dst_dict['x'] = rearrange(x_1_pred, 'b n d -> (b n) d')
             
         # compute losses
         losses = {}
