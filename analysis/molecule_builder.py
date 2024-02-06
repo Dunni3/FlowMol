@@ -3,6 +3,7 @@ from rdkit import Chem, RDLogger
 from rdkit.Geometry import Point3D
 import dgl
 from typing import List, Dict
+from data_processing.priors import rigid_alignment
 
 bond_type_map = [None, Chem.rdchem.BondType.SINGLE, Chem.rdchem.BondType.DOUBLE, Chem.rdchem.BondType.TRIPLE,
              Chem.rdchem.BondType.AROMATIC]
@@ -52,6 +53,8 @@ class SampledMolecule:
 
         n_frames = traj_frames['x'].shape[0]
 
+        x_final = traj_frames['x'][-1] # has shape (n_atoms, 3)
+
         traj_mols = []
         for frame_idx in range(n_frames):
 
@@ -64,6 +67,9 @@ class SampledMolecule:
 
             # extract mol data from graph
             positions, atom_types, atom_charges, bond_types, bond_src_idxs, bond_dst_idxs = extract_moldata_from_graph(g_dummy, self.atom_type_map)
+
+            # align positions to final frame
+            positions = rigid_alignment(positions, x_final)
 
             # build rdkit molecule
             mol = build_molecule(positions, atom_types, atom_charges, bond_src_idxs, bond_dst_idxs, bond_types)
