@@ -325,7 +325,12 @@ class MolFM(pl.LightningModule):
         return g
 
     def configure_optimizers(self):
-        optimizer = optim.Adam(self.parameters(), lr=self.lr_scheduler_config['base_lr'])
+        try:
+            weight_decay = self.lr_scheduler_config['weight_decay']
+        except KeyError:
+            weight_decay = 0
+
+        optimizer = optim.Adam(self.parameters(), lr=self.lr_scheduler_config['base_lr'], weight_decay=weight_decay)
         self.lr_scheduler = LRScheduler(model=self, optimizer=optimizer, **self.lr_scheduler_config)
         return optimizer
 

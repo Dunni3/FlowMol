@@ -16,6 +16,7 @@ class LRScheduler:
                  model: MolFM,
                  optimizer: Optimizer,
                  base_lr: float,
+                 weight_decay: float = 0,
                  warmup_length: float = 0, 
                  restart_interval: float = 0, 
                  restart_type: str = None):
