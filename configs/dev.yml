@@ -68,10 +68,10 @@ vector_field:
   n_hidden_scalars: 64
   n_hidden_edge_feats: 64
   n_recycles: 1
-  n_molecule_updates: 2
+  n_molecule_updates: 3
   separate_mol_updaters: True
-  convs_per_update: 2
-  n_cp_feats: 3
+  convs_per_update: 1
+  n_cp_feats: 4
   n_message_gvps: 3
   n_update_gvps: 3
   message_norm: 100

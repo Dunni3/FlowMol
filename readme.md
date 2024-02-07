@@ -18,6 +18,7 @@ python process_geom.py data/raw/test_data.pickle --config configs/dev.yml
 - [x] implement non-uniform bond-order prior - compute the variance of the random step that gurantees a certain P(no bond)
 - [ ] design a bond-order prior which is a function of the number of atoms in the molecule
 - [ ] implement rotational alignment of prior and posterior positions (can be done efficiently in batch but only if all molecules have the same number of atoms)
+- [ ] fix batched_rigid_alignment
   
 
 ## multi-gpu training and where to put the periodic sampling

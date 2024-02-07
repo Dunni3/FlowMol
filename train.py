@@ -15,7 +15,8 @@ import sys
 # from models.ligand_edm import LigandEquivariantDiffusion
 from models.mol_fm import MolFM
 from data_processing.data_module import MoleculeDataModule
-from data_processing.sweep_config import merge_config_and_args, register_hyperparameter_args
+from model_utils.sweep_config import merge_config_and_args, register_hyperparameter_args
+from model_utils.load import read_config_file, model_from_config, data_module_from_config
 
 def parse_args():
     p = argparse.ArgumentParser(description='Training Script')
@@ -66,53 +67,16 @@ if __name__ == "__main__":
         pl.seed_everything(args.seed)
     
     # process config file into dictionary
-    with open(config_file, 'r') as f:
-        config = yaml.load(f, Loader=yaml.FullLoader)
+    config = read_config_file(config_file)
 
     # merge the config file with the command line arguments
     config = merge_config_and_args(config, args)
-
-    # determine if we are doing distributed training
-    if config['training']['trainer_args']['devices'] > 1:
-        distributed = True
-    else:
-        distributed = False
-
-    # get the x_subspace of the model
-    x_subspace = config['mol_fm']['x_subspace']
-
+    
     # create data module
-    batch_size = config['training']['batch_size']
-    num_workers = config['training']['num_workers']
-    data_module = MoleculeDataModule(dataset_config=config['dataset'],
-                                     prior_config=config['mol_fm']['prior_config'],
-                                     x_subspace=x_subspace,
-                                     max_num_edges=int(config['training']['max_num_edges']),
-                                     batch_size=batch_size, 
-                                     num_workers=num_workers, 
-                                     distributed=distributed)
-
-    # get the filepath of the n_atoms histogram
-    n_atoms_hist_filepath = Path(config['dataset']['processed_data_dir']) / 'train_data_n_atoms_histogram.pt'
-
-    # get the sample interval (how many epochs between drawing/evaluating)
-    sample_interval = config['training']['evaluation']['sample_interval']
-    mols_to_sample = config['training']['evaluation']['mols_to_sample']
+    data_module: MoleculeDataModule = data_module_from_config(config)
 
     # create model
-    atom_type_map = config['dataset']['atom_map']
-    try:
-        num_devices = config['training']['trainer_args']['devices']
-    except KeyError:
-        num_devices = 1
-    model = MolFM(atom_type_map=atom_type_map, 
-                n_atoms_hist_file=n_atoms_hist_filepath,
-                sample_interval=sample_interval,
-                n_mols_to_sample=mols_to_sample,
-                vector_field_config=config['vector_field'],
-                interpolant_scheduler_config=config['interpolant_scheduler'], 
-                lr_scheduler_config=config['lr_scheduler'],
-                **config['mol_fm'])
+    model: MolFM = model_from_config(config)
     
     # get wandb logger config
     wandb_config = config['wandb']
@@ -172,11 +136,7 @@ if __name__ == "__main__":
     if args.debug:
         trainer_config['limit_train_batches'] = 100
 
-    # create trainer
-    if distributed and x_subspace == 'se3-quotient':
-        trainer_config['use_distributed_sampler'] = True
-    else:
-        trainer_config['use_distributed_sampler'] = True
+    trainer_config['use_distributed_sampler'] = True
         
     # set refresh rate for progress bar via TQDMProgressBar callback
     if args.debug:

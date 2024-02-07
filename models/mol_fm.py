@@ -406,25 +406,36 @@ class MolFM(pl.LightningModule):
                 batch_num_nodes = g.batch_num_nodes()
 
                 # if all of the molecules in the batch have the same number of atoms, then we can use batched_rigid_alignment
-                if batch_num_nodes.unique().shape[0] == 1:
-                    n = int(batch_num_nodes[0])
-                    x_t = g.ndata['x_t']
-                    x_t = rearrange(x_t, '(b n) d -> b n d', b=g.batch_size, n=n, d=3)
-                    x_1 = dst_dict['x']
-                    x_1 = rearrange(x_1, '(b n) d -> b n d', b=g.batch_size, n=n, d=3)
-                    x_t = batched_rigid_alignment(x_t, x_1)
-                    g.ndata['x_t'] = rearrange(x_t, 'b n d -> (b n) d')
-                else:
-                # otherwise, we need to unbatch the graph and align each molecule individually
-                    g_unbatched = dgl.unbatch(g)
-                    x_1_unbatched = dst_dict['x'].split(batch_num_nodes.tolist())
-                    for mol_idx, g_i in enumerate(g_unbatched):
-                        n = g_i.num_nodes()
-                        x_t = g_i.ndata['x_t']
-                        x_1 = x_1_unbatched[mol_idx]
-                        x_t = rigid_alignment(x_t, x_1)
-                        g_unbatched[mol_idx].ndata['x_t'] = x_t
-                    g = dgl.batch(g_unbatched)
+                g_unbatched = dgl.unbatch(g)
+                x_1_unbatched = dst_dict['x'].split(batch_num_nodes.tolist())
+                for mol_idx, g_i in enumerate(g_unbatched):
+                    n = g_i.num_nodes()
+                    x_t = g_i.ndata['x_t']
+                    x_1 = x_1_unbatched[mol_idx]
+                    x_t = rigid_alignment(x_t, x_1)
+                    g_unbatched[mol_idx].ndata['x_t'] = x_t
+                g = dgl.batch(g_unbatched)
+
+                # TODO: fix batched rigid alignment...its currently broken
+                # if batch_num_nodes.unique().shape[0] == 1:
+                #     n = int(batch_num_nodes[0])
+                #     x_t = g.ndata['x_t']
+                #     x_t = rearrange(x_t, '(b n) d -> b n d', b=g.batch_size, n=n, d=3)
+                #     x_1 = dst_dict['x']
+                #     x_1 = rearrange(x_1, '(b n) d -> b n d', b=g.batch_size, n=n, d=3)
+                #     x_t = batched_rigid_alignment(x_t, x_1)
+                #     g.ndata['x_t'] = rearrange(x_t, 'b n d -> (b n) d')
+                # else:
+                # # otherwise, we need to unbatch the graph and align each molecule individually
+                #     g_unbatched = dgl.unbatch(g)
+                #     x_1_unbatched = dst_dict['x'].split(batch_num_nodes.tolist())
+                #     for mol_idx, g_i in enumerate(g_unbatched):
+                #         n = g_i.num_nodes()
+                #         x_t = g_i.ndata['x_t']
+                #         x_1 = x_1_unbatched[mol_idx]
+                #         x_t = rigid_alignment(x_t, x_1)
+                #         g_unbatched[mol_idx].ndata['x_t'] = x_t
+                #     g = dgl.batch(g_unbatched)
 
             # compute x_s for each feature and set x_t = x_s
             for feat_idx, feat in enumerate(self.canonical_feat_order):

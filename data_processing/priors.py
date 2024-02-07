@@ -112,6 +112,7 @@ def batched_rigid_alignment(x_0, x_1, pre_centered=False):
     Alignment of two point clouds using the Kabsch algorithm.
     Based on: https://gist.github.com/bougui505/e392a371f5bab095a3673ea6f4976cc8
     """
+    print('WARNING: batched_rigid_alignment is currently broken (gives incorrect results)')
     assert x_0.shape == x_1.shape, "x_0 and x_1 must have the same shape"
 
     if len(x_0.shape) == 2:
