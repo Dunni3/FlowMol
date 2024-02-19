@@ -406,11 +406,17 @@ class MolFM(pl.LightningModule):
                 remove_com=True
             )
 
+            # x_t = g.ndata['x_t']
+            # x_1_true = g.ndata['x_1_true']
+            # x_1_pred = dst_dict['x']
+            # x_t_err = (x_t - x_1_true).square().sum().mean().item()
+            # x_1_err = (x_1_pred - x_1_true).square().sum().mean().item()
+            # print(f't={t_i:.2f}, x_t_err={x_t_err:.2f}, x_1_err={x_1_err:.2f}')
+
             # if we are using the se(3)-quotient subspace, then we need to align the current positions (x_t) to the predicted positions (x_1)
             if self.x_subspace == 'se3-quotient':
+                
                 batch_num_nodes = g.batch_num_nodes()
-
-                # if all of the molecules in the batch have the same number of atoms, then we can use batched_rigid_alignment
                 g_unbatched = dgl.unbatch(g)
                 x_1_unbatched = dst_dict['x'].split(batch_num_nodes.tolist())
                 for mol_idx, g_i in enumerate(g_unbatched):
@@ -422,6 +428,7 @@ class MolFM(pl.LightningModule):
                 g = dgl.batch(g_unbatched)
 
                 # TODO: fix batched rigid alignment...its currently broken
+                # if all of the molecules in the batch have the same number of atoms, then we can use batched_rigid_alignment
                 # if batch_num_nodes.unique().shape[0] == 1:
                 #     n = int(batch_num_nodes[0])
                 #     x_t = g.ndata['x_t']

@@ -50,8 +50,8 @@ checkpointing:
   # every_n_epochs: 1
 
 mol_fm:
-  x_subspace: 'se3-quotient' # can be "com-free" or "se30-quotient"
-  time_scaled_loss: True
+  x_subspace: 'com-free' # can be "com-free" or "se30-quotient"
+  time_scaled_loss: False
   total_loss_weights:
     x: 1.0
     a: 1.0
@@ -75,14 +75,19 @@ vector_field:
   n_message_gvps: 3
   n_update_gvps: 3
   message_norm: 100
-  rbf_dmax: 20
+  rbf_dmax: 12
   rbf_dim: 16
 
 interpolant_scheduler:
-  schedule_type: 'cosine'
+  schedule_type: # can be 'cosine', 'linear' or a dictionary with keys 'x', 'a', 'c', 'e'
+    x: 'cosine'
+    a: 'linear'
+    c: 'linear'
+    e: 'linear'
+  
   cosine_params:
     x: 1
-    a: 2
-    c: 2
+    a: 2.0
+    c: 2.0
     e: 1.5
 
