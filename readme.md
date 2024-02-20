@@ -19,6 +19,10 @@ python process_geom.py data/raw/test_data.pickle --config configs/dev.yml
 - [ ] design a bond-order prior which is a function of the number of atoms in the molecule
 - [ ] implement rotational alignment of prior and posterior positions (can be done efficiently in batch but only if all molecules have the same number of atoms)
 - [ ] fix batched_rigid_alignment
+- [ ] bias the charge prior towards 0
+- [ ] cosine schedule for positions
+- [ ] explore possible schedules for positions
+- [ ] define the family of interpolation schedules which permit usage with simplex flows
   
 
 ## multi-gpu training and where to put the periodic sampling
