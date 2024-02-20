@@ -106,7 +106,8 @@ class MoleculeDataset(torch.utils.data.Dataset):
 
             prior_node_feats = compute_ot_prior(dst_dict, 
                                                 pos_prior_std=self.prior_config['position_std'],
-                                                x_subspace=self.x_subspace
+                                                x_subspace=self.x_subspace,
+                                                align_cat_feats=False
                                                 )
 
             for feat in prior_node_feats:

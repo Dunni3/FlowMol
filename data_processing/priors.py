@@ -4,7 +4,7 @@ import torch
 from torch.nn.functional import softmax
 
 @torch.no_grad()
-def compute_ot_prior(dst_dict, pos_prior_std: float = 4.0, x_subspace: str = 'se3-quotient'):
+def compute_ot_prior(dst_dict, pos_prior_std: float = 4.0, x_subspace: str = 'se3-quotient', align_cat_feats = True):
     prior_dict = {}
     cat_features = ['a', 'c', 'e']
 
@@ -22,21 +22,22 @@ def compute_ot_prior(dst_dict, pos_prior_std: float = 4.0, x_subspace: str = 'se
             if x_subspace == 'com-free':
                 prior_feat = prior_feat - prior_feat.mean(dim=0, keepdim=True)
 
-        # solve assignment problem
-        cost_mat = torch.cdist(dst_feat, prior_feat, p=2)
-        _, prior_idx = linear_sum_assignment(cost_mat)
+        if (feat in cat_features and align_cat_feats) or feat == 'x':
+            # solve assignment problem
+            cost_mat = torch.cdist(dst_feat, prior_feat, p=2)
+            _, prior_idx = linear_sum_assignment(cost_mat)
 
-        # reorder prior to according to optimal assignment
-        prior_feat = prior_feat[prior_idx]
+            # reorder prior to according to optimal assignment
+            prior_feat = prior_feat[prior_idx]
 
-        if feat == 'x':
-            if x_subspace == 'se3-quotient':
-                pre_centered = False
-            elif x_subspace == 'com-free':
-                pre_centered = True
+            if feat == 'x':
+                if x_subspace == 'se3-quotient':
+                    pre_centered = False
+                elif x_subspace == 'com-free':
+                    pre_centered = True
 
-            # perform rigid alignment
-            prior_feat = rigid_alignment(prior_feat, dst_feat, pre_centered=pre_centered)
+                # perform rigid alignment
+                prior_feat = rigid_alignment(prior_feat, dst_feat, pre_centered=pre_centered)
 
         prior_dict[feat] = prior_feat
 
