@@ -8,14 +8,13 @@ from data_processing.samplers import SameSizeMoleculeSampler, SameSizeDistribute
 
 class MoleculeDataModule(pl.LightningDataModule):
 
-    def __init__(self, dataset_config: dict, prior_config: dict, batch_size: int, num_workers: int = 0, distributed: bool = False, x_subspace: str = 'se3-quotient', max_num_edges: int = 40000):
+    def __init__(self, dataset_config: dict, prior_config: dict, batch_size: int, num_workers: int = 0, distributed: bool = False, max_num_edges: int = 40000):
         super().__init__()
         self.distributed = distributed
         self.dataset_config = dataset_config
         self.batch_size = batch_size
         self.num_workers = num_workers
         self.prior_config = prior_config
-        self.x_subspace = x_subspace
         self.max_num_edges = max_num_edges
         self.save_hyperparameters()
 

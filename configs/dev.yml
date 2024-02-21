@@ -1,8 +1,7 @@
 training:
   output_dir: runs/
   batch_size: 32
-  num_workers: 2
-  max_num_edges: 4.0e+5
+  num_workers: 0
   trainer_args:
     max_epochs: 3
     accelerator: gpu
@@ -12,7 +11,7 @@ training:
 
   evaluation:
     mols_to_sample: 64 # how many molecules to sample during evaluation
-    sample_interval: 1.0 # how often to sample molecules during training, measured in epochs
+    sample_interval: 0.25 # how often to sample molecules during training, measured in epochs
     val_loss_interval: 0.5 # how often to compute validation set loss during training, measured in epochs
 
 wandb:
@@ -50,18 +49,29 @@ checkpointing:
   # every_n_epochs: 1
 
 mol_fm:
-  x_subspace: 'com-free' # can be "com-free" or "se30-quotient"
-  time_scaled_loss: False
+  time_scaled_loss: True
   total_loss_weights:
     x: 1.0
     a: 1.0
     c: 1.0
     e: 1.0
   prior_config:
-    position_std: 1.0
-    biased_edge_prior: True
-    no_bond_prob: 0.75
-    bond_order_std: 0.2
+    x:
+      align: True
+      type: 'centered-normal'
+      kwargs: {std: 1.0}
+    a:
+      align: False
+      type: 'uniform-simplex'
+      kwargs: {}
+    c:
+      align: False
+      type: 'biased-simplex'
+      kwargs: {vertex_prob: 0.8, std: 0.2, vertex_idx: 2}
+    e:
+      align: False
+      type: 'biased-simplex'
+      kwargs: {vertex_prob: 0.75, std: 0.2, vertex_idx: 0}
 
 vector_field:
   n_vec_channels: 16

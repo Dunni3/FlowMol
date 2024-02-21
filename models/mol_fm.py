@@ -13,6 +13,7 @@ from .vector_field import GVPVectorField
 
 from data_processing.utils import build_edge_idxs, get_upper_edge_mask, get_batch_idxs
 from data_processing.priors import uniform_simplex_prior, biased_simplex_prior, batched_rigid_alignment, rigid_alignment
+from data_processing.priors import inference_prior_register, edge_prior
 from analysis.molecule_builder import SampledMolecule
 from analysis.metrics import SampleAnalyzer
 from einops import rearrange
@@ -31,7 +32,6 @@ class MolFM(pl.LightningModule):
                  sample_interval: float = 1.0, # how often to sample molecules from the model, measured in epochs
                  n_mols_to_sample: int = 64, # how many molecules to sample from the model during each sample/eval step during training
                  time_scaled_loss: bool = True,
-                 x_subspace: str = 'se3-quotient',
                  total_loss_weights: Dict[str, float] = {}, 
                  lr_scheduler_config: dict = {},
                  interpolant_scheduler_config: dict = {},
@@ -47,26 +47,7 @@ class MolFM(pl.LightningModule):
         self.n_bond_types = n_bond_types
         self.total_loss_weights = total_loss_weights
         self.time_scaled_loss = time_scaled_loss
-        self.x_subspace = x_subspace
-
-        if x_subspace not in ['se3-quotient', 'com-free']:
-            raise ValueError(f'x_subspace must be either "se3-quotient" or "com-free", but got {x_subspace}')
-
-        # unpack some features of the prior
         self.prior_config = prior_config
-        try:
-            self.position_prior_std: float = prior_config['position_std']
-            self.biased_edge_prior: bool = prior_config['biased_edge_prior']
-        except KeyError:
-            print('WARNING: position_std or biased_edge_prior not found in prior_config dictionary, using default values')
-            self.position_prior_std = 1.0
-            self.biased_edge_prior = False
-
-        # check that essential features are in the prior_config dictionary
-        if self.biased_edge_prior:
-            for key in ['no_bond_prob', 'bond_order_std']:
-                if key not in prior_config:
-                    raise ValueError(f'biased_edge_prior is set to True, but {key} is not in the prior_config dictionary')
 
         # create a dictionary mapping feature -> number of categories
         self.n_cat_dict = {
@@ -89,8 +70,11 @@ class MolFM(pl.LightningModule):
         self.build_n_atoms_dist(n_atoms_hist_file=n_atoms_hist_file)
 
         # create interpolant scheduler and vector field
-        self.interpolant_scheduler = InterpolantScheduler(canonical_feat_order=self.canonical_feat_order, **interpolant_scheduler_config)
-        self.vector_field = GVPVectorField(n_atom_types=self.n_atom_types, n_charges=n_atom_charges, n_bond_types=n_bond_types, x_subspace=x_subspace,
+        self.interpolant_scheduler = InterpolantScheduler(canonical_feat_order=self.canonical_feat_order, 
+                                                          **interpolant_scheduler_config)
+        self.vector_field = GVPVectorField(n_atom_types=self.n_atom_types, 
+                                           n_charges=n_atom_charges, 
+                                           n_bond_types=n_bond_types,
                                            **vector_field_config)
 
         # loss functions
@@ -272,37 +256,24 @@ class MolFM(pl.LightningModule):
         # or perhaps the average distance to COM for molecules with the same number of atoms
         num_nodes = g.num_nodes()
         device = g.device
-        g.ndata['x_0'] = torch.randn(num_nodes, 3, device=device)*self.position_prior_std
 
-        if self.x_subspace == 'com-free':
-            g.ndata['x_0'] = g.ndata['x_0'] - dgl.readout_nodes(g, feat='x_0', op='mean')[node_batch_idx]
-
-        # sample atom types, charges from simplex
-        # TODO: can we implement OT flow matching for the simplex prior?
-        for node_feat in ['a', 'c']:
-
-            # get the number of cateogories for this feature
-            n_cats = self.n_cat_dict[node_feat]
-
-            # sample from simplex prior
-            g.ndata[f'{node_feat}_0'] = uniform_simplex_prior(num_nodes, d=n_cats).to(device)
-
-        # sample bond types from simplex prior - making sure the sample for the lower triangle is the same as the upper triangle
-        n_edges = g.num_edges()
-        n_upper_edges = n_edges // 2
-        g.edata['e_0'] = torch.zeros(n_edges, self.n_bond_types, device=device).float()
-        # e_0_upper = self.exp_dist.sample((n_upper_edges, self.n_bond_types)).to(device)
-        # e_0_upper = e_0_upper / e_0_upper.sum(dim=1, keepdim=True)
         
-        if self.biased_edge_prior:
-            e_0_upper = biased_simplex_prior(n_upper_edges, 
-                                             zero_order_weight=self.prior_config['no_bond_prob'], 
-                                             std=self.prior_config['bond_order_std'], 
-                                             d=5).to(device)
-        else:
-            e_0_upper = uniform_simplex_prior(n_upper_edges, d=5).to(device)
-        g.edata['e_0'][upper_edge_mask] = e_0_upper
-        g.edata['e_0'][~upper_edge_mask] = e_0_upper
+        # sample the prior for node features
+        for feat in self.node_feats:
+            prior_type = self.prior_config[feat]['type']
+            prior_fn = inference_prior_register[prior_type]
+            if feat == 'x':
+                # tried to design consistent interface for prior functions, but it's not perfect
+                args = (g, node_batch_idx,)
+            else:
+                args = (num_nodes, self.n_cat_dict[feat],)
+
+            kwargs = self.prior_config[feat]['kwargs']
+            g.ndata[f'{feat}_0'] = prior_fn(*args, **kwargs).to(device)
+
+        # sample the prior for edge features
+        g.edata['e_0'] = edge_prior(upper_edge_mask, self.prior_config['e']).to(device)
+            
         return g
     
     def interpolate(self, g, t, node_batch_idx, edge_batch_idx):
@@ -405,49 +376,6 @@ class MolFM(pl.LightningModule):
                 apply_softmax=True,
                 remove_com=True
             )
-
-            # x_t = g.ndata['x_t']
-            # x_1_true = g.ndata['x_1_true']
-            # x_1_pred = dst_dict['x']
-            # x_t_err = (x_t - x_1_true).square().sum().mean().item()
-            # x_1_err = (x_1_pred - x_1_true).square().sum().mean().item()
-            # print(f't={t_i:.2f}, x_t_err={x_t_err:.2f}, x_1_err={x_1_err:.2f}')
-
-            # if we are using the se(3)-quotient subspace, then we need to align the current positions (x_t) to the predicted positions (x_1)
-            if self.x_subspace == 'se3-quotient':
-                
-                batch_num_nodes = g.batch_num_nodes()
-                g_unbatched = dgl.unbatch(g)
-                x_1_unbatched = dst_dict['x'].split(batch_num_nodes.tolist())
-                for mol_idx, g_i in enumerate(g_unbatched):
-                    n = g_i.num_nodes()
-                    x_t = g_i.ndata['x_t']
-                    x_1 = x_1_unbatched[mol_idx]
-                    x_t = rigid_alignment(x_t, x_1)
-                    g_unbatched[mol_idx].ndata['x_t'] = x_t
-                g = dgl.batch(g_unbatched)
-
-                # TODO: fix batched rigid alignment...its currently broken
-                # if all of the molecules in the batch have the same number of atoms, then we can use batched_rigid_alignment
-                # if batch_num_nodes.unique().shape[0] == 1:
-                #     n = int(batch_num_nodes[0])
-                #     x_t = g.ndata['x_t']
-                #     x_t = rearrange(x_t, '(b n) d -> b n d', b=g.batch_size, n=n, d=3)
-                #     x_1 = dst_dict['x']
-                #     x_1 = rearrange(x_1, '(b n) d -> b n d', b=g.batch_size, n=n, d=3)
-                #     x_t = batched_rigid_alignment(x_t, x_1)
-                #     g.ndata['x_t'] = rearrange(x_t, 'b n d -> (b n) d')
-                # else:
-                # # otherwise, we need to unbatch the graph and align each molecule individually
-                #     g_unbatched = dgl.unbatch(g)
-                #     x_1_unbatched = dst_dict['x'].split(batch_num_nodes.tolist())
-                #     for mol_idx, g_i in enumerate(g_unbatched):
-                #         n = g_i.num_nodes()
-                #         x_t = g_i.ndata['x_t']
-                #         x_1 = x_1_unbatched[mol_idx]
-                #         x_t = rigid_alignment(x_t, x_1)
-                #         g_unbatched[mol_idx].ndata['x_t'] = x_t
-                #     g = dgl.batch(g_unbatched)
 
             # compute x_s for each feature and set x_t = x_s
             for feat_idx, feat in enumerate(self.canonical_feat_order):

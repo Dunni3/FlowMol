@@ -33,8 +33,6 @@ def model_from_config(config: dict) -> MolFM:
     return model
 
 def data_module_from_config(config: dict) -> MoleculeDataModule:
-    # get the x_subspace of the model
-    x_subspace = config['mol_fm']['x_subspace']
     batch_size = config['training']['batch_size']
     num_workers = config['training']['num_workers']
 
@@ -46,8 +44,6 @@ def data_module_from_config(config: dict) -> MoleculeDataModule:
 
     data_module = MoleculeDataModule(dataset_config=config['dataset'],
                                      prior_config=config['mol_fm']['prior_config'],
-                                     x_subspace=x_subspace,
-                                     max_num_edges=int(config['training']['max_num_edges']),
                                      batch_size=batch_size, 
                                      num_workers=num_workers, 
                                      distributed=distributed)

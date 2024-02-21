@@ -2,27 +2,54 @@ from torch.distributions import Exponential
 from scipy.optimize import linear_sum_assignment
 import torch
 from torch.nn.functional import softmax
+import dgl
 
-@torch.no_grad()
-def compute_ot_prior(dst_dict, pos_prior_std: float = 4.0, x_subspace: str = 'se3-quotient', align_cat_feats = True):
-    prior_dict = {}
-    cat_features = ['a', 'c', 'e']
 
-    for feat in dst_dict.keys():
+def centered_normal_prior(n: int, d: int, std: float = 4.0):
+    """
+    Generate a prior feature by sampling from a centered normal distribution.
+    """
+    prior_feat = torch.randn(n, d) * std
+    prior_feat = prior_feat - prior_feat.mean(dim=0, keepdim=True)
+    return prior_feat
 
-        # get destination features (t=1)
-        dst_feat = dst_dict[feat]
+def centered_normal_prior_batched_graph(g: dgl.DGLGraph, node_batch_idx: torch.Tensor, std: float = 4.0):
 
-        # sample prior
-        if feat in cat_features:
-            prior_feat = uniform_simplex_prior(dst_feat.shape[0], d=dst_feat.shape[1])
-        else:
-            assert feat == 'x', "there is a non-categorical feature that is not position, this is not supported yet."
-            prior_feat = torch.randn(dst_feat.shape) * pos_prior_std
-            if x_subspace == 'com-free':
-                prior_feat = prior_feat - prior_feat.mean(dim=0, keepdim=True)
+    n = g.num_nodes()
+    prior_sample = torch.randn(n, 3, device=g.device)
+    with g.local_scope():
+        g.ndata['prior_sample'] = prior_sample
+        prior_sample = prior_sample - dgl.readout_nodes(g, feat='prior_sample', op='mean')[node_batch_idx]
 
-        if (feat in cat_features and align_cat_feats) or feat == 'x':
+    return prior_sample
+    
+
+def biased_simplex_prior(n, d, vertex_prob: float = 0.75, std: float = 0.2, vertex_idx: int = 0):
+    """
+    Generate samples from a simplex which are biased towards one category.
+    """
+    non_zero_weight = (1 - vertex_prob) / (d - 1)
+    mu = torch.ones(d)*non_zero_weight
+    mu[vertex_idx] = vertex_prob
+    simplex_sample = mu.unsqueeze(0) + torch.randn(n, d)*std
+    simplex_sample = softmax(simplex_sample/(1/d), dim=1)
+    return simplex_sample
+
+def uniform_simplex_prior(n, d):
+    """
+    Generate samples from a uniform distribution on a simplex.
+    """
+    exp_dist = Exponential(torch.tensor(1.0))
+    sample = exp_dist.sample((n, d))
+    sample = sample / sample.sum(dim=1, keepdim=True)
+    return sample
+
+def align_prior(prior_feat: torch.Tensor, dst_feat: torch.Tensor, permutation=False, rigid_body=False, n_alignments: int = 1):
+    """
+    Aligns a prior feature to a destination feature. 
+    """
+    for _ in range(n_alignments):
+        if permutation:
             # solve assignment problem
             cost_mat = torch.cdist(dst_feat, prior_feat, p=2)
             _, prior_idx = linear_sum_assignment(cost_mat)
@@ -30,39 +57,11 @@ def compute_ot_prior(dst_dict, pos_prior_std: float = 4.0, x_subspace: str = 'se
             # reorder prior to according to optimal assignment
             prior_feat = prior_feat[prior_idx]
 
-            if feat == 'x':
-                if x_subspace == 'se3-quotient':
-                    pre_centered = False
-                elif x_subspace == 'com-free':
-                    pre_centered = True
+        if rigid_body:
+            # perform rigid alignment
+            prior_feat = rigid_alignment(prior_feat, dst_feat)
 
-                # perform rigid alignment
-                prior_feat = rigid_alignment(prior_feat, dst_feat, pre_centered=pre_centered)
-
-        prior_dict[feat] = prior_feat
-
-    return prior_dict
-
-def biased_simplex_prior(n_samples, zero_order_weight: float = 0.75, std: float = 0.2, d=5):
-    """
-    Generate samples from a simplex which are biased towards the 0-indexed category.
-    """
-    non_zero_weight = (1 - zero_order_weight) / (d - 1)
-    mu = torch.ones(d)*non_zero_weight
-    mu[0] = zero_order_weight
-    simplex_sample = mu.unsqueeze(0) + torch.randn(n_samples, d)*std
-    simplex_sample = softmax(simplex_sample/(1/d), dim=1)
-    return simplex_sample
-
-def uniform_simplex_prior(n_samples, d=5):
-    """
-    Generate samples from a uniform distribution on a simplex.
-    """
-    exp_dist = Exponential(torch.tensor(1.0))
-    sample = exp_dist.sample((n_samples, d))
-    sample = sample / sample.sum(dim=1, keepdim=True)
-    return sample
-
+    return prior_feat
 
 def rigid_alignment(x_0, x_1, pre_centered=False):
     """
@@ -177,3 +176,63 @@ def batched_rigid_alignment(x_0, x_1, pre_centered=False):
     x_0_aligned = x_0_aligned + t
 
     return x_0_aligned
+
+train_prior_register = {
+    'centered-normal': centered_normal_prior,
+    'uniform-simplex': uniform_simplex_prior,
+    'biased-simplex': biased_simplex_prior
+}
+
+inference_prior_register = {
+    'centered-normal': centered_normal_prior_batched_graph,
+    'uniform-simplex': uniform_simplex_prior,
+    'biased-simplex': biased_simplex_prior
+}
+
+@torch.no_grad()
+def coupled_node_prior(dst_dict: dict, 
+                     prior_config: dict):
+    prior_dict = {}
+
+    for feat in dst_dict.keys():
+
+        # get the prior configuration for this feature
+        feat_prior_config = prior_config[feat]
+
+        # get destination features (t=1)
+        dst_feat = dst_dict[feat]
+
+        # sample prior
+        prior_fn = train_prior_register[feat_prior_config['type']]
+        n, d = dst_feat.shape
+        prior_feat = prior_fn(n, d, **feat_prior_config['kwargs'])
+
+        # align prior to destination if necessary
+        if feat_prior_config['align']:
+
+            if feat == 'x':
+                rigid_body = True
+            else:
+                rigid_body = False
+
+            prior_feat = align_prior(prior_feat, dst_feat, permutation=True, rigid_body=rigid_body)
+
+        prior_dict[feat] = prior_feat
+
+    return prior_dict
+
+def edge_prior(upper_edge_mask: torch.Tensor, edge_prior_config: dict):
+
+    n_upper_edges = upper_edge_mask.sum().item()
+    if edge_prior_config['type'] == 'biased-simplex':
+        upper_edge_prior = biased_simplex_prior(n_upper_edges, 5, **edge_prior_config['kwargs'])
+    elif edge_prior_config['type'] == 'uniform-simplex':
+        upper_edge_prior = uniform_simplex_prior(n_upper_edges, 5)
+    else:
+        raise ValueError(f'edge prior type {edge_prior_config["type"]} not recognized, must be one of "biased-simplex" or "uniform-simplex"')
+    
+
+    edge_prior = torch.zeros(upper_edge_mask.shape[0], 5)
+    edge_prior[upper_edge_mask] = upper_edge_prior
+    edge_prior[~upper_edge_mask] = upper_edge_prior
+    return edge_prior

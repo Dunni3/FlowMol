@@ -2,7 +2,7 @@ import torch
 from pathlib import Path
 import dgl
 from torch.nn.functional import one_hot
-from data_processing.priors import compute_ot_prior, biased_simplex_prior, uniform_simplex_prior
+from data_processing.priors import coupled_node_prior, edge_prior
 
 # create a function named collate that takes a list of samples from the dataset and combines them into a batch
 # this might not be necessary. I think we can pass the argument collate_fn=dgl.batch to the DataLoader
@@ -11,14 +11,11 @@ def collate(graphs):
 
 class MoleculeDataset(torch.utils.data.Dataset):
 
-    def __init__(self, split: str, dataset_config: dict, prior_config: dict, x_subspace: str = 'se3-quotient'):
+    def __init__(self, split: str, dataset_config: dict, prior_config: dict):
         super(MoleculeDataset, self).__init__()
 
         # unpack some configs regarding the prior
         self.prior_config = prior_config
-        self.use_ot_node_feats: bool = True
-        self.use_biased_edge_prior: bool = prior_config['biased_edge_prior']
-        self.x_subspace = x_subspace
 
         processed_data_dir: Path = Path(dataset_config['processed_data_dir'])
 
@@ -96,36 +93,20 @@ class MoleculeDataset(torch.utils.data.Dataset):
         g.ndata['a_1_true'] = atom_types
         g.ndata['c_1_true'] = atom_charges
 
-        # sample prior with OT alignment on node features if necessary
-        if self.use_ot_node_feats:
-            dst_dict = {
-                'x': positions,
-                'a': atom_types,
-                'c': atom_charges
-            }
+        # sample prior for node features, coupled to the destination features
+        dst_dict = {
+            'x': positions,
+            'a': atom_types,
+            'c': atom_charges
+        }
+        prior_node_feats = coupled_node_prior(dst_dict=dst_dict, prior_config=self.prior_config)
+        for feat in prior_node_feats:
+            g.ndata[f'{feat}_0'] = prior_node_feats[feat]
 
-            prior_node_feats = compute_ot_prior(dst_dict, 
-                                                pos_prior_std=self.prior_config['position_std'],
-                                                x_subspace=self.x_subspace,
-                                                align_cat_feats=False
-                                                )
-
-            for feat in prior_node_feats:
-                g.ndata[f'{feat}_0'] = prior_node_feats[feat]
-
-        # sample the prior for the edge features
-        # note the hard-coded assumption of 5 bond types
+        # sample the prior for the edge features    
+        upper_edge_mask = torch.zeros(g.num_edges(), dtype=torch.bool)
         n_upper_edges = upper_edge_idxs.shape[1]
-        if self.use_biased_edge_prior:
-            edge_prior = biased_simplex_prior(n_upper_edges, 
-                                              zero_order_weight=self.prior_config['no_bond_prob'], 
-                                              std=self.prior_config['bond_order_std'], 
-                                              d=5)
-        else:
-            edge_prior = uniform_simplex_prior(n_upper_edges, d=5)
-
-        g.edata['e_0'] = torch.zeros_like(g.edata['e_1_true'])
-        g.edata['e_0'][:n_upper_edges] = edge_prior # edge_prior has shape (n_upper_edges, 5)
-        g.edata['e_0'][n_upper_edges:] = edge_prior
+        upper_edge_mask[:n_upper_edges] = True
+        g.edata['e_0'] = edge_prior(upper_edge_mask, self.prior_config['e'])
 
         return g
