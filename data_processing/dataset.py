@@ -17,7 +17,22 @@ class MoleculeDataset(torch.utils.data.Dataset):
         # unpack some configs regarding the prior
         self.prior_config = prior_config
 
+        # get the processed data directory
         processed_data_dir: Path = Path(dataset_config['processed_data_dir'])
+
+        # load the marginal distributions of atom types and the conditional distribution of charges given atom type
+        marginal_dists_file = processed_data_dir / 'train_data_marginal_dists.pt'
+        p_a, p_e, p_c_given_a = torch.load(marginal_dists_file)
+
+        # add the marginal distributions as arguments to the prior sampling functions
+        if self.prior_config['a']['type'] == 'marginal':
+            self.prior_config['a']['kwargs']['p'] = p_a
+
+        if self.prior_config['e']['type'] == 'marginal':
+            self.prior_config['e']['kwargs']['p'] = p_e
+        
+        if self.prior_config['c']['type'] == 'c-given-a':
+            self.prior_config['c']['kwargs']['p_c_given_a'] = p_c_given_a
 
         if dataset_config['dataset_name'] in ['geom', 'qm9']:
             data_file = processed_data_dir / f'{split}_data_processed.pt'

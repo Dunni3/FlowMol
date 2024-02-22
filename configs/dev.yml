@@ -50,6 +50,7 @@ checkpointing:
 
 mol_fm:
   time_scaled_loss: True
+  exclude_charges: False
   total_loss_weights:
     x: 1.0
     a: 1.0
@@ -62,16 +63,16 @@ mol_fm:
       kwargs: {std: 1.0}
     a:
       align: False
-      type: 'uniform-simplex'
+      type: 'marginal'
       kwargs: {}
     c:
       align: False
-      type: 'biased-simplex'
-      kwargs: {vertex_prob: 0.8, std: 0.2, vertex_idx: 2}
+      type: 'c-given-a'
+      kwargs: {}
     e:
       align: False
-      type: 'biased-simplex'
-      kwargs: {vertex_prob: 0.75, std: 0.2, vertex_idx: 0}
+      type: 'marginal'
+      kwargs: {}
 
 vector_field:
   n_vec_channels: 16

@@ -15,6 +15,7 @@ from rdkit import Chem
 from multiprocessing import Pool
 
 from data_processing.geom import MoleculeFeaturizer
+from utils.dataset_stats import compute_p_c_given_a
 
 def chunks(lst, n):
     """Yield successive n-sized chunks from lst."""
@@ -114,6 +115,9 @@ if __name__ == "__main__":
     else:
         output_dir = processed_data_dir / 'chunks'
         output_dir.mkdir(exist_ok=True)
+
+    if not full_dataset:
+        raise NotImplementedError(f"dataset chunking is a stupid idea, make multiprocessing work instead")
 
     # determine output file name
     if full_dataset:
@@ -236,6 +240,17 @@ if __name__ == "__main__":
 
     # save the data
     torch.save(data_dict, output_file)
+
+    # compute the marginal distribution of atom types, p(a)
+    p_a = all_atom_types.sum(dim=0)
+    p_a = p_a / p_a.sum()
+
+    # compute the conditional distribution of charges given atom type, p(c|a)
+    p_c_given_a = compute_p_c_given_a(all_atom_charges, all_atom_types, config['dataset']['atom_map'])
+
+    # save p(a) and p(c|a) to a file
+    ac_dist_file = output_dir / f'{args.split_file.stem}_type_charge_dist.pt'
+    torch.save((p_a, p_c_given_a), ac_dist_file)
 
 
     # create histogram of number of atoms

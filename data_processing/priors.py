@@ -1,7 +1,7 @@
 from torch.distributions import Exponential
 from scipy.optimize import linear_sum_assignment
 import torch
-from torch.nn.functional import softmax
+from torch.nn.functional import softmax, one_hot
 import dgl
 
 
@@ -43,6 +43,24 @@ def uniform_simplex_prior(n, d):
     sample = exp_dist.sample((n, d))
     sample = sample / sample.sum(dim=1, keepdim=True)
     return sample
+
+def sample_marginal(n: int, d: int, p: torch.Tensor):
+    """
+    Sample from the marginal distribution of a categorical variable.
+    """
+    prior_idxs = torch.multinomial(p, n, replacement=True)
+    return one_hot(prior_idxs, num_classes=d).float()
+
+def sample_p_c_given_a(n: int, d: int, atom_types: torch.Tensor, p_c_given_a: torch.Tensor, ):
+    """
+    Sample from the conditional distribution of charges given atom type, p(c|a).
+    """
+    if p_c_given_a.device != atom_types.device:
+        p_c_given_a = p_c_given_a.to(atom_types.device)
+
+    atom_type_idxs = atom_types.argmax(dim=1)
+    charge_idxs = torch.multinomial(p_c_given_a[atom_type_idxs], 1, replacement=True).squeeze(-1)
+    return one_hot(charge_idxs, num_classes=d).float()
 
 def align_prior(prior_feat: torch.Tensor, dst_feat: torch.Tensor, permutation=False, rigid_body=False, n_alignments: int = 1):
     """
@@ -177,16 +195,22 @@ def batched_rigid_alignment(x_0, x_1, pre_centered=False):
 
     return x_0_aligned
 
+
+
 train_prior_register = {
     'centered-normal': centered_normal_prior,
     'uniform-simplex': uniform_simplex_prior,
-    'biased-simplex': biased_simplex_prior
+    'biased-simplex': biased_simplex_prior,
+    'marginal': sample_marginal,
+    'c-given-a': sample_p_c_given_a
 }
 
 inference_prior_register = {
     'centered-normal': centered_normal_prior_batched_graph,
     'uniform-simplex': uniform_simplex_prior,
-    'biased-simplex': biased_simplex_prior
+    'biased-simplex': biased_simplex_prior,
+    'marginal': sample_marginal,
+    'c-given-a': sample_p_c_given_a
 }
 
 @torch.no_grad()
@@ -205,7 +229,14 @@ def coupled_node_prior(dst_dict: dict,
         # sample prior
         prior_fn = train_prior_register[feat_prior_config['type']]
         n, d = dst_feat.shape
-        prior_feat = prior_fn(n, d, **feat_prior_config['kwargs'])
+        args = [n,d]
+
+        # if sampling the charges conditioned on atom type, we need to pass the atom types to the prior function
+        # note that this behavior is dependent on "a" being encountered in this loop before "c"
+        if feat == 'c' and feat_prior_config['type'] == 'c-given-a':
+            args.append(prior_dict['a'])
+
+        prior_feat = prior_fn(*args, **feat_prior_config['kwargs'])
 
         # align prior to destination if necessary
         if feat_prior_config['align']:
@@ -224,13 +255,8 @@ def coupled_node_prior(dst_dict: dict,
 def edge_prior(upper_edge_mask: torch.Tensor, edge_prior_config: dict):
 
     n_upper_edges = upper_edge_mask.sum().item()
-    if edge_prior_config['type'] == 'biased-simplex':
-        upper_edge_prior = biased_simplex_prior(n_upper_edges, 5, **edge_prior_config['kwargs'])
-    elif edge_prior_config['type'] == 'uniform-simplex':
-        upper_edge_prior = uniform_simplex_prior(n_upper_edges, 5)
-    else:
-        raise ValueError(f'edge prior type {edge_prior_config["type"]} not recognized, must be one of "biased-simplex" or "uniform-simplex"')
-    
+    prior_fn = train_prior_register[edge_prior_config['type']]
+    upper_edge_prior = prior_fn(n_upper_edges, 5, **edge_prior_config['kwargs'])
 
     edge_prior = torch.zeros(upper_edge_mask.shape[0], 5)
     edge_prior[upper_edge_mask] = upper_edge_prior

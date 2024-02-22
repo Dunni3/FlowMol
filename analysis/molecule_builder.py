@@ -11,13 +11,15 @@ bond_type_map = [None, Chem.rdchem.BondType.SINGLE, Chem.rdchem.BondType.DOUBLE,
 
 class SampledMolecule:
 
-    def __init__(self, g: dgl.DGLGraph, atom_type_map: List[str], traj_frames: Dict[str, torch.Tensor] = None):
+    def __init__(self, g: dgl.DGLGraph, atom_type_map: List[str], traj_frames: Dict[str, torch.Tensor] = None, exclude_charges: bool = False):
         """Represents a molecule sampled from a model. Converts the DGL graph to an rdkit molecule and keeps all associated information."""
 
+        self.exclude_charges = exclude_charges
+        
         # save the graph
         self.g = g
 
-        self.positions, self.atom_types, self.atom_charges, self.bond_types, self.bond_src_idxs, self.bond_dst_idxs = extract_moldata_from_graph(g, atom_type_map)
+        self.positions, self.atom_types, self.atom_charges, self.bond_types, self.bond_src_idxs, self.bond_dst_idxs = extract_moldata_from_graph(g, atom_type_map, exclude_charges=exclude_charges)
 
         self.atom_type_map = atom_type_map
         self.num_atoms = g.num_nodes()
@@ -85,7 +87,7 @@ class SampledMolecule:
         return traj_mols
     
 
-def extract_moldata_from_graph(g: dgl.DGLGraph, atom_type_map: List[str]):
+def extract_moldata_from_graph(g: dgl.DGLGraph, atom_type_map: List[str], exclude_charges: bool = False):
 
     # extract node-level features
     positions = g.ndata['x_1']
@@ -94,7 +96,11 @@ def extract_moldata_from_graph(g: dgl.DGLGraph, atom_type_map: List[str]):
     positions = g.ndata['x_1']
     atom_types = g.ndata['a_1'].argmax(dim=1)
     atom_types = [atom_type_map[int(atom)] for atom in atom_types]
-    atom_charges = g.ndata['c_1'].argmax(dim=1) - 2 # implicit assumption that index 0 charge is -2
+
+    if exclude_charges:
+        atom_charges = None
+    else:
+        atom_charges = g.ndata['c_1'].argmax(dim=1) - 2 # implicit assumption that index 0 charge is -2
 
 
     # get bond types and atom indicies for every edge, convert types from simplex to integer

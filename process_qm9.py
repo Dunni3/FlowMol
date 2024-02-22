@@ -16,6 +16,7 @@ from multiprocessing import Pool
 import pandas as pd
 
 from data_processing.geom import MoleculeFeaturizer
+from utils.dataset_stats import compute_p_c_given_a
 
 def chunks(lst, n):
     """Yield successive n-sized chunks from lst."""
@@ -83,6 +84,7 @@ def process_split(split_df, split_name, args, dataset_config):
     all_atom_charges = []
     all_bond_types = []
     all_bond_idxs = []
+    all_bond_order_counts = torch.zeros(5, dtype=torch.int64)
 
     mol_featurizer = MoleculeFeaturizer(config['dataset']['atom_map'], n_cpus=args.n_cpus)
 
@@ -100,7 +102,7 @@ def process_split(split_df, split_name, args, dataset_config):
     for molecule_chunk in tqdm_iterator:
 
         # TODO: we should collect all the molecules from each individual list into a single list and then featurize them all at once - this would make the multiprocessing actually useful
-        positions, atom_types, atom_charges, bond_types, bond_idxs, num_failed = mol_featurizer.featurize_molecules(molecule_chunk)
+        positions, atom_types, atom_charges, bond_types, bond_idxs, num_failed, bond_order_counts = mol_featurizer.featurize_molecules(molecule_chunk)
 
         failed_molecules += num_failed
         failed_molecules_bar.update(num_failed)
@@ -111,6 +113,7 @@ def process_split(split_df, split_name, args, dataset_config):
         all_atom_charges.extend(atom_charges)
         all_bond_types.extend(bond_types)
         all_bond_idxs.extend(bond_idxs)
+        all_bond_order_counts += bond_order_counts
 
     # get number of atoms in every data point
     n_atoms_list = [ x.shape[0] for x in all_positions ]
@@ -157,12 +160,25 @@ def process_split(split_df, split_name, args, dataset_config):
     output_file = output_dir / f'{split_name}_processed.pt'
     torch.save(data_dict, output_file)
 
-
     # create histogram of number of atoms
     n_atoms, counts = torch.unique(n_atoms_list, return_counts=True)
     histogram_file = output_dir / f'{split_name}_n_atoms_histogram.pt'
     torch.save((n_atoms, counts), histogram_file)
 
+
+    # compute the marginal distribution of atom types, p(a)
+    p_a = all_atom_types.sum(dim=0)
+    p_a = p_a / p_a.sum()
+
+    # compute the marginal distribution of bond types, p(e)
+    p_e = all_bond_order_counts / all_bond_order_counts.sum()
+
+    # compute the conditional distribution of charges given atom type, p(c|a)
+    p_c_given_a = compute_p_c_given_a(all_atom_charges, all_atom_types, dataset_config['atom_map'])
+
+    # save p(a), p(e) and p(c|a) to a file
+    marginal_dists_file = output_dir / f'{split_name}_marginal_dists.pt'
+    torch.save((p_a, p_e, p_c_given_a), marginal_dists_file)
 
     # write all_smiles to its own file
     smiles_file = output_dir / f'{split_name}_smiles.pkl'

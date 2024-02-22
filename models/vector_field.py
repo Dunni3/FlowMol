@@ -23,7 +23,8 @@ class GVPVectorField(nn.Module):
                     separate_mol_updaters: bool = False,
                     message_norm: Union[float, str] = 100,
                     rbf_dmax = 20,
-                    rbf_dim = 16
+                    rbf_dim = 16,
+                    exclude_charges: bool = False
     ):
         super().__init__()
 
@@ -36,6 +37,10 @@ class GVPVectorField(nn.Module):
         self.message_norm = message_norm
         self.n_recycles = n_recycles
         self.separate_mol_updaters: bool = separate_mol_updaters
+        self.exclude_charges = exclude_charges
+
+        if self.exclude_charges:
+            self.n_charges = 0
 
         self.convs_per_update = convs_per_update
         self.n_molecule_updates = n_molecule_updates
@@ -115,9 +120,13 @@ class GVPVectorField(nn.Module):
             # gather node and edge features for input to convolutions
             node_scalar_features = [
                 g.ndata['a_t'],
-                g.ndata['c_t'],
                 t[node_batch_idx].unsqueeze(-1)
             ]
+
+            # if we are not excluding charges, include them in the node scalar features
+            if not self.exclude_charges:
+                node_scalar_features.append(g.ndata['c_t'])
+
             node_scalar_features = torch.cat(node_scalar_features, dim=-1)
             node_scalar_features = self.scalar_embedding(node_scalar_features)
 
@@ -165,8 +174,9 @@ class GVPVectorField(nn.Module):
             
             # predict final charges and atom type logits
             node_scalar_features = self.node_output_head(node_scalar_features)
-            atom_charge_logits = node_scalar_features[:, :self.n_charges]
-            atom_type_logits = node_scalar_features[:, self.n_charges:]
+            atom_type_logits = node_scalar_features[:, :self.n_atom_types]
+            if not self.exclude_charges:
+                atom_charge_logits = node_scalar_features[:, self.n_atom_types:]
 
             # predict the final edge logits
             ue_feats = edge_features[upper_edge_mask]
@@ -182,17 +192,19 @@ class GVPVectorField(nn.Module):
         # build a dictionary of predicted features
         dst_dict = {
             'x': node_positions,
-            'c': atom_charge_logits,
             'a': atom_type_logits,
             'e': edge_logits
         }
+        if not self.exclude_charges:
+            dst_dict['c'] = atom_charge_logits
 
         # apply softmax to categorical features, if requested
         # at training time, we don't want to apply softmax because we use cross-entropy loss which includes softmax
         # at inference time, we want to apply softmax to get a vector which lies on the simplex
         if apply_softmax:
-            for cat_feat in ['c', 'a', 'e']:
-                dst_dict[cat_feat] = torch.softmax(dst_dict[cat_feat], dim=-1)
+            for feat in dst_dict.keys():
+                if feat in ['a', 'c', 'e']: # if this is a categorical feature
+                    dst_dict[feat] = torch.softmax(dst_dict[feat], dim=-1) # apply softmax to this feature
 
         return dst_dict
     

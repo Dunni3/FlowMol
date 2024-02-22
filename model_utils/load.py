@@ -19,10 +19,14 @@ def model_from_config(config: dict) -> MolFM:
 
 
     # get the filepath of the n_atoms histogram
-    n_atoms_hist_filepath = Path(config['dataset']['processed_data_dir']) / 'train_data_n_atoms_histogram.pt'
+    processed_data_dir = Path(config['dataset']['processed_data_dir'])
+    n_atoms_hist_filepath = processed_data_dir / 'train_data_n_atoms_histogram.pt'
+    marginal_dists_file = processed_data_dir / 'train_data_marginal_dists.pt'
+
 
     model = MolFM(atom_type_map=atom_type_map, 
                     n_atoms_hist_file=n_atoms_hist_filepath,
+                    marginal_dists_file=marginal_dists_file,
                     sample_interval=sample_interval,
                     n_mols_to_sample=mols_to_sample,
                     vector_field_config=config['vector_field'],
@@ -43,7 +47,7 @@ def data_module_from_config(config: dict) -> MoleculeDataModule:
         distributed = False
 
     data_module = MoleculeDataModule(dataset_config=config['dataset'],
-                                     prior_config=config['mol_fm']['prior_config'],
+                                     dm_prior_config=config['mol_fm']['prior_config'],
                                      batch_size=batch_size, 
                                      num_workers=num_workers, 
                                      distributed=distributed)

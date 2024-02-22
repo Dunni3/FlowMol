@@ -27,11 +27,13 @@ class MolFM(pl.LightningModule):
     def __init__(self,
                  atom_type_map: List[str],               
                  n_atoms_hist_file: str,
+                 marginal_dists_file: str,                 
                  n_atom_charges: int = 6,
                  n_bond_types: int = 5,
                  sample_interval: float = 1.0, # how often to sample molecules from the model, measured in epochs
                  n_mols_to_sample: int = 64, # how many molecules to sample from the model during each sample/eval step during training
                  time_scaled_loss: bool = True,
+                 exclude_charges: bool = False,
                  total_loss_weights: Dict[str, float] = {}, 
                  lr_scheduler_config: dict = {},
                  interpolant_scheduler_config: dict = {},
@@ -48,6 +50,16 @@ class MolFM(pl.LightningModule):
         self.total_loss_weights = total_loss_weights
         self.time_scaled_loss = time_scaled_loss
         self.prior_config = prior_config
+        self.exclude_charges = exclude_charges
+        self.marginal_dists_file = marginal_dists_file
+
+        # do some boring stuff regarding the prior distribution
+        self.configure_prior()
+
+        if self.exclude_charges:
+            self.node_feats.remove('c')
+            self.canonical_feat_order.remove('c')
+            self.total_loss_weights.pop('c')
 
         # create a dictionary mapping feature -> number of categories
         self.n_cat_dict = {
@@ -75,9 +87,10 @@ class MolFM(pl.LightningModule):
         self.vector_field = GVPVectorField(n_atom_types=self.n_atom_types, 
                                            n_charges=n_atom_charges, 
                                            n_bond_types=n_bond_types,
+                                           exclude_charges=self.exclude_charges,
                                            **vector_field_config)
 
-        # loss functions
+        # instantiate loss functions
         if self.time_scaled_loss:
             reduction = 'none'
         else:
@@ -88,6 +101,10 @@ class MolFM(pl.LightningModule):
             'c': nn.CrossEntropyLoss(reduction=reduction),
             'e': nn.CrossEntropyLoss(reduction=reduction),
         }
+
+        # remove charge loss function if necessary
+        if self.exclude_charges:
+            self.loss_fn_dict.pop('c')
 
         self.sample_interval = sample_interval # how often to sample molecules from the model, measured in epochs
         self.n_mols_to_sample = n_mols_to_sample # how many molecules to sample from the model during each sample/eval step during training
@@ -100,6 +117,20 @@ class MolFM(pl.LightningModule):
         self.last_epoch_exact = 0
 
         self.save_hyperparameters()
+
+    def configure_prior(self):
+        # load the marginal distributions of atom types, bond orders and the conditional distribution of charges given atom type
+        p_a, p_e, p_c_given_a = torch.load(self.marginal_dists_file)
+
+        # add the marginal distributions as arguments to the prior sampling functions
+        if self.prior_config['a']['type'] == 'marginal':
+            self.prior_config['a']['kwargs']['p'] = p_a
+
+        if self.prior_config['e']['type'] == 'marginal':
+            self.prior_config['e']['kwargs']['p'] = p_e
+        
+        if self.prior_config['c']['type'] == 'c-given-a':
+            self.prior_config['c']['kwargs']['p_c_given_a'] = p_c_given_a
 
     def training_step(self, g: dgl.DGLGraph, batch_idx: int):
 
@@ -201,19 +232,6 @@ class MolFM(pl.LightningModule):
         # get the time-dependent loss weights if necessary
         if self.time_scaled_loss:
             time_weights = self.interpolant_scheduler.loss_weights(t)
-
-        # if we are using the se(3)-quotient subspace, then we need to align the predicted positions with the true positions
-        # just kidding, now we dont!!
-        # if self.x_subspace == 'se3-quotient':
-        #     batch_num_nodes = g.batch_num_nodes()
-        #     n = int(batch_num_nodes[0])
-        #     assert batch_num_nodes.unique().shape[0] == 1, "all molecules in the batch must have the same number of atoms"
-        #     x_1_pred = dst_dict['x']
-        #     x_1_pred = rearrange(x_1_pred, '(b n) d -> b n d', b=batch_size, n=n, d=3)
-        #     x_1_true = g.ndata['x_1_true']
-        #     x_1_true = rearrange(x_1_true, '(b n) d -> b n d', b=batch_size, n=n, d=3)
-        #     x_1_pred = batched_rigid_alignment(x_1_pred, x_1_true)
-        #     dst_dict['x'] = rearrange(x_1_pred, 'b n d -> (b n) d')
             
         # compute losses
         losses = {}
@@ -262,11 +280,15 @@ class MolFM(pl.LightningModule):
         for feat in self.node_feats:
             prior_type = self.prior_config[feat]['type']
             prior_fn = inference_prior_register[prior_type]
+            # I tried to design consistent interface for prior functions, but it's not perfect
+            # hence the need for the following two if statements
             if feat == 'x':
-                # tried to design consistent interface for prior functions, but it's not perfect
-                args = (g, node_batch_idx,)
+                args = [g, node_batch_idx,]
             else:
-                args = (num_nodes, self.n_cat_dict[feat],)
+                args = [num_nodes, self.n_cat_dict[feat],]
+
+            if feat == 'c' and self.prior_config[feat]['type'] == 'c-given-a':
+                args.append(g.ndata['a_0'])
 
             kwargs = self.prior_config[feat]['kwargs']
             g.ndata[f'{feat}_0'] = prior_fn(*args, **kwargs).to(device)
@@ -490,6 +512,6 @@ class MolFM(pl.LightningModule):
             if visualize:
                 args.append(traj_frames[mol_idx])
 
-            molecules.append(SampledMolecule(*args))
+            molecules.append(SampledMolecule(*args, exclude_charges=self.exclude_charges))
 
         return molecules

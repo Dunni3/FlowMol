@@ -26,24 +26,32 @@ class MoleculeFeaturizer():
 
 
         all_positions, all_atom_types, all_atom_charges, all_bond_types, all_bond_idxs = [], [], [], [], []
+        all_bond_order_counts = torch.zeros(5, dtype=torch.int64)
 
         if self.n_cpus == 1:
             for molecule in molecules:
-                positions, atom_types, atom_charges, bond_types, bond_idxs = featurize_molecule(molecule, self.atom_map_dict)
+                positions, atom_types, atom_charges, bond_types, bond_idxs, bond_order_counts = featurize_molecule(molecule, self.atom_map_dict)
                 all_positions.append(positions)
                 all_atom_types.append(atom_types)
                 all_atom_charges.append(atom_charges)
                 all_bond_types.append(bond_types)
                 all_bond_idxs.append(bond_idxs)
+
+                if bond_order_counts is not None:
+                    all_bond_order_counts += bond_order_counts
+
         else:
             args = [(molecule, self.atom_map_dict) for molecule in molecules]
             results = self.pool.starmap(featurize_molecule, args)
-            for positions, atom_types, atom_charges, bond_types, bond_idxs in results:
+            for positions, atom_types, atom_charges, bond_types, bond_idxs, bond_order_counts in results:
                 all_positions.append(positions)
                 all_atom_types.append(atom_types)
                 all_atom_charges.append(atom_charges)
                 all_bond_types.append(bond_types)
                 all_bond_idxs.append(bond_idxs)
+
+                if bond_order_counts is not None:
+                    all_bond_order_counts += bond_order_counts
 
         # find molecules that failed to featurize and count them
         num_failed = 0
@@ -60,7 +68,7 @@ class MoleculeFeaturizer():
         all_bond_types = [bond for i, bond in enumerate(all_bond_types) if i not in failed_idxs]
         all_bond_idxs = [idx for i, idx in enumerate(all_bond_idxs) if i not in failed_idxs]
 
-        return all_positions, all_atom_types, all_atom_charges, all_bond_types, all_bond_idxs, num_failed
+        return all_positions, all_atom_types, all_atom_charges, all_bond_types, all_bond_idxs, num_failed, all_bond_order_counts
 
 
 
@@ -83,7 +91,7 @@ def featurize_molecule(molecule: Chem.rdchem.Mol, atom_map_dict: Dict[str, int],
             atom_types_idx[i] = atom_map_dict[atom.GetSymbol()]
         except KeyError:
             print(f"Atom {atom.GetSymbol()} not in atom map", flush=True)
-            return None, None, None, None, None
+            return None, None, None, None, None, None
         
         atom_charges[i] = atom.GetFormalCharge()
 
@@ -105,4 +113,22 @@ def featurize_molecule(molecule: Chem.rdchem.Mol, atom_map_dict: Dict[str, int],
     edge_attr = bond_types.type(torch.int32)
     # edge_attr = one_hot(bond_types, num_classes=5).bool() # five bond classes: no bond, single, double, triple, aromatic
 
-    return positions, atom_types, atom_charges, edge_attr, edge_index
+    # count the number of pairs of atoms which are bonded
+    n_bonded_pairs = edge_index.shape[0]
+
+    # compute the number of upper-edge pairs
+    n_atoms = atom_types.shape[0]
+    n_pairs = n_atoms * (n_atoms - 1) // 2
+
+    # compute the number of pairs of atoms which are not bonded
+    n_unbonded = n_pairs - n_bonded_pairs
+
+    # construct an array containing the counts of each bond type in the molecule
+    bond_order_idxs, existing_bond_order_counts = torch.unique(edge_attr, return_counts=True)
+    bond_order_counts = torch.zeros(5, dtype=torch.int64)
+    for bond_order_idx, count in zip(bond_order_idxs, existing_bond_order_counts):
+        bond_order_counts[bond_order_idx] = count
+
+    bond_order_counts[0] = n_unbonded
+
+    return positions, atom_types, atom_charges, edge_attr, edge_index, bond_order_counts
