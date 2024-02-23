@@ -69,6 +69,10 @@ def sample_p_c_given_a(n: int, d: int, atom_types: torch.Tensor, p_c_given_a: to
 
     charge_simplex = one_hot(charge_idxs, num_classes=d).float()
 
+    if blur is not None:
+        charge_simplex = charge_simplex + torch.randn_like(charge_simplex) * blur
+        charge_simplex = softmax(charge_simplex, dim=1)
+
     return charge_simplex
 
 def align_prior(prior_feat: torch.Tensor, dst_feat: torch.Tensor, permutation=False, rigid_body=False, n_alignments: int = 1):
