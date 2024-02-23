@@ -165,7 +165,6 @@ def process_split(split_df, split_name, args, dataset_config):
     histogram_file = output_dir / f'{split_name}_n_atoms_histogram.pt'
     torch.save((n_atoms, counts), histogram_file)
 
-
     # compute the marginal distribution of atom types, p(a)
     p_a = all_atom_types.sum(dim=0)
     p_a = p_a / p_a.sum()
@@ -173,12 +172,19 @@ def process_split(split_df, split_name, args, dataset_config):
     # compute the marginal distribution of bond types, p(e)
     p_e = all_bond_order_counts / all_bond_order_counts.sum()
 
+    # compute the marginal distirbution of charges, p(c)
+    charge_vals, charge_counts = torch.unique(all_atom_charges, return_counts=True)
+    p_c = torch.zeros(6, dtype=torch.float32)
+    for c_val, c_count in zip(charge_vals, charge_counts):
+        p_c[c_val+2] = c_count
+    p_c = p_c / p_c.sum()
+
     # compute the conditional distribution of charges given atom type, p(c|a)
     p_c_given_a = compute_p_c_given_a(all_atom_charges, all_atom_types, dataset_config['atom_map'])
 
     # save p(a), p(e) and p(c|a) to a file
     marginal_dists_file = output_dir / f'{split_name}_marginal_dists.pt'
-    torch.save((p_a, p_e, p_c_given_a), marginal_dists_file)
+    torch.save((p_a, p_c, p_e, p_c_given_a), marginal_dists_file)
 
     # write all_smiles to its own file
     smiles_file = output_dir / f'{split_name}_smiles.pkl'

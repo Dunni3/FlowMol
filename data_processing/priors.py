@@ -44,14 +44,20 @@ def uniform_simplex_prior(n, d):
     sample = sample / sample.sum(dim=1, keepdim=True)
     return sample
 
-def sample_marginal(n: int, d: int, p: torch.Tensor):
+def sample_marginal(n: int, d: int, p: torch.Tensor, blur: float = None):
     """
     Sample from the marginal distribution of a categorical variable.
     """
     prior_idxs = torch.multinomial(p, n, replacement=True)
-    return one_hot(prior_idxs, num_classes=d).float()
+    prior_one_hot = one_hot(prior_idxs, num_classes=d).float()
 
-def sample_p_c_given_a(n: int, d: int, atom_types: torch.Tensor, p_c_given_a: torch.Tensor, ):
+    if blur is not None:
+        prior_one_hot = prior_one_hot + torch.randn_like(prior_one_hot) * blur
+        prior_one_hot = softmax(prior_one_hot, dim=1)
+
+    return prior_one_hot
+
+def sample_p_c_given_a(n: int, d: int, atom_types: torch.Tensor, p_c_given_a: torch.Tensor, blur: float = None):
     """
     Sample from the conditional distribution of charges given atom type, p(c|a).
     """
@@ -60,7 +66,10 @@ def sample_p_c_given_a(n: int, d: int, atom_types: torch.Tensor, p_c_given_a: to
 
     atom_type_idxs = atom_types.argmax(dim=1)
     charge_idxs = torch.multinomial(p_c_given_a[atom_type_idxs], 1, replacement=True).squeeze(-1)
-    return one_hot(charge_idxs, num_classes=d).float()
+
+    charge_simplex = one_hot(charge_idxs, num_classes=d).float()
+
+    return charge_simplex
 
 def align_prior(prior_feat: torch.Tensor, dst_feat: torch.Tensor, permutation=False, rigid_body=False, n_alignments: int = 1):
     """

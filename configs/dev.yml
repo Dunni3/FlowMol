@@ -64,15 +64,15 @@ mol_fm:
     a:
       align: False
       type: 'marginal'
-      kwargs: {}
+      kwargs: {blur: 0.15}
     c:
       align: False
       type: 'c-given-a'
-      kwargs: {}
+      kwargs: {blur: 0.15}
     e:
       align: False
       type: 'marginal'
-      kwargs: {}
+      kwargs: {blur: 0.15}
 
 vector_field:
   n_vec_channels: 16

@@ -120,7 +120,7 @@ class MolFM(pl.LightningModule):
 
     def configure_prior(self):
         # load the marginal distributions of atom types, bond orders and the conditional distribution of charges given atom type
-        p_a, p_e, p_c_given_a = torch.load(self.marginal_dists_file)
+        p_a, p_c, p_e, p_c_given_a = torch.load(self.marginal_dists_file)
 
         # add the marginal distributions as arguments to the prior sampling functions
         if self.prior_config['a']['type'] == 'marginal':
@@ -128,6 +128,9 @@ class MolFM(pl.LightningModule):
 
         if self.prior_config['e']['type'] == 'marginal':
             self.prior_config['e']['kwargs']['p'] = p_e
+
+        if self.prior_config['c']['type'] == 'marginal':
+            self.prior_config['c']['kwargs']['p'] = p_c
         
         if self.prior_config['c']['type'] == 'c-given-a':
             self.prior_config['c']['kwargs']['p_c_given_a'] = p_c_given_a
