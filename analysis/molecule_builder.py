@@ -31,6 +31,8 @@ class SampledMolecule:
         # compute valencies on every atom
         self.valencies = self.compute_valencies()
 
+        self.traj_frames = traj_frames
+
         if traj_frames is not None:
             self.traj_mols = self.process_traj_frames(traj_frames) # convert frames into a list of rdkit molecules
 
@@ -44,7 +46,9 @@ class SampledMolecule:
         adj = torch.zeros((self.num_atoms, self.num_atoms))
         adjusted_bond_types = self.bond_types.clone()
         adjusted_bond_types[adjusted_bond_types == 4] = 1.5
-        adj[self.bond_src_idxs, self.bond_dst_idxs] = adjusted_bond_types.float()
+        adjusted_bond_types = adjusted_bond_types.float()
+        adj[self.bond_src_idxs, self.bond_dst_idxs] = adjusted_bond_types
+        adj[self.bond_dst_idxs, self.bond_src_idxs] = adjusted_bond_types
         valencies = torch.sum(adj, dim=-1).long()
         return valencies
     
@@ -63,9 +67,9 @@ class SampledMolecule:
             # put current frame data into graph
             for feat in traj_frames.keys():
                 if feat == 'e':
-                    g_dummy.edata['e_1'] = traj_frames[feat][frame_idx]
+                    g_dummy.edata['e_1'] = traj_frames[feat][frame_idx].clone()
                 else:
-                    g_dummy.ndata[f'{feat}_1'] = traj_frames[feat][frame_idx]
+                    g_dummy.ndata[f'{feat}_1'] = traj_frames[feat][frame_idx].clone()
 
             # extract mol data from graph
             positions, atom_types, atom_charges, bond_types, bond_src_idxs, bond_dst_idxs = extract_moldata_from_graph(g_dummy, self.atom_type_map)
