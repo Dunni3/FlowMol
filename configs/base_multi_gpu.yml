@@ -3,76 +3,92 @@ training:
   batch_size: 8
   num_workers: 4
   trainer_args:
-    max_epochs: 2
+    max_epochs: 20
     accelerator: gpu
     devices: 4
     num_nodes: 1
     strategy: ddp_find_unused_parameters_true
     accumulate_grad_batches: 2
-    limit_val_batches: 0.01
+    limit_val_batches: 0.002
 
   evaluation:
     mols_to_sample: 64 # how many molecules to sample during evaluation
-    sample_interval: 0.1 # how often to sample molecules during training, measured in epochs
-    val_loss_interval: 0.05 # how often to compute validation set loss during training, measured in epochs
+    sample_interval: 0.008 # how often to sample molecules during training, measured in epochs
+    val_loss_interval: 0.008 # how often to compute validation set loss during training, measured in epochs
 
 wandb:
   project: mol-fm
-  group: "dev"
-  name: ot-rotate
+  group: "for-reals"
+  name: geom
   mode: online # can be disabled, online, offline
 
 lr_scheduler:
   # to turn off warmup and restarts, set both warmup_length and restart_interval to 0
   base_lr: 1.0e-4
-  warmup_length: 0
+  warmup_length: 1.0
   restart_interval: 0 # 0 means no restart
   restart_type: 'linear'
+  weight_decay: 1.0e-12
 
 dataset:
   raw_data_dir: data/raw/
   processed_data_dir: data/geom/
-  atom_map: ['C', 'H', 'N', 'O', 'F', 'P', 'S', 'Cl', 'Br', 'I'] # TODO: check the list of atoms contained in geomdrugs
+  atom_map: ['C', 'H', 'N', 'O', 'F', 'P', 'S', 'Cl', 'Br', 'I', 'As', 'Hg', 'Bi', 'Se']
   dataset_name: geom # only geom is supported for now
   dataset_size:
 
 checkpointing:
   save_last: True
   save_top_k: 3
-  monitor: 'val_total_loss'
+  monitor: 'frac_valid_mols'
   every_n_epochs: 1
 
 mol_fm:
   time_scaled_loss: True
   total_loss_weights:
-    x: 1.0
-    a: 1.0
+    x: 3.0
+    a: 0.4
     c: 1.0
-    e: 1.0
+    e: 2.0
   prior_config:
-    ot_node_feats: True
-    rotate_positions: True
-    position_std: 1.0
-    biased_edge_prior: True
-    no_bond_prob: 0.75
-    bond_order_std: 0.2
+    x:
+      align: True
+      type: 'centered-normal'
+      kwargs: {std: 1.0}
+    a:
+      align: False
+      type: 'marginal'
+      kwargs: {blur: 0.15}
+    c:
+      align: False
+      type: 'c-given-a'
+      kwargs: {blur: 0.15}
+    e:
+      align: False
+      type: 'marginal'
+      kwargs: {blur: 0.15}
 
 vector_field:
-  n_vec_channels: 12
-  n_hidden_scalars: 64
-  n_hidden_edge_feats: 64
-  n_recycles: 2
-  n_molecule_updates: 1
-  convs_per_update: 3
+  n_vec_channels: 16
+  n_hidden_scalars: 256
+  n_hidden_edge_feats: 128 
+  n_recycles: 1
+  separate_mol_updaters: True
+  n_molecule_updates: 5
+  convs_per_update: 1
   n_cp_feats: 4
   n_message_gvps: 3
   n_update_gvps: 3
   message_norm: 100
-  rbf_dmax: 20
+  rbf_dmax: 12
   rbf_dim: 16
 
 interpolant_scheduler:
-  schedule_type: 'cosine'
+  schedule_type:
+    x: 'cosine'
+    a: 'cosine'
+    c: 'cosine'
+    e: 'cosine'
   cosine_params:
     x: 1
     a: 2

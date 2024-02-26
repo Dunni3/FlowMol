@@ -164,6 +164,7 @@ if __name__ == "__main__":
     all_atom_charges = []
     all_bond_types = []
     all_bond_idxs = []
+    all_bond_order_counts = torch.zeros(5, dtype=torch.int64)
 
     mol_featurizer = MoleculeFeaturizer(config['dataset']['atom_map'], n_cpus=args.n_cpus)
 
@@ -181,7 +182,7 @@ if __name__ == "__main__":
     for molecule_chunk in tqdm_iterator:
 
         # TODO: we should collect all the molecules from each individual list into a single list and then featurize them all at once - this would make the multiprocessing actually useful
-        positions, atom_types, atom_charges, bond_types, bond_idxs, num_failed = mol_featurizer.featurize_molecules(molecule_chunk)
+        positions, atom_types, atom_charges, bond_types, bond_idxs, num_failed, bond_order_counts = mol_featurizer.featurize_molecules(molecule_chunk)
 
         failed_molecules += num_failed
         failed_molecules_bar.update(num_failed)
@@ -192,6 +193,7 @@ if __name__ == "__main__":
         all_atom_charges.extend(atom_charges)
         all_bond_types.extend(bond_types)
         all_bond_idxs.extend(bond_idxs)
+        all_bond_order_counts += bond_order_counts
 
         # early stopping - a feature only used for debugging / creating small datasets
         if dataset_size is not None and len(all_positions) > dataset_size and full_dataset:
@@ -248,9 +250,19 @@ if __name__ == "__main__":
     # compute the conditional distribution of charges given atom type, p(c|a)
     p_c_given_a = compute_p_c_given_a(all_atom_charges, all_atom_types, config['dataset']['atom_map'])
 
-    # save p(a) and p(c|a) to a file
-    ac_dist_file = output_dir / f'{args.split_file.stem}_type_charge_dist.pt'
-    torch.save((p_a, p_c_given_a), ac_dist_file)
+    # compute the marginal distribution of bond types, p(e)
+    p_e = all_bond_order_counts / all_bond_order_counts.sum()
+
+    # compute the marginal distirbution of charges, p(c)
+    charge_vals, charge_counts = torch.unique(all_atom_charges, return_counts=True)
+    p_c = torch.zeros(6, dtype=torch.float32)
+    for c_val, c_count in zip(charge_vals, charge_counts):
+        p_c[c_val+2] = c_count
+    p_c = p_c / p_c.sum()
+
+    # save p(a), p(e), p(c) and p(c|a) to a file
+    marginal_dists_file = output_dir / f'{args.split_file.stem}_marginal_dists.pt'
+    torch.save((p_a, p_c, p_e, p_c_given_a), marginal_dists_file)
 
 
     # create histogram of number of atoms
