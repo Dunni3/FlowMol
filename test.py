@@ -5,8 +5,10 @@ import pytorch_lightning as pl
 from pytorch_lightning import seed_everything
 from models.mol_fm import MolFM
 from analysis.molecule_builder import SampledMolecule
+from analysis.metrics import SampleAnalyzer
 from typing import List
 from rdkit import Chem
+import pickle
 
 def parse_args():
     p = argparse.ArgumentParser(description='Testing Script')
@@ -18,6 +20,7 @@ def parse_args():
     p.add_argument('--n_atoms_per_mol', type=int, default=None)
     p.add_argument('--n_timesteps', type=int, default=20)
     p.add_argument('--visualize', action='store_true', help='Visualize the sampled trajectories')
+    p.add_argument('--metrics', action='store_true', help='Compute metrics on the sampled molecules')
 
     p.add_argument('--seed', type=int, default=None)
 
@@ -68,7 +71,25 @@ if __name__ == "__main__":
         molecules: List[SampledMolecule] = model.sample(n_atoms, device=device, n_timesteps=args.n_timesteps, visualize=args.visualize)
 
     # get output file
-    output_file = args.output_file if args.output_file is not None else args.model_dir / 'sampled_mols.sdf'
+    if args.output_file is not None:
+        output_file = args.output_file
+    else:
+        output_file = model_dir / 'samples' / 'sampled_mols.sdf'
+    output_file.parent.mkdir(parents=True, exist_ok=True)
+
+    # compute metrics if necessary
+    if args.metrics:
+        metrics = SampleAnalyzer().analyze(molecules)
+        metrics_txt_file = output_file.parent / f'{output_file.stem}_metrics.txt'
+        metrics_pkl_file = output_file.parent / f'{output_file.stem}_metrics.pkl'
+        print(f'Writing metrics to {metrics_txt_file} and {metrics_pkl_file}')
+        with open(metrics_txt_file, 'w') as f:
+            for k, v in metrics.items():
+                f.write(f'{k}: {v}\n')
+        with open(metrics_pkl_file, 'wb') as f:
+            pickle.dump(metrics, f)
+        
+
 
     # check that output file is an sdf file
     if output_file.suffix != '.sdf':
