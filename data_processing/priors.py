@@ -4,6 +4,12 @@ import torch
 from torch.nn.functional import softmax, one_hot
 import dgl
 
+def gaussian(n: int, d: int, std: float = 1.0):
+    """
+    Generate a prior feature by sampling from a Gaussian distribution.
+    """
+    return torch.randn(n, d) * std
+
 
 def centered_normal_prior(n: int, d: int, std: float = 4.0):
     """
@@ -215,7 +221,8 @@ train_prior_register = {
     'uniform-simplex': uniform_simplex_prior,
     'biased-simplex': biased_simplex_prior,
     'marginal': sample_marginal,
-    'c-given-a': sample_p_c_given_a
+    'c-given-a': sample_p_c_given_a,
+    'gaussian': gaussian
 }
 
 inference_prior_register = {
@@ -223,7 +230,8 @@ inference_prior_register = {
     'uniform-simplex': uniform_simplex_prior,
     'biased-simplex': biased_simplex_prior,
     'marginal': sample_marginal,
-    'c-given-a': sample_p_c_given_a
+    'c-given-a': sample_p_c_given_a,
+    'gaussian': gaussian
 }
 
 @torch.no_grad()

@@ -63,8 +63,8 @@ mol_fm:
       kwargs: {std: 1.0}
     a:
       align: False
-      type: 'marginal'
-      kwargs: {blur: 0.15}
+      type: 'gaussian'
+      kwargs: {}
     c:
       align: False
       type: 'c-given-a'
