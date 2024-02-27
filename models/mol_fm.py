@@ -9,7 +9,7 @@ from torch.distributions import Exponential
 
 from .lr_scheduler import LRScheduler
 from .interpolant_scheduler import InterpolantScheduler
-from .vector_field import EndpointVectorField
+from .vector_field import EndpointVectorField, VectorField
 
 from data_processing.utils import build_edge_idxs, get_upper_edge_mask, get_batch_idxs
 from data_processing.priors import uniform_simplex_prior, biased_simplex_prior, batched_rigid_alignment, rigid_alignment
@@ -34,6 +34,7 @@ class MolFM(pl.LightningModule):
                  n_mols_to_sample: int = 64, # how many molecules to sample from the model during each sample/eval step during training
                  time_scaled_loss: bool = True,
                  exclude_charges: bool = False,
+                 parameterization: str = 'endpoint', # how to parameterize the flow-matching objective, can be 'endpoint' for 'vector-field'
                  total_loss_weights: Dict[str, float] = {}, 
                  lr_scheduler_config: dict = {},
                  interpolant_scheduler_config: dict = {},
@@ -52,6 +53,7 @@ class MolFM(pl.LightningModule):
         self.prior_config = prior_config
         self.exclude_charges = exclude_charges
         self.marginal_dists_file = marginal_dists_file
+        self.parameterization = parameterization
 
         # do some boring stuff regarding the prior distribution
         self.configure_prior()
@@ -84,7 +86,17 @@ class MolFM(pl.LightningModule):
         # create interpolant scheduler and vector field
         self.interpolant_scheduler = InterpolantScheduler(canonical_feat_order=self.canonical_feat_order, 
                                                           **interpolant_scheduler_config)
-        self.vector_field = EndpointVectorField(n_atom_types=self.n_atom_types,
+        
+        # check that a valid parameterization was specified
+        if self.parameterization not in ['endpoint', 'vector-field']:
+            raise ValueError(f'parameterization must be one of "endpoint" or "vector-field", got {self.parameterization}')
+
+        if self.parameterization == 'endpoint':
+            vector_field_class = EndpointVectorField
+        elif self.parameterization == 'vector-field':
+            vector_field_class = VectorField
+
+        self.vector_field = vector_field_class(n_atom_types=self.n_atom_types,
                                            canonical_feat_order=self.canonical_feat_order,
                                            interpolant_scheduler=self.interpolant_scheduler, 
                                            n_charges=n_atom_charges, 
@@ -97,11 +109,17 @@ class MolFM(pl.LightningModule):
             reduction = 'none'
         else:
             reduction = 'mean'
+
+        if self.parameterization == 'endpoint':
+            categorical_loss_fn = nn.CrossEntropyLoss
+        elif self.parameterization == 'vector-field':
+            categorical_loss_fn = nn.MSELoss
+
         self.loss_fn_dict = {
             'x': nn.MSELoss(reduction=reduction),
-            'a': nn.CrossEntropyLoss(reduction=reduction),
-            'c': nn.CrossEntropyLoss(reduction=reduction),
-            'e': nn.CrossEntropyLoss(reduction=reduction),
+            'a': categorical_loss_fn(reduction=reduction),
+            'c': categorical_loss_fn(reduction=reduction),
+            'e': categorical_loss_fn(reduction=reduction),
         }
 
         # remove charge loss function if necessary
@@ -231,8 +249,37 @@ class MolFM(pl.LightningModule):
         # construct interpolated molecules
         g = self.interpolate(g, t, node_batch_idx, edge_batch_idx)
 
-        # predict the end of the trajectory
-        dst_dict = self.vector_field(g, t, node_batch_idx=node_batch_idx, upper_edge_mask=upper_edge_mask)
+        # forward pass for the vector field
+        vf_output = self.vector_field(g, t, node_batch_idx=node_batch_idx, upper_edge_mask=upper_edge_mask)
+
+        # get the target (label) for each feature
+        targets = {}
+        alpha_t_prime = self.interpolant_scheduler.alpha_t_prime(t)
+        for feat_idx, feat in enumerate(self.canonical_feat_order):
+            if feat == 'e':
+                data_src = g.edata
+            else:
+                data_src = g.ndata
+
+            if self.parameterization == 'endpoint':
+                target = data_src[f'{feat}_1_true']
+                if feat in ['a', 'c', 'e']:
+                    target = target.argmax(dim=-1)
+            elif self.parameterization == 'vector-field':
+                alpha_t_prime_i = alpha_t_prime[:, feat_idx]
+                x_1 = data_src[f'{feat}_1_true']
+                x_0 = data_src[f'{feat}_0']
+
+                if feat == 'e':
+                    alpha_t_prime_i = alpha_t_prime_i[edge_batch_idx][upper_edge_mask].unsqueeze(-1)
+                    x_1 = x_1[upper_edge_mask]
+                    x_0 = x_0[upper_edge_mask]
+                else:
+                    alpha_t_prime_i = alpha_t_prime_i[node_batch_idx].unsqueeze(-1)
+
+                target = alpha_t_prime_i*(x_1 - x_0)
+
+            targets[feat] = target
 
         # get the time-dependent loss weights if necessary
         if self.time_scaled_loss:
@@ -242,20 +289,10 @@ class MolFM(pl.LightningModule):
         losses = {}
         for feat_idx, feat in enumerate(self.canonical_feat_order):
 
-            # get the target for this feature
-            if feat == 'e':
-                target = g.edata[f'{feat}_1_true'][upper_edge_mask]
-            else:
-                target = g.ndata[f'{feat}_1_true']
-
-            # get the target as class indicies for categorical features
-            if feat in ['a', 'c', 'e']:
-                target = target.argmax(dim=-1)
-
             if self.time_scaled_loss:
                 weight = time_weights[:, feat_idx]
                 if feat == 'e':
-                    weight = weight[edge_batch_idx]
+                    weight = weight[edge_batch_idx][upper_edge_mask]
                 else:
                     weight = weight[node_batch_idx]
                 weight = weight.unsqueeze(-1)
@@ -263,7 +300,8 @@ class MolFM(pl.LightningModule):
                 weight = 1.0
 
             # compute the losses
-            losses[feat] = self.loss_fn_dict[feat](dst_dict[feat], target)*weight
+            target = targets[feat]
+            losses[feat] = self.loss_fn_dict[feat](vf_output[feat], target)*weight
 
             # when time_scaled_loss is True, we set the reduction to 'none' so that each training example can be scaled by the time-dependent weight.
             # however, this means that we also need to do the reduction ourselves here.
