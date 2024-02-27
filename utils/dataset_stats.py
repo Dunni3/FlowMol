@@ -23,5 +23,7 @@ def compute_p_c_given_a(atom_charges: torch.Tensor, atom_types: torch.Tensor, at
             charge_idx = charge_val_to_idx[int(unique_charge)]
             p_c_given_a[atom_idx, charge_idx] = charge_count
 
-    p_c_given_a = p_c_given_a / p_c_given_a.sum(dim=1, keepdim=True)
+    row_sum = p_c_given_a.sum(dim=1, keepdim=True)
+    row_sum[row_sum == 0] = 1.0e-8
+    p_c_given_a = p_c_given_a / row_sum
     return p_c_given_a
