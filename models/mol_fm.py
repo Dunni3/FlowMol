@@ -9,7 +9,7 @@ from torch.distributions import Exponential
 
 from .lr_scheduler import LRScheduler
 from .interpolant_scheduler import InterpolantScheduler
-from .vector_field import GVPVectorField
+from .vector_field import EndpointVectorField
 
 from data_processing.utils import build_edge_idxs, get_upper_edge_mask, get_batch_idxs
 from data_processing.priors import uniform_simplex_prior, biased_simplex_prior, batched_rigid_alignment, rigid_alignment
@@ -84,7 +84,8 @@ class MolFM(pl.LightningModule):
         # create interpolant scheduler and vector field
         self.interpolant_scheduler = InterpolantScheduler(canonical_feat_order=self.canonical_feat_order, 
                                                           **interpolant_scheduler_config)
-        self.vector_field = GVPVectorField(n_atom_types=self.n_atom_types, 
+        self.vector_field = EndpointVectorField(n_atom_types=self.n_atom_types,
+                                           interpolant_scheduler=self.interpolant_scheduler, 
                                            n_charges=n_atom_charges, 
                                            n_bond_types=n_bond_types,
                                            exclude_charges=self.exclude_charges,
@@ -230,7 +231,7 @@ class MolFM(pl.LightningModule):
         g = self.interpolate(g, t, node_batch_idx, edge_batch_idx)
 
         # predict the end of the trajectory
-        dst_dict = self.vector_field.pred_dst(g, t, node_batch_idx=node_batch_idx, upper_edge_mask=upper_edge_mask)
+        dst_dict = self.vector_field(g, t, node_batch_idx=node_batch_idx, upper_edge_mask=upper_edge_mask)
 
         # get the time-dependent loss weights if necessary
         if self.time_scaled_loss:
@@ -350,117 +351,6 @@ class MolFM(pl.LightningModule):
 
         return self.sample(atoms_per_molecule, n_timesteps=n_timesteps, device=device, visualize=visualize)
     
-    def integrate(self, g: dgl.DGLGraph, node_batch_idx: torch.Tensor, upper_edge_mask: torch.Tensor, n_timesteps: int, visualize=False):
-        """Integrate the trajectories of molecules along the vector field."""
-
-        # get the timepoint for integration
-        t = torch.linspace(0, 1, n_timesteps, device=g.device)
-
-        # get the corresponding alpha values for each timepoint
-        alpha_t = self.interpolant_scheduler.alpha_t(t)
-        alpha_t_prime = self.interpolant_scheduler.alpha_t_prime(t)
-
-        # set x_t = x_0
-        for feat in self.node_feats:
-            g.ndata[f'{feat}_t'] = g.ndata[f'{feat}_0']
-
-        for feat in self.edge_feats:
-            g.edata[f'{feat}_t'] = g.edata[f'{feat}_0']
-
-
-        # if visualizing the trajectory, create a datastructure to store the trajectory
-        if visualize:
-            traj_frames = {}
-            for feat in self.canonical_feat_order:
-                if feat == "e":
-                    data_src = g.edata
-                    split_sizes = g.batch_num_edges()
-                else:
-                    data_src = g.ndata
-                    split_sizes = g.batch_num_nodes()
-
-                split_sizes = split_sizes.detach().cpu().tolist()
-                init_frame = data_src[f'{feat}_0'].detach().cpu()
-                init_frame = torch.split(init_frame, split_sizes)
-                traj_frames[feat] = [ init_frame ]
-
-        for s_idx in range(1,t.shape[0]):
-
-            # get the next timepoint (s) and the current timepoint (t)
-            s_i = t[s_idx]
-            t_i = t[s_idx - 1]
-            alpha_t_i = alpha_t[s_idx - 1]
-            alpha_t_prime_i = alpha_t_prime[s_idx - 1]
-
-            # predict the destination of the trajectory given the current timepoint
-            dst_dict = self.vector_field.pred_dst(
-                g, 
-                t=torch.full((g.batch_size,), t_i, device=g.device),
-                node_batch_idx=node_batch_idx,
-                upper_edge_mask=upper_edge_mask,
-                apply_softmax=True,
-                remove_com=True
-            )
-
-            # compute x_s for each feature and set x_t = x_s
-            for feat_idx, feat in enumerate(self.canonical_feat_order):
-                x1_weight = alpha_t_prime_i[feat_idx]*(s_i - t_i)/(1 - alpha_t_i[feat_idx])
-                xt_weight = 1 - x1_weight
-
-                if feat == "e":
-                    g_data_src = g.edata
-
-                    # set the edge features so that corresponding upper and lower triangle edges have the same value
-                    x1 = torch.zeros_like(g.edata['e_0'])
-                    x1[upper_edge_mask] = dst_dict[feat]
-                    x1[~upper_edge_mask] = dst_dict[feat]
-                else:
-                    g_data_src = g.ndata
-                    x1 = dst_dict[feat]
-
-                g_data_src[f'{feat}_t'] = x1_weight*x1 + xt_weight*g_data_src[f'{feat}_t']
-
-                if visualize:
-                    frame = g_data_src[f'{feat}_t'].detach().cpu()
-                    if feat == 'e':
-                        split_sizes = g.batch_num_edges()
-                    else:
-                        split_sizes = g.batch_num_nodes()
-                    split_sizes = split_sizes.detach().cpu().tolist()
-                    frame = g_data_src[f'{feat}_t'].detach().cpu()
-                    frame = torch.split(frame, split_sizes)
-                    traj_frames[feat].append(frame)
-
-        # set x_1 = x_t
-        for feat in self.canonical_feat_order:
-
-            if feat == "e":
-                g_data_src = g.edata
-            else:
-                g_data_src = g.ndata
-
-            g_data_src[f'{feat}_1'] = g_data_src[f'{feat}_t']
-
-        if visualize:
-
-            # currently, traj_frames[key] is a list of lists. each sublist contains the frame for every molecule in the batch
-            # we want to rearrange this so that traj_frames is a list of dictionaries, where each dictionary contains the frames for a single molecule
-            n_frames = len(traj_frames['x'])
-            reshaped_traj_frames = []
-            for mol_idx in range(g.batch_size):
-                molecule_dict = {}
-                for feat in self.canonical_feat_order:
-                    feat_traj = []
-                    for frame_idx in range(n_frames):
-                        feat_traj.append(traj_frames[feat][frame_idx][mol_idx])
-                    molecule_dict[feat] = torch.stack(feat_traj)
-                reshaped_traj_frames.append(molecule_dict)
-
-
-            return g, reshaped_traj_frames
-        
-        return g
-    
 
     @torch.no_grad()
     def sample(self, n_atoms: torch.Tensor, n_timesteps: int = 20, device="cuda:0", visualize=False):
@@ -497,7 +387,7 @@ class MolFM(pl.LightningModule):
         g = self.sample_prior(g, node_batch_idx, upper_edge_mask)
 
         # integrate trajectories
-        itg_result = self.integrate(g, node_batch_idx, upper_edge_mask=upper_edge_mask, n_timesteps=n_timesteps, visualize=visualize)
+        itg_result = self.vector_field.integrate(g, node_batch_idx, upper_edge_mask=upper_edge_mask, n_timesteps=n_timesteps, visualize=visualize)
 
         if visualize:
             g, traj_frames = itg_result
