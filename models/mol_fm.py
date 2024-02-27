@@ -263,6 +263,8 @@ class MolFM(pl.LightningModule):
 
             if self.parameterization == 'endpoint':
                 target = data_src[f'{feat}_1_true']
+                if feat == "e":
+                    target = target[upper_edge_mask]
                 if feat in ['a', 'c', 'e']:
                     target = target.argmax(dim=-1)
             elif self.parameterization == 'vector-field':

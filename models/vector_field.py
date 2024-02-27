@@ -237,11 +237,12 @@ class EndpointVectorField(nn.Module):
         alpha_t_prime = self.interpolant_scheduler.alpha_t_prime(t)
 
         # set x_t = x_0
-        for feat in self.node_feats:
-            g.ndata[f'{feat}_t'] = g.ndata[f'{feat}_0']
-
-        for feat in self.edge_feats:
-            g.edata[f'{feat}_t'] = g.edata[f'{feat}_0']
+        for feat in self.canonical_feat_order:
+            if feat == 'e':
+                data_src = g.edata
+            else:
+                data_src = g.ndata
+            data_src[f'{feat}_t'] = data_src[f'{feat}_0']
 
 
         # if visualizing the trajectory, create a datastructure to store the trajectory
