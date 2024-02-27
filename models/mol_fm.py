@@ -85,6 +85,7 @@ class MolFM(pl.LightningModule):
         self.interpolant_scheduler = InterpolantScheduler(canonical_feat_order=self.canonical_feat_order, 
                                                           **interpolant_scheduler_config)
         self.vector_field = EndpointVectorField(n_atom_types=self.n_atom_types,
+                                           canonical_feat_order=self.canonical_feat_order,
                                            interpolant_scheduler=self.interpolant_scheduler, 
                                            n_charges=n_atom_charges, 
                                            n_bond_types=n_bond_types,

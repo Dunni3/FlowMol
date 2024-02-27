@@ -9,7 +9,8 @@ from .interpolant_scheduler import InterpolantScheduler
 
 class EndpointVectorField(nn.Module):
 
-    def __init__(self, n_atom_types: int, 
+    def __init__(self, n_atom_types: int,
+                    canonical_feat_order: list,
                     interpolant_scheduler: InterpolantScheduler,
                     n_charges: int = 6,
                     n_bond_types: int = 5, 
@@ -41,6 +42,7 @@ class EndpointVectorField(nn.Module):
         self.separate_mol_updaters: bool = separate_mol_updaters
         self.exclude_charges = exclude_charges
         self.interpolant_scheduler = interpolant_scheduler
+        self.canonical_feat_order = canonical_feat_order
 
         if self.exclude_charges:
             self.n_charges = 0
@@ -223,8 +225,7 @@ class EndpointVectorField(nn.Module):
             d = _rbf(dij.squeeze(1), D_max=self.rbf_dmax, D_count=self.rbf_dim)
         
         return x_diff, d
-    
-    
+      
     def integrate(self, g: dgl.DGLGraph, node_batch_idx: torch.Tensor, upper_edge_mask: torch.Tensor, n_timesteps: int, visualize=False):
         """Integrate the trajectories of molecules along the vector field."""
 
@@ -258,7 +259,7 @@ class EndpointVectorField(nn.Module):
                 init_frame = data_src[f'{feat}_0'].detach().cpu()
                 init_frame = torch.split(init_frame, split_sizes)
                 traj_frames[feat] = [ init_frame ]
-
+    
         for s_idx in range(1,t.shape[0]):
 
             # get the next timepoint (s) and the current timepoint (t)
@@ -267,35 +268,17 @@ class EndpointVectorField(nn.Module):
             alpha_t_i = alpha_t[s_idx - 1]
             alpha_t_prime_i = alpha_t_prime[s_idx - 1]
 
-            # predict the destination of the trajectory given the current timepoint
-            dst_dict = self.vector_field(
-                g, 
-                t=torch.full((g.batch_size,), t_i, device=g.device),
-                node_batch_idx=node_batch_idx,
-                upper_edge_mask=upper_edge_mask,
-                apply_softmax=True,
-                remove_com=True
-            )
+            # compute next step and set x_t = x_s
+            g = self.step(g, s_i, t_i, alpha_t_i, alpha_t_prime_i, node_batch_idx, upper_edge_mask)
 
-            # compute x_s for each feature and set x_t = x_s
-            for feat_idx, feat in enumerate(self.canonical_feat_order):
-                x1_weight = alpha_t_prime_i[feat_idx]*(s_i - t_i)/(1 - alpha_t_i[feat_idx])
-                xt_weight = 1 - x1_weight
+            if visualize:
+                for feat in self.canonical_feat_order:
 
-                if feat == "e":
-                    g_data_src = g.edata
+                    if feat == "e":
+                        g_data_src = g.edata
+                    else:
+                        g_data_src = g.ndata
 
-                    # set the edge features so that corresponding upper and lower triangle edges have the same value
-                    x1 = torch.zeros_like(g.edata['e_0'])
-                    x1[upper_edge_mask] = dst_dict[feat]
-                    x1[~upper_edge_mask] = dst_dict[feat]
-                else:
-                    g_data_src = g.ndata
-                    x1 = dst_dict[feat]
-
-                g_data_src[f'{feat}_t'] = x1_weight*x1 + xt_weight*g_data_src[f'{feat}_t']
-
-                if visualize:
                     frame = g_data_src[f'{feat}_t'].detach().cpu()
                     if feat == 'e':
                         split_sizes = g.batch_num_edges()
@@ -335,6 +318,40 @@ class EndpointVectorField(nn.Module):
             return g, reshaped_traj_frames
         
         return g
+    
+    def step(self, g: dgl.DGLGraph, s_i: torch.Tensor, t_i: torch.Tensor,
+             alpha_t_i: torch.Tensor, alpha_t_prime_i: torch.Tensor,
+             node_batch_idx: torch.Tensor, upper_edge_mask: torch.Tensor):
+        
+        # predict the destination of the trajectory given the current timepoint
+        dst_dict = self(
+            g, 
+            t=torch.full((g.batch_size,), t_i, device=g.device),
+            node_batch_idx=node_batch_idx,
+            upper_edge_mask=upper_edge_mask,
+            apply_softmax=True,
+            remove_com=True
+        )
+
+        # compute x_s for each feature and set x_t = x_s
+        for feat_idx, feat in enumerate(self.canonical_feat_order):
+            x1_weight = alpha_t_prime_i[feat_idx]*(s_i - t_i)/(1 - alpha_t_i[feat_idx])
+            xt_weight = 1 - x1_weight
+
+            if feat == "e":
+                g_data_src = g.edata
+
+                # set the edge features so that corresponding upper and lower triangle edges have the same value
+                x1 = torch.zeros_like(g.edata['e_0'])
+                x1[upper_edge_mask] = dst_dict[feat]
+                x1[~upper_edge_mask] = dst_dict[feat]
+            else:
+                g_data_src = g.ndata
+                x1 = dst_dict[feat]
+
+            g_data_src[f'{feat}_t'] = x1_weight*x1 + xt_weight*g_data_src[f'{feat}_t']
+
+        return g
 
 
 class VectorField(EndpointVectorField):
@@ -346,119 +363,44 @@ class VectorField(EndpointVectorField):
         dst_dict['x'] = dst_dict['x'] - g.ndata['x_t']
         return dst_dict
     
-    def integrate(self, g: dgl.DGLGraph, node_batch_idx: torch.Tensor, upper_edge_mask: torch.Tensor, n_timesteps: int, visualize=False):
-        """Integrate the trajectories of molecules along the vector field."""
+    def step(self, g: dgl.DGLGraph, s_i: torch.Tensor, t_i: torch.Tensor,
+             alpha_t_i: torch.Tensor, alpha_t_prime_i: torch.Tensor,
+             node_batch_idx: torch.Tensor, upper_edge_mask: torch.Tensor):
+        
+        # predict the destination of the trajectory given the current timepoint
+        vec_field = self(
+            g, 
+            t=torch.full((g.batch_size,), t_i, device=g.device),
+            node_batch_idx=node_batch_idx,
+            upper_edge_mask=upper_edge_mask,
+            apply_softmax=False,
+            remove_com=False
+        )
 
-        # get the timepoint for integration
-        t = torch.linspace(0, 1, n_timesteps, device=g.device)
-
-        # get the corresponding alpha values for each timepoint
-        alpha_t = self.interpolant_scheduler.alpha_t(t)
-        alpha_t_prime = self.interpolant_scheduler.alpha_t_prime(t)
-
-        # set x_t = x_0
-        for feat in self.node_feats:
-            g.ndata[f'{feat}_t'] = g.ndata[f'{feat}_0']
-
-        for feat in self.edge_feats:
-            g.edata[f'{feat}_t'] = g.edata[f'{feat}_0']
-
-
-        # if visualizing the trajectory, create a datastructure to store the trajectory
-        if visualize:
-            traj_frames = {}
-            for feat in self.canonical_feat_order:
-                if feat == "e":
-                    data_src = g.edata
-                    split_sizes = g.batch_num_edges()
-                else:
-                    data_src = g.ndata
-                    split_sizes = g.batch_num_nodes()
-
-                split_sizes = split_sizes.detach().cpu().tolist()
-                init_frame = data_src[f'{feat}_0'].detach().cpu()
-                init_frame = torch.split(init_frame, split_sizes)
-                traj_frames[feat] = [ init_frame ]
-
-        for s_idx in range(1,t.shape[0]):
-
-            # get the next timepoint (s) and the current timepoint (t)
-            s_i = t[s_idx]
-            t_i = t[s_idx - 1]
-
-            # predict the destination of the trajectory given the current timepoint
-            vec_field = self.vector_field(
-                g, 
-                t=torch.full((g.batch_size,), t_i, device=g.device),
-                node_batch_idx=node_batch_idx,
-                upper_edge_mask=upper_edge_mask,
-                apply_softmax=False,
-                remove_com=False
-            )
-
-            # compute x_s for each feature and set x_t = x_s
-            for feat_idx, feat in enumerate(self.canonical_feat_order):
-
-                if feat == "e":
-                    x_t = g.edata[f'e_t'][upper_edge_mask]
-                else:
-                    x_t = g.ndata[f'{feat}_t']
-
-                # x_s = x_t + vec_field*(s - t)
-                x_s = x_t + vec_field[feat]*(s_i - t_i)
-
-                # set x_t = x_s
-                if feat == "e":
-                    x_t = torch.zeros_like(g.edata['e_0'])
-                    x_t[upper_edge_mask] = x_s
-                    x_t[~upper_edge_mask] = x_s
-                    g.edata[f'{feat}_t'] = x_t
-                else:
-                    x_t = x_s
-                    g.ndata[f'{feat}_t'] = x_t
-
-                if visualize:
-                    frame = g_data_src[f'{feat}_t'].detach().cpu()
-                    if feat == 'e':
-                        split_sizes = g.batch_num_edges()
-                    else:
-                        split_sizes = g.batch_num_nodes()
-                    split_sizes = split_sizes.detach().cpu().tolist()
-                    frame = g_data_src[f'{feat}_t'].detach().cpu()
-                    frame = torch.split(frame, split_sizes)
-                    traj_frames[feat].append(frame)
-
-            # remove com from x_t
-            g.ndata['x_t'] = g.ndata['x_t'] - dgl.readout_nodes(g, feat='x_t', op='mean')[node_batch_idx]
-
-        # set x_1 = x_t
-        for feat in self.canonical_feat_order:
+        # compute x_s for each feature and set x_t = x_s
+        for feat_idx, feat in enumerate(self.canonical_feat_order):
 
             if feat == "e":
-                g_data_src = g.edata
+                x_t = g.edata[f'e_t'][upper_edge_mask]
             else:
-                g_data_src = g.ndata
+                x_t = g.ndata[f'{feat}_t']
 
-            g_data_src[f'{feat}_1'] = g_data_src[f'{feat}_t']
+            # x_s = x_t + vec_field*(s - t)
+            x_s = x_t + vec_field[feat]*(s_i - t_i)
 
-        if visualize:
+            # set x_t = x_s
+            if feat == "e":
+                x_t = torch.zeros_like(g.edata['e_0'])
+                x_t[upper_edge_mask] = x_s
+                x_t[~upper_edge_mask] = x_s
+                g.edata[f'{feat}_t'] = x_t
+            else:
+                x_t = x_s
+                g.ndata[f'{feat}_t'] = x_t
 
-            # currently, traj_frames[key] is a list of lists. each sublist contains the frame for every molecule in the batch
-            # we want to rearrange this so that traj_frames is a list of dictionaries, where each dictionary contains the frames for a single molecule
-            n_frames = len(traj_frames['x'])
-            reshaped_traj_frames = []
-            for mol_idx in range(g.batch_size):
-                molecule_dict = {}
-                for feat in self.canonical_feat_order:
-                    feat_traj = []
-                    for frame_idx in range(n_frames):
-                        feat_traj.append(traj_frames[feat][frame_idx][mol_idx])
-                    molecule_dict[feat] = torch.stack(feat_traj)
-                reshaped_traj_frames.append(molecule_dict)
+        # remove COM from x_t
+        g.ndata['x_t'] = g.ndata['x_t'] - dgl.readout_nodes(g, feat='x_t', op='mean')[node_batch_idx]
 
-
-            return g, reshaped_traj_frames
-        
         return g
 
 
