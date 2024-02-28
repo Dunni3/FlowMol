@@ -120,7 +120,10 @@ if __name__ == "__main__":
             yaml.dump(config, f)
 
     # create ModelCheckpoint callback
-    checkpoints_dir = run_dir / 'checkpoints'
+    if rank_zero_only.rank == 0:
+        checkpoints_dir = run_dir / 'checkpoints'
+    else:
+        checkpoints_dir = Path('/scr') / 'checkpoints'
     checkpoint_config = config['checkpointing']
     checkpoint_config['dirpath'] = str(checkpoints_dir)
     checkpoint_callback = pl.callbacks.ModelCheckpoint(**checkpoint_config)

@@ -33,14 +33,15 @@ lr_scheduler:
 dataset:
   raw_data_dir: data/raw/
   processed_data_dir: data/geom/
-  atom_map: ['C', 'H', 'N', 'O', 'F', 'P', 'S', 'Cl', 'Br', 'I', 'As', 'Hg', 'Bi', 'Se']
+  # atom_map: ['C', 'H', 'N', 'O', 'F', 'P', 'S', 'Cl', 'Br', 'I', 'As', 'Hg', 'Bi', 'Se']
+  atom_map: ['C', 'H', 'N', 'O', 'F', 'P', 'S', 'Cl', 'Br', 'I',] # I removed As, Hg, Bi, Se. As, Hg, and Se are not in the dataset, and Bi is virtually not in the dataset.. p(a = Bi) = 1.0e-8
   dataset_name: geom # only geom is supported for now
   dataset_size:
 
 checkpointing:
   save_last: True
   save_top_k: 3
-  monitor: 'frac_valid_mols'
+  monitor: 'val_total_loss'
   every_n_epochs: 1
 
 mol_fm:
