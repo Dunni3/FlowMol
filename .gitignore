@@ -3,6 +3,10 @@
 /data/*
 runs/
 slurm_output/
+sweep_runs/
+misc_scripts/
+wandb/
+
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
