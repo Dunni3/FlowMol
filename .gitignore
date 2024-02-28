@@ -6,6 +6,7 @@ slurm_output/
 sweep_runs/
 misc_scripts/
 wandb/
+notebooks/
 
 
 # Byte-compiled / optimized / DLL files

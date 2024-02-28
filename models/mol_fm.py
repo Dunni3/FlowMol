@@ -34,6 +34,7 @@ class MolFM(pl.LightningModule):
                  n_mols_to_sample: int = 64, # how many molecules to sample from the model during each sample/eval step during training
                  time_scaled_loss: bool = True,
                  exclude_charges: bool = False,
+                 weight_ae: bool = False, # whether or not to apply weights to the atom and edge losses (infrequent categories given more weight)
                  parameterization: str = 'endpoint', # how to parameterize the flow-matching objective, can be 'endpoint' for 'vector-field'
                  total_loss_weights: Dict[str, float] = {}, 
                  lr_scheduler_config: dict = {},
@@ -54,6 +55,10 @@ class MolFM(pl.LightningModule):
         self.exclude_charges = exclude_charges
         self.marginal_dists_file = marginal_dists_file
         self.parameterization = parameterization
+        self.weight_ae = weight_ae
+
+        if self.weight_ae and parameterization == 'vector-field':
+            raise NotImplementedError('weighting the atom and edge losses is not yet implemented for the vector-field parameterization')
 
         # do some boring stuff regarding the prior distribution
         self.configure_prior()
@@ -104,24 +109,6 @@ class MolFM(pl.LightningModule):
                                            exclude_charges=self.exclude_charges,
                                            **vector_field_config)
 
-        # instantiate loss functions
-        if self.time_scaled_loss:
-            reduction = 'none'
-        else:
-            reduction = 'mean'
-
-        if self.parameterization == 'endpoint':
-            categorical_loss_fn = nn.CrossEntropyLoss
-        elif self.parameterization == 'vector-field':
-            categorical_loss_fn = nn.MSELoss
-
-        self.loss_fn_dict = {
-            'x': nn.MSELoss(reduction=reduction),
-            'a': categorical_loss_fn(reduction=reduction),
-            'c': categorical_loss_fn(reduction=reduction),
-            'e': categorical_loss_fn(reduction=reduction),
-        }
-
         # remove charge loss function if necessary
         if self.exclude_charges:
             self.loss_fn_dict.pop('c')
@@ -141,6 +128,8 @@ class MolFM(pl.LightningModule):
     def configure_prior(self):
         # load the marginal distributions of atom types, bond orders and the conditional distribution of charges given atom type
         p_a, p_c, p_e, p_c_given_a = torch.load(self.marginal_dists_file)
+        self.p_a = p_a
+        self.p_e = p_e
 
         # add the marginal distributions as arguments to the prior sampling functions
         if self.prior_config['a']['type'] == 'marginal':
@@ -154,6 +143,33 @@ class MolFM(pl.LightningModule):
         
         if self.prior_config['c']['type'] == 'c-given-a':
             self.prior_config['c']['kwargs']['p_c_given_a'] = p_c_given_a
+
+    def configure_loss_fns(self, device):    
+        # instantiate loss functions
+        if self.time_scaled_loss:
+            reduction = 'none'
+        else:
+            reduction = 'mean'
+
+        if self.parameterization == 'endpoint':
+            categorical_loss_fn = nn.CrossEntropyLoss
+        elif self.parameterization == 'vector-field':
+            categorical_loss_fn = nn.MSELoss
+
+
+        if self.weight_ae:
+            a_kwargs = {'weight': (1 - self.p_a).to(device)}
+            e_kwargs = {'weight': (1 - self.p_e).to(device)}
+        else:
+            a_kwargs = {}
+            e_kwargs = {}
+
+        self.loss_fn_dict = {
+            'x': nn.MSELoss(reduction=reduction),
+            'a': categorical_loss_fn(reduction=reduction, **a_kwargs),
+            'c': categorical_loss_fn(reduction=reduction),
+            'e': categorical_loss_fn(reduction=reduction, **e_kwargs),
+        }
 
     def training_step(self, g: dgl.DGLGraph, batch_idx: int):
 
@@ -224,6 +240,13 @@ class MolFM(pl.LightningModule):
         
         batch_size = g.batch_size
         device = g.device
+
+        # check if the attribute loss_fn_dict exists
+        # it is necessary to do this here (as opposed to in __init__) beacause
+        # to instantiate the loss function class-conditioned weights, the weight
+        # tensors need to be on the same device as the graph...seems pretty dumb but that's how it is
+        if not hasattr(self, 'loss_fn_dict'):
+            self.configure_loss_fns(device=g.device)
 
         # get batch indicies of every atom and edge
         node_batch_idx, edge_batch_idx = get_batch_idxs(g)

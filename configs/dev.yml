@@ -49,7 +49,8 @@ checkpointing:
   # every_n_epochs: 1
 
 mol_fm:
-  parameterization: endpoint # can be "endpoint" or "vector-field"  
+  parameterization: endpoint # can be "endpoint" or "vector-field"
+  weight_ae: True
   time_scaled_loss: True
   exclude_charges: False
   total_loss_weights:
