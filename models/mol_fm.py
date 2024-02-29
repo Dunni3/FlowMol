@@ -35,6 +35,7 @@ class MolFM(pl.LightningModule):
                  time_scaled_loss: bool = True,
                  exclude_charges: bool = False,
                  weight_ae: bool = False, # whether or not to apply weights to the atom and edge losses (infrequent categories given more weight)
+                 target_blur: float = 0.0, # how much to blur the target distribution for categorical features
                  parameterization: str = 'endpoint', # how to parameterize the flow-matching objective, can be 'endpoint' for 'vector-field'
                  total_loss_weights: Dict[str, float] = {}, 
                  lr_scheduler_config: dict = {},
@@ -56,9 +57,16 @@ class MolFM(pl.LightningModule):
         self.marginal_dists_file = marginal_dists_file
         self.parameterization = parameterization
         self.weight_ae = weight_ae
+        self.target_blur = target_blur
 
         if self.weight_ae and parameterization == 'vector-field':
             raise NotImplementedError('weighting the atom and edge losses is not yet implemented for the vector-field parameterization')
+        
+        if self.target_blur != 0.0 and parameterization == 'vector-field':
+            raise NotImplementedError('blurring the target distribution is not yet implemented for the vector-field parameterization')
+        
+        if self.target_blur < 0.0:
+            raise ValueError('target_blur must be non-negative')
 
         # do some boring stuff regarding the prior distribution
         self.configure_prior()
@@ -284,12 +292,18 @@ class MolFM(pl.LightningModule):
             else:
                 data_src = g.ndata
 
+            # compute the target for endpoint parameterization
             if self.parameterization == 'endpoint':
                 target = data_src[f'{feat}_1_true']
                 if feat == "e":
                     target = target[upper_edge_mask]
                 if feat in ['a', 'c', 'e']:
-                    target = target.argmax(dim=-1)
+                    if self.target_blur == 0.0:
+                        target = target.argmax(dim=-1)
+                    else:
+                        target = target + torch.randn_like(target)*self.target_blur
+                        target = fn.softmax(target, dim=-1)
+            #  compute the target for vector-field parameterization
             elif self.parameterization == 'vector-field':
                 alpha_t_prime_i = alpha_t_prime[:, feat_idx]
                 x_1 = data_src[f'{feat}_1_true']
@@ -301,6 +315,8 @@ class MolFM(pl.LightningModule):
                     x_0 = x_0[upper_edge_mask]
                 else:
                     alpha_t_prime_i = alpha_t_prime_i[node_batch_idx].unsqueeze(-1)
+
+
 
                 target = alpha_t_prime_i*(x_1 - x_0)
 

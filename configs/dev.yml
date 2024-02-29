@@ -50,7 +50,8 @@ checkpointing:
 
 mol_fm:
   parameterization: endpoint # can be "endpoint" or "vector-field"
-  weight_ae: True
+  weight_ae: False
+  target_blur: 0.1
   time_scaled_loss: True
   exclude_charges: False
   total_loss_weights:
