@@ -72,12 +72,6 @@ if __name__ == "__main__":
     # merge the config file with the command line arguments
     config = merge_config_and_args(config, args)
     
-    # create data module
-    data_module: MoleculeDataModule = data_module_from_config(config)
-
-    # create model
-    model: MolFM = model_from_config(config)
-    
     # get wandb logger config
     wandb_config = config['wandb']
 
@@ -127,6 +121,12 @@ if __name__ == "__main__":
     checkpoint_config = config['checkpointing']
     checkpoint_config['dirpath'] = str(checkpoints_dir)
     checkpoint_callback = pl.callbacks.ModelCheckpoint(**checkpoint_config)
+
+    # create data module
+    data_module: MoleculeDataModule = data_module_from_config(config)
+
+    # create model
+    model: MolFM = model_from_config(config)
 
     # get pl trainer config
     trainer_config = config['training']['trainer_args']
