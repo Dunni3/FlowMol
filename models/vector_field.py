@@ -3,9 +3,11 @@ import torch.nn as nn
 import dgl
 import dgl.function as fn
 from typing import Union
+import scipy
 
 from .gvp import GVPConv, GVP, _rbf, _norm_no_nan
 from .interpolant_scheduler import InterpolantScheduler
+from utils.dirflow import DirichletConditionalFlow
 
 class EndpointVectorField(nn.Module):
 
@@ -233,7 +235,7 @@ class EndpointVectorField(nn.Module):
         t = torch.linspace(0, 1, n_timesteps, device=g.device)
 
         # get the corresponding alpha values for each timepoint
-        alpha_t = self.interpolant_scheduler.alpha_t(t)
+        alpha_t = self.interpolant_scheduler.alpha_t(t) # has shape (n_timepoints, n_feats)
         alpha_t_prime = self.interpolant_scheduler.alpha_t_prime(t)
 
         # set x_t = x_0
@@ -355,6 +357,27 @@ class EndpointVectorField(nn.Module):
         return g
 
 
+    def sample_conditional_path(self, g, t, node_batch_idx, edge_batch_idx, upper_edge_mask):
+        """Interpolate between the prior and true terminal state of the ligand."""
+        # upper_edge_mask is not used here but it is needed for DirichletVectorField and we need to keep consistent
+        # function signatures across vector field classes so that MolFM can use them interchangeably
+        src_weights, dst_weights = self.interpolant_scheduler.interpolant_weights(t)
+
+        for feat_idx, feat in enumerate(self.canonical_feat_order):
+
+            if feat == 'e':
+                continue
+
+            src_weight, dst_weight = src_weights[:, feat_idx][node_batch_idx].unsqueeze(-1), dst_weights[:, feat_idx][node_batch_idx].unsqueeze(-1)
+            g.ndata[f'{feat}_t'] = src_weight * g.ndata[f'{feat}_0'] + dst_weight * g.ndata[f'{feat}_1_true']
+
+        e_idx = self.canonical_feat_order.index('e')
+        src_weight, dst_weight = src_weights[:, e_idx][edge_batch_idx].unsqueeze(-1), dst_weights[:, e_idx][edge_batch_idx].unsqueeze(-1)
+        g.edata[f'e_t'] = src_weight * g.edata[f'e_0'] + dst_weight * g.edata[f'e_1_true']
+
+        return g
+
+
 class VectorField(EndpointVectorField):
 
     def forward(self, g: dgl.DGLGraph, t: torch.Tensor, 
@@ -404,6 +427,130 @@ class VectorField(EndpointVectorField):
 
         return g
 
+
+class DirichletVectorField(EndpointVectorField):
+
+    def __init__(self, *args, w_max=32, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.w_max = w_max
+        self.categorical_condflows = {}
+        self.categorical_condflows['a'] = DirichletConditionalFlow(K=self.n_atom_types, alpha_min=0, alpha_max=w_max, alpha_spacing=0.005)
+        self.categorical_condflows['c'] = DirichletConditionalFlow(K=self.n_charges, alpha_min=0, alpha_max=w_max, alpha_spacing=0.005)
+        self.categorical_condflows['e'] = DirichletConditionalFlow(K=self.n_bond_types, alpha_min=0, alpha_max=w_max, alpha_spacing=0.005)
+
+
+        self.n_cat_dict = {
+            'a': self.n_atom_types,
+            'c': self.n_charges,
+            'e': self.n_bond_types
+        }
+
+    def alpha_to_w(self, alpha_t):
+        return alpha_t*self.w_max + 1
+
+    def sample_conditional_path(self, g, t, node_batch_idx, edge_batch_idx, upper_edge_mask):
+        """Interpolate between the prior and true terminal state of the ligand."""
+        # TODO: this computation could be made more efficient by concatenating node features and edge features into a single tensor and then interpolate them all at once before splitting them back up
+        alpha_t = self.interpolant_scheduler.alpha_t(t) # has shape (n_timepoints, n_feats)
+        for feat_idx, feat in enumerate(self.canonical_feat_order):
+
+            # skip the bond orders, its too clunky to incorpoarte them into this loop due to upper/lower triangle edge indexing
+            if feat == 'e':
+                continue
+
+            if feat == 'x':
+                src_weights, dst_weights = 1 - alpha_t, alpha_t
+                src_weight, dst_weight = src_weights[:, feat_idx][node_batch_idx].unsqueeze(-1), dst_weights[:, feat_idx][node_batch_idx].unsqueeze(-1)
+                g.ndata[f'{feat}_t'] = src_weight * g.ndata[f'{feat}_0'] + dst_weight * g.ndata[f'{feat}_1_true']
+            else: # now we are doing categorical node features (a,c)
+                alpha_expanded = alpha_t[:, feat_idx][node_batch_idx].unsqueeze(-1)
+                w_t = self.alpha_to_w(alpha_expanded)
+                dirichlet_params = torch.ones_like(g.ndata[f'{feat}_1_true']) + w_t*g.ndata[f'{feat}_1_true']
+                g.ndata[f'{feat}_t'] = torch.distributions.Dirichlet(dirichlet_params).sample()
+
+        # sample condiitonal path for edge features
+        e_idx = self.canonical_feat_order.index('e')
+        alpha_expanded = alpha_t[:, e_idx][edge_batch_idx][upper_edge_mask].unsqueeze(-1)
+        w_t = self.alpha_to_w(alpha_expanded)
+        dirichlet_params = torch.ones_like(g.edata[f'e_1_true'][upper_edge_mask]) + w_t*(g.edata[f'e_1_true'][upper_edge_mask])
+        ue_samples = torch.distributions.Dirichlet(dirichlet_params).sample()
+        g.edata[f'e_t'][upper_edge_mask] = ue_samples
+        g.edata[f'e_t'][~upper_edge_mask] = ue_samples
+
+        return g
+    
+    def step(self, g: dgl.DGLGraph, s_i: torch.Tensor, t_i: torch.Tensor,
+             alpha_t_i: torch.Tensor, alpha_t_prime_i: torch.Tensor,
+             node_batch_idx: torch.Tensor, upper_edge_mask: torch.Tensor):
+        
+        # alpha_t_i has shape (n_feats,)
+        
+        # predict the destination of the trajectory given the current timepoint
+        dst_dict = self(
+            g, 
+            t=torch.full((g.batch_size,), t_i, device=g.device),
+            node_batch_idx=node_batch_idx,
+            upper_edge_mask=upper_edge_mask,
+            apply_softmax=True,
+            remove_com=True
+        )
+
+        # take integration step for positions
+        x1_weight = alpha_t_prime_i[0]*(s_i - t_i)/(1 - alpha_t_i[0])
+        xt_weight = 1 - x1_weight
+        x1 = dst_dict['x']
+        g.ndata['x_t'] = x1_weight*x1 + xt_weight*g.ndata['x_t']
+
+        # convert alpha values to w
+        w = self.alpha_to_w(alpha_t_i)
+
+
+        # take integration step for node categorical features
+        for feat_idx, feat in enumerate(self.canonical_feat_order):
+            if feat not in ['a', 'c']:
+                continue
+            w_feat = w[feat_idx]
+            c_factor = self.categorical_condflows[feat].c_factor(
+                g.ndata[f'{feat}_t'].cpu().numpy(),
+                w_feat.item()
+            )
+            # c_factor has shape equal to x_t, which is (n_nodes, n_cat)
+            c_factor = torch.from_numpy(c_factor).to(g.device)
+            if torch.isnan(c_factor).any():
+                # print(f'NAN cfactor after: xt.min(): {xt.min()}, out_probs.min(): {out_probs.min()}')
+                print('NAN c_factor')
+                c_factor = torch.nan_to_num(c_factor)
+
+            # get possible endpoints as one-hot vectors
+            eps = torch.eye(self.n_cat_dict[feat], device=g.device) # shape (n_cat, n_cat)
+
+            # compute conditional vector fields for each possible endpoint
+            x_t = g.ndata[f'{feat}_t'] # has shape (n_nodes, n_cat)
+            cond_vec_fields = (eps[:, None, :] - x_t[None, :, :]) * c_factor.unsqueeze(0) # has shape (n_cat, n_nodes, n_cat)
+            endpoint_probs = dst_dict[feat] # has shape (n_nodes, n_cat)
+            marginal_vec_field = ( endpoint_probs * cond_vec_fields ).sum(dim=0)
+            
+
+
+        # compute x_s for each feature and set x_t = x_s
+        # for feat_idx, feat in enumerate(self.canonical_feat_order):
+        #     x1_weight = alpha_t_prime_i[feat_idx]*(s_i - t_i)/(1 - alpha_t_i[feat_idx])
+        #     xt_weight = 1 - x1_weight
+
+        #     if feat == "e":
+        #         g_data_src = g.edata
+
+        #         # set the edge features so that corresponding upper and lower triangle edges have the same value
+        #         x1 = torch.zeros_like(g.edata['e_0'])
+        #         x1[upper_edge_mask] = dst_dict[feat]
+        #         x1[~upper_edge_mask] = dst_dict[feat]
+        #     else:
+        #         g_data_src = g.ndata
+        #         x1 = dst_dict[feat]
+
+        #     g_data_src[f'{feat}_t'] = x1_weight*x1 + xt_weight*g_data_src[f'{feat}_t']
+
+        return g
 
 class NodePositionUpdate(nn.Module):
 

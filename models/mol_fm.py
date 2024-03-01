@@ -278,7 +278,7 @@ class MolFM(pl.LightningModule):
         t = torch.rand(batch_size, device=device).float()
 
         # construct interpolated molecules
-        g = self.interpolate(g, t, node_batch_idx, edge_batch_idx)
+        g = self.vector_field.sample_conditional_path(g, t, node_batch_idx, edge_batch_idx, upper_edge_mask)
 
         # forward pass for the vector field
         vf_output = self.vector_field(g, t, node_batch_idx=node_batch_idx, upper_edge_mask=upper_edge_mask)
@@ -382,24 +382,7 @@ class MolFM(pl.LightningModule):
             
         return g
     
-    def interpolate(self, g, t, node_batch_idx, edge_batch_idx):
-        """Interpolate between the prior and true terminal state of the ligand."""
-        # TODO: this computation could be made more efficient by concatenating node features and edge features into a single tensor and then interpolate them all at once before splitting them back up
-        src_weights, dst_weights = self.interpolant_scheduler.interpolant_weights(t)
 
-        for feat_idx, feat in enumerate(self.canonical_feat_order):
-
-            if feat == 'e':
-                continue
-
-            src_weight, dst_weight = src_weights[:, feat_idx][node_batch_idx].unsqueeze(-1), dst_weights[:, feat_idx][node_batch_idx].unsqueeze(-1)
-            g.ndata[f'{feat}_t'] = src_weight * g.ndata[f'{feat}_0'] + dst_weight * g.ndata[f'{feat}_1_true']
-
-        e_idx = self.canonical_feat_order.index('e')
-        src_weight, dst_weight = src_weights[:, e_idx][edge_batch_idx].unsqueeze(-1), dst_weights[:, e_idx][edge_batch_idx].unsqueeze(-1)
-        g.edata[f'e_t'] = src_weight * g.edata[f'e_0'] + dst_weight * g.edata[f'e_1_true']
-
-        return g
 
     def configure_optimizers(self):
         try:
