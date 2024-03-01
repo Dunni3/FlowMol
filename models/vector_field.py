@@ -435,9 +435,9 @@ class DirichletVectorField(EndpointVectorField):
         super().__init__(*args, **kwargs)
         self.w_max = w_max
         self.categorical_condflows = {}
-        self.categorical_condflows['a'] = DirichletConditionalFlow(K=self.n_atom_types, alpha_min=0, alpha_max=w_max+1, alpha_spacing=0.01)
-        self.categorical_condflows['c'] = DirichletConditionalFlow(K=self.n_charges, alpha_min=0, alpha_max=w_max+1, alpha_spacing=0.01)
-        self.categorical_condflows['e'] = DirichletConditionalFlow(K=self.n_bond_types, alpha_min=0, alpha_max=w_max+1, alpha_spacing=0.01)
+        self.categorical_condflows['a'] = DirichletConditionalFlow(K=self.n_atom_types, alpha_min=0, alpha_max=w_max+2, alpha_spacing=0.01)
+        self.categorical_condflows['c'] = DirichletConditionalFlow(K=self.n_charges, alpha_min=0, alpha_max=w_max+2, alpha_spacing=0.01)
+        self.categorical_condflows['e'] = DirichletConditionalFlow(K=self.n_bond_types, alpha_min=0, alpha_max=w_max+2, alpha_spacing=0.01)
 
 
         self.n_cat_dict = {

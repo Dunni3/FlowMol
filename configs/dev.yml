@@ -78,7 +78,7 @@ mol_fm:
       kwargs: {}
 
 vector_field:
-  w_max: 10
+  w_max: 8
   n_vec_channels: 16
   n_hidden_scalars: 64
   n_hidden_edge_feats: 64
