@@ -49,9 +49,9 @@ checkpointing:
   # every_n_epochs: 1
 
 mol_fm:
-  parameterization: endpoint # can be "endpoint" or "vector-field"
+  parameterization: dirichlet # can be "endpoint", "vector-field", or "dirichlet"
   weight_ae: False
-  target_blur: 0.1
+  target_blur: 0.0
   time_scaled_loss: True
   exclude_charges: False
   total_loss_weights:
@@ -66,18 +66,19 @@ mol_fm:
       kwargs: {std: 1.0}
     a:
       align: False
-      type: 'gaussian'
+      type: 'uniform-simplex'
       kwargs: {}
     c:
       align: False
-      type: 'c-given-a'
-      kwargs: {blur: 0.15}
+      type: 'uniform-simplex'
+      kwargs: {}
     e:
       align: False
-      type: 'marginal'
-      kwargs: {blur: 0.15}
+      type: 'uniform-simplex'
+      kwargs: {}
 
 vector_field:
+  w_max: 10
   n_vec_channels: 16
   n_hidden_scalars: 64
   n_hidden_edge_feats: 64
@@ -95,9 +96,9 @@ vector_field:
 interpolant_scheduler:
   schedule_type: # can be 'cosine', 'linear' or a dictionary with keys 'x', 'a', 'c', 'e'
     x: 'cosine'
-    a: 'linear'
-    c: 'linear'
-    e: 'linear'
+    a: 'cosine'
+    c: 'cosine'
+    e: 'cosine'
   
   cosine_params:
     x: 1

@@ -9,7 +9,7 @@ from torch.distributions import Exponential
 
 from .lr_scheduler import LRScheduler
 from .interpolant_scheduler import InterpolantScheduler
-from .vector_field import EndpointVectorField, VectorField
+from .vector_field import EndpointVectorField, VectorField, DirichletVectorField
 
 from data_processing.utils import build_edge_idxs, get_upper_edge_mask, get_batch_idxs
 from data_processing.priors import uniform_simplex_prior, biased_simplex_prior, batched_rigid_alignment, rigid_alignment
@@ -36,7 +36,7 @@ class MolFM(pl.LightningModule):
                  exclude_charges: bool = False,
                  weight_ae: bool = False, # whether or not to apply weights to the atom and edge losses (infrequent categories given more weight)
                  target_blur: float = 0.0, # how much to blur the target distribution for categorical features
-                 parameterization: str = 'endpoint', # how to parameterize the flow-matching objective, can be 'endpoint' for 'vector-field'
+                 parameterization: str = 'endpoint', # how to parameterize the flow-matching objective, can be 'endpoint', 'vector-field', or 'dirichlet'
                  total_loss_weights: Dict[str, float] = {}, 
                  lr_scheduler_config: dict = {},
                  interpolant_scheduler_config: dict = {},
@@ -101,13 +101,15 @@ class MolFM(pl.LightningModule):
                                                           **interpolant_scheduler_config)
         
         # check that a valid parameterization was specified
-        if self.parameterization not in ['endpoint', 'vector-field']:
-            raise ValueError(f'parameterization must be one of "endpoint" or "vector-field", got {self.parameterization}')
+        if self.parameterization not in ['endpoint', 'vector-field', 'dirichlet']:
+            raise ValueError(f'parameterization must be one of "endpoint", "vector-field", or "dirichlet", got {self.parameterization}')
 
         if self.parameterization == 'endpoint':
             vector_field_class = EndpointVectorField
         elif self.parameterization == 'vector-field':
             vector_field_class = VectorField
+        elif self.parameterization == 'dirichlet':
+            vector_field_class = DirichletVectorField
 
         self.vector_field = vector_field_class(n_atom_types=self.n_atom_types,
                                            canonical_feat_order=self.canonical_feat_order,
@@ -152,6 +154,11 @@ class MolFM(pl.LightningModule):
         if self.prior_config['c']['type'] == 'c-given-a':
             self.prior_config['c']['kwargs']['p_c_given_a'] = p_c_given_a
 
+        if self.parameterization == 'dirichlet':
+            for feat in ['a', 'c', 'e']:
+                if self.prior_config[feat]['type'] != 'uniform-simplex':
+                    raise ValueError('dirichlet parameterization requires that all categorical priors be uniform-simplex')
+                
     def configure_loss_fns(self, device):    
         # instantiate loss functions
         if self.time_scaled_loss:
@@ -159,7 +166,7 @@ class MolFM(pl.LightningModule):
         else:
             reduction = 'mean'
 
-        if self.parameterization == 'endpoint':
+        if self.parameterization in  ['endpoint', 'dirichlet']:
             categorical_loss_fn = nn.CrossEntropyLoss
         elif self.parameterization == 'vector-field':
             categorical_loss_fn = nn.MSELoss
@@ -293,7 +300,7 @@ class MolFM(pl.LightningModule):
                 data_src = g.ndata
 
             # compute the target for endpoint parameterization
-            if self.parameterization == 'endpoint':
+            if self.parameterization in ['endpoint', 'dirichlet']:
                 target = data_src[f'{feat}_1_true']
                 if feat == "e":
                     target = target[upper_edge_mask]

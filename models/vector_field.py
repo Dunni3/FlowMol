@@ -7,7 +7,7 @@ import scipy
 
 from .gvp import GVPConv, GVP, _rbf, _norm_no_nan
 from .interpolant_scheduler import InterpolantScheduler
-from utils.dirflow import DirichletConditionalFlow
+from utils.dirflow import DirichletConditionalFlow, simplex_proj
 
 class EndpointVectorField(nn.Module):
 
@@ -269,10 +269,11 @@ class EndpointVectorField(nn.Module):
             s_i = t[s_idx]
             t_i = t[s_idx - 1]
             alpha_t_i = alpha_t[s_idx - 1]
+            alpha_s_i = alpha_t[s_idx]
             alpha_t_prime_i = alpha_t_prime[s_idx - 1]
 
             # compute next step and set x_t = x_s
-            g = self.step(g, s_i, t_i, alpha_t_i, alpha_t_prime_i, node_batch_idx, upper_edge_mask)
+            g = self.step(g, s_i, t_i, alpha_t_i, alpha_s_i, alpha_t_prime_i, node_batch_idx, upper_edge_mask)
 
             if visualize:
                 for feat in self.canonical_feat_order:
@@ -323,7 +324,7 @@ class EndpointVectorField(nn.Module):
         return g
     
     def step(self, g: dgl.DGLGraph, s_i: torch.Tensor, t_i: torch.Tensor,
-             alpha_t_i: torch.Tensor, alpha_t_prime_i: torch.Tensor,
+             alpha_t_i: torch.Tensor, alpha_s_i: torch.Tensor, alpha_t_prime_i: torch.Tensor,
              node_batch_idx: torch.Tensor, upper_edge_mask: torch.Tensor):
         
         # predict the destination of the trajectory given the current timepoint
@@ -388,7 +389,7 @@ class VectorField(EndpointVectorField):
         return dst_dict
     
     def step(self, g: dgl.DGLGraph, s_i: torch.Tensor, t_i: torch.Tensor,
-             alpha_t_i: torch.Tensor, alpha_t_prime_i: torch.Tensor,
+             alpha_t_i: torch.Tensor, alpha_s_i: torch.Tensor, alpha_t_prime_i: torch.Tensor,
              node_batch_idx: torch.Tensor, upper_edge_mask: torch.Tensor):
         
         # predict the destination of the trajectory given the current timepoint
@@ -434,9 +435,9 @@ class DirichletVectorField(EndpointVectorField):
         super().__init__(*args, **kwargs)
         self.w_max = w_max
         self.categorical_condflows = {}
-        self.categorical_condflows['a'] = DirichletConditionalFlow(K=self.n_atom_types, alpha_min=0, alpha_max=w_max, alpha_spacing=0.005)
-        self.categorical_condflows['c'] = DirichletConditionalFlow(K=self.n_charges, alpha_min=0, alpha_max=w_max, alpha_spacing=0.005)
-        self.categorical_condflows['e'] = DirichletConditionalFlow(K=self.n_bond_types, alpha_min=0, alpha_max=w_max, alpha_spacing=0.005)
+        self.categorical_condflows['a'] = DirichletConditionalFlow(K=self.n_atom_types, alpha_min=0, alpha_max=w_max+1, alpha_spacing=0.01)
+        self.categorical_condflows['c'] = DirichletConditionalFlow(K=self.n_charges, alpha_min=0, alpha_max=w_max+1, alpha_spacing=0.01)
+        self.categorical_condflows['e'] = DirichletConditionalFlow(K=self.n_bond_types, alpha_min=0, alpha_max=w_max+1, alpha_spacing=0.01)
 
 
         self.n_cat_dict = {
@@ -474,13 +475,14 @@ class DirichletVectorField(EndpointVectorField):
         w_t = self.alpha_to_w(alpha_expanded)
         dirichlet_params = torch.ones_like(g.edata[f'e_1_true'][upper_edge_mask]) + w_t*(g.edata[f'e_1_true'][upper_edge_mask])
         ue_samples = torch.distributions.Dirichlet(dirichlet_params).sample()
+        g.edata['e_t'] = torch.zeros_like(g.edata['e_1_true'])
         g.edata[f'e_t'][upper_edge_mask] = ue_samples
         g.edata[f'e_t'][~upper_edge_mask] = ue_samples
 
         return g
     
     def step(self, g: dgl.DGLGraph, s_i: torch.Tensor, t_i: torch.Tensor,
-             alpha_t_i: torch.Tensor, alpha_t_prime_i: torch.Tensor,
+             alpha_t_i: torch.Tensor, alpha_s_i: torch.Tensor, alpha_t_prime_i: torch.Tensor,
              node_batch_idx: torch.Tensor, upper_edge_mask: torch.Tensor):
         
         # alpha_t_i has shape (n_feats,)
@@ -503,19 +505,22 @@ class DirichletVectorField(EndpointVectorField):
 
         # convert alpha values to w
         w_t = self.alpha_to_w(alpha_t_i)
+        w_s = self.alpha_to_w(alpha_s_i)
 
 
         # take integration step for node categorical features
         for feat_idx, feat in enumerate(self.canonical_feat_order):
             if feat not in ['a', 'c']:
                 continue
-            w_feat = w_t[feat_idx]
+            w_t_feat = w_t[feat_idx]
+            w_s_feat = w_s[feat_idx]
+            x_t = g.ndata[f'{feat}_t'] # has shape (n_nodes, n_cat)
             c_factor = self.categorical_condflows[feat].c_factor(
-                g.ndata[f'{feat}_t'].cpu().numpy(),
-                w_feat.item()
+                x_t.cpu().numpy(),
+                w_t_feat.item()
             )
             # c_factor has shape equal to x_t, which is (n_nodes, n_cat)
-            c_factor = torch.from_numpy(c_factor).to(g.device)
+            c_factor = torch.from_numpy(c_factor).to(g.device).float()
             if torch.isnan(c_factor).any():
                 # print(f'NAN cfactor after: xt.min(): {xt.min()}, out_probs.min(): {out_probs.min()}')
                 print('NAN c_factor')
@@ -525,34 +530,55 @@ class DirichletVectorField(EndpointVectorField):
             eps = torch.eye(self.n_cat_dict[feat], device=g.device) # shape (n_cat, n_cat)
 
             # compute conditional vector fields for each possible endpoint
-            x_t = g.ndata[f'{feat}_t'] # has shape (n_nodes, n_cat)
             cond_vec_fields = (eps[:, None, :] - x_t[None, :, :]) * c_factor.unsqueeze(0) # has shape (n_cat, n_nodes, n_cat)
             endpoint_probs = dst_dict[feat] # has shape (n_nodes, n_cat)
             endpoint_probs = endpoint_probs.transpose(0, 1).unsqueeze(-1) # has shape (n_cat, n_nodes, 1)
             marginal_vec_field = ( endpoint_probs * cond_vec_fields ).sum(dim=0)
-
             
+            # take integration step
+            x_s = x_t + marginal_vec_field*(w_s_feat - w_t_feat)
 
+            # project onto simplex if necessary
+            x_s = self.project_simplex(x_s)
 
-        # compute x_s for each feature and set x_t = x_s
-        # for feat_idx, feat in enumerate(self.canonical_feat_order):
-        #     x1_weight = alpha_t_prime_i[feat_idx]*(s_i - t_i)/(1 - alpha_t_i[feat_idx])
-        #     xt_weight = 1 - x1_weight
+            # set x_t = x_s
+            g.ndata[f'{feat}_t'] = x_s
 
-        #     if feat == "e":
-        #         g_data_src = g.edata
+        # now we compute marginal vector field and take a step for edge features
+        e_idx = self.canonical_feat_order.index('e')
+        w_t_e = w_t[e_idx]
+        w_s_e = w_s[e_idx]
+        x_t = g.edata['e_t'][upper_edge_mask] # has shape (n_edges, n_cat)
+        c_factor = self.categorical_condflows['e'].c_factor(
+            x_t.cpu().numpy(),
+            w_t_e.item()
+        )
+        c_factor = torch.from_numpy(c_factor).to(g.device).float()
+        if torch.isnan(c_factor).any():
+            # print(f'NAN cfactor after: xt.min(): {xt.min()}, out_probs.min(): {out_probs.min()}')
+            print('NAN c_factor')
+            c_factor = torch.nan_to_num(c_factor)
+        # get possible endpoints as one-hot vectors
+        eps = torch.eye(self.n_cat_dict['e'], device=g.device) # shape (n_cat, n_cat)
 
-        #         # set the edge features so that corresponding upper and lower triangle edges have the same value
-        #         x1 = torch.zeros_like(g.edata['e_0'])
-        #         x1[upper_edge_mask] = dst_dict[feat]
-        #         x1[~upper_edge_mask] = dst_dict[feat]
-        #     else:
-        #         g_data_src = g.ndata
-        #         x1 = dst_dict[feat]
-
-        #     g_data_src[f'{feat}_t'] = x1_weight*x1 + xt_weight*g_data_src[f'{feat}_t']
-
+        # compute conditional vector fields for each possible endpoint
+        cond_vec_fields = (eps[:, None, :] - x_t[None, :, :]) * c_factor.unsqueeze(0) # has shape (n_cat, n_edges, n_cat)
+        endpoint_probs = dst_dict[feat] # has shape (n_edges, n_cat)
+        endpoint_probs = endpoint_probs.transpose(0, 1).unsqueeze(-1) # has shape (n_cat, n_edges, 1)
+        marginal_vec_field = ( endpoint_probs * cond_vec_fields ).sum(dim=0)
+        x_s = x_t + marginal_vec_field*(w_s_e - w_t_e)
+        g.edata['e_t'][upper_edge_mask] = x_s
+        g.edata['e_t'][~upper_edge_mask] = x_s
+        
         return g
+    
+    def project_simplex(self, x_s: torch.Tensor):
+        n, c = x_s.shape
+        ref_sum = torch.ones(n, dtype=x_s.dtype, device=x_s.device)
+        if not torch.allclose(x_s.sum(dim=-1), ref_sum, atol=1e-4) or not (x_s >= 0).all():
+            # print(f'WARNING: x_t.min(): {x_s.min()}. Some values of x_s do not lie on the simplex. There are {(x_s<0).sum()} negative values in x_s of shape {x_s.shape} that are negative.')
+            x_s = simplex_proj(x_s)
+        return x_s
 
 class NodePositionUpdate(nn.Module):
 

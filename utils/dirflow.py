@@ -2,6 +2,8 @@ import torch
 import numpy as np
 import scipy
 
+# this code is adapted from the DirichiletFlow paper
+
 class DirichletConditionalFlow:
     def __init__(self, K=20, alpha_min=1, alpha_max=100, alpha_spacing=0.01):
         self.alphas = np.arange(alpha_min, alpha_max + alpha_spacing, alpha_spacing)
@@ -50,3 +52,21 @@ def sample_cond_prob_path(args, seq, alphabet_size):
         xt = torch.nn.functional.one_hot(xt, num_classes=alphabet_size + 1).float() # plus one to include index for mask token
         alphas = mask_prob.expand(B)
     return xt, alphas
+
+
+def simplex_proj(x):
+    """Algorithm from https://arxiv.org/abs/1309.1541 Weiran Wang, Miguel Á. Carreira-Perpiñán"""
+    # seq has shape (batch_size, sequence_length, alphabet_size)
+    Y = x.reshape(-1, x.shape[-1])
+    N, K = Y.shape
+    X, _ = torch.sort(Y, dim=-1, descending=True)
+    X_cumsum = torch.cumsum(X, dim=-1) - 1
+    div_seq = torch.arange(1, K + 1, dtype=Y.dtype, device=Y.device)
+    Xtmp = X_cumsum / div_seq.unsqueeze(0)
+
+    greater_than_Xtmp = (X > Xtmp).sum(dim=1, keepdim=True)
+    row_indices = torch.arange(N, dtype=torch.long, device=Y.device).unsqueeze(1)
+    selected_Xtmp = Xtmp[row_indices, greater_than_Xtmp - 1]
+
+    X = torch.max(Y - selected_Xtmp, torch.zeros_like(Y))
+    return X.view(x.shape)
