@@ -502,14 +502,14 @@ class DirichletVectorField(EndpointVectorField):
         g.ndata['x_t'] = x1_weight*x1 + xt_weight*g.ndata['x_t']
 
         # convert alpha values to w
-        w = self.alpha_to_w(alpha_t_i)
+        w_t = self.alpha_to_w(alpha_t_i)
 
 
         # take integration step for node categorical features
         for feat_idx, feat in enumerate(self.canonical_feat_order):
             if feat not in ['a', 'c']:
                 continue
-            w_feat = w[feat_idx]
+            w_feat = w_t[feat_idx]
             c_factor = self.categorical_condflows[feat].c_factor(
                 g.ndata[f'{feat}_t'].cpu().numpy(),
                 w_feat.item()
@@ -528,7 +528,9 @@ class DirichletVectorField(EndpointVectorField):
             x_t = g.ndata[f'{feat}_t'] # has shape (n_nodes, n_cat)
             cond_vec_fields = (eps[:, None, :] - x_t[None, :, :]) * c_factor.unsqueeze(0) # has shape (n_cat, n_nodes, n_cat)
             endpoint_probs = dst_dict[feat] # has shape (n_nodes, n_cat)
+            endpoint_probs = endpoint_probs.transpose(0, 1).unsqueeze(-1) # has shape (n_cat, n_nodes, 1)
             marginal_vec_field = ( endpoint_probs * cond_vec_fields ).sum(dim=0)
+
             
 
 
