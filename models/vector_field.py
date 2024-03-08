@@ -515,6 +515,7 @@ class DirichletVectorField(EndpointVectorField):
             w_t_feat = w_t[feat_idx]
             w_s_feat = w_s[feat_idx]
             x_t = g.ndata[f'{feat}_t'] # has shape (n_nodes, n_cat)
+
             c_factor = self.categorical_condflows[feat].c_factor(
                 x_t.cpu().numpy(),
                 w_t_feat.item()
