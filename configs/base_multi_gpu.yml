@@ -3,7 +3,7 @@ training:
   batch_size: 8
   num_workers: 4
   trainer_args:
-    max_epochs: 20
+    max_epochs: 60
     accelerator: gpu
     devices: 4
     num_nodes: 1
@@ -19,7 +19,7 @@ training:
 wandb:
   project: mol-fm
   group: "for-reals"
-  name: geom
+  name: geom-dirichlet
   mode: online # can be disabled, online, offline
 
 lr_scheduler:
@@ -45,6 +45,7 @@ checkpointing:
   every_n_epochs: 1
 
 mol_fm:
+  parameterization: endpoint # can be "endpoint", "vector-field", or "dirichlet"
   time_scaled_loss: True
   total_loss_weights:
     x: 3.0
@@ -58,18 +59,19 @@ mol_fm:
       kwargs: {std: 1.0}
     a:
       align: False
-      type: 'marginal'
-      kwargs: {blur: 0.15}
+      type: 'gaussian'
+      kwargs: {}
     c:
       align: False
-      type: 'c-given-a'
-      kwargs: {blur: 0.15}
+      type: 'gaussian'
+      kwargs: {}
     e:
       align: False
-      type: 'marginal'
-      kwargs: {blur: 0.15}
+      type: 'gaussian'
+      kwargs: {}
 
 vector_field:
+  w_max: 10
   n_vec_channels: 16
   n_hidden_scalars: 256
   n_hidden_edge_feats: 128 

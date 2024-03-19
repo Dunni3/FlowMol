@@ -2,6 +2,7 @@
 /.vscode/*
 /data/*
 runs/
+runs_paper/
 slurm_output/
 sweep_runs/
 misc_scripts/
