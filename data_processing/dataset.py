@@ -16,6 +16,7 @@ class MoleculeDataset(torch.utils.data.Dataset):
 
         # unpack some configs regarding the prior
         self.prior_config = prior_config
+        self.dataset_config = dataset_config
 
         # get the processed data directory
         processed_data_dir: Path = Path(dataset_config['processed_data_dir'])

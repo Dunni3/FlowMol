@@ -9,6 +9,7 @@ from analysis.metrics import SampleAnalyzer
 from typing import List
 from rdkit import Chem
 import pickle
+import math
 
 def parse_args():
     p = argparse.ArgumentParser(description='Testing Script')
@@ -21,6 +22,7 @@ def parse_args():
     p.add_argument('--n_timesteps', type=int, default=20)
     p.add_argument('--visualize', action='store_true', help='Visualize the sampled trajectories')
     p.add_argument('--metrics', action='store_true', help='Compute metrics on the sampled molecules')
+    p.add_argument('--max_batch_size', type=int, default=128, help='Maximum batch size for sampling molecules')
 
     p.add_argument('--seed', type=int, default=None)
 
@@ -64,11 +66,22 @@ if __name__ == "__main__":
     # set model to eval mode
     model.eval()
 
-    if args.n_atoms_per_mol is None:
-        molecules: List[SampledMolecule]  = model.sample_random_sizes(args.n_mols, device=device, n_timesteps=args.n_timesteps, visualize=args.visualize)
-    else:
-        n_atoms = torch.full((args.n_mols,), args.n_atoms_per_mol, dtype=torch.long, device=device)
-        molecules: List[SampledMolecule] = model.sample(n_atoms, device=device, n_timesteps=args.n_timesteps, visualize=args.visualize)
+    # compute the number of batches
+    n_batches = math.ceil(args.n_mols / args.max_batch_size)
+
+    molecules = []
+    for batch_idx in range(n_batches):
+
+        n_mols_needed = args.n_mols - len(molecules)
+        batch_size = min(n_mols_needed, args.max_batch_size)
+
+        if args.n_atoms_per_mol is None:
+            batch_molecules: List[SampledMolecule]  = model.sample_random_sizes(batch_size, device=device, n_timesteps=args.n_timesteps, visualize=args.visualize)
+        else:
+            n_atoms = torch.full((batch_size,), args.n_atoms_per_mol, dtype=torch.long, device=device)
+            batch_molecules: List[SampledMolecule] = model.sample(n_atoms, device=device, n_timesteps=args.n_timesteps, visualize=args.visualize)
+
+        molecules.extend(batch_molecules)
 
     # get output file
     if args.output_file is not None:

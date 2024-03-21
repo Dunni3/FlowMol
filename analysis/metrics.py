@@ -4,6 +4,8 @@ import torch
 from rdkit import Chem
 from collections import Counter
 import wandb
+from utils.divergences import DivergenceCalculator
+from analysis.ff_energy import compute_mmff_energy
 
 allowed_bonds = {'H': {0: 1, 1: 0, -1: 0},
                  'C': {0: [3, 4], 1: 3, -1: 3},
@@ -21,8 +23,13 @@ bond_dict = [None, Chem.rdchem.BondType.SINGLE, Chem.rdchem.BondType.DOUBLE, Che
 
 class SampleAnalyzer():
 
-    def __init__(self):
-        pass
+    def __init__(self, processed_data_dir: str = None):
+
+        self.processed_data_dir = processed_data_dir
+        if self.processed_data_dir is not None:
+            energy_dist_file = self.processed_data_dir / 'energy_dist.npz'
+            self.energy_div_calculator = DivergenceCalculator(energy_dist_file)
+            
 
     def analyze(self, sampled_molecules: List[SampledMolecule]):
 
@@ -94,6 +101,35 @@ class SampleAnalyzer():
         avg_num_components = sum(num_components) / len(num_components)
 
         return frac_valid_mols, avg_frag_frac, avg_num_components
+
+    def compute_sample_energy(self, samples: List[SampledMolecule]):
+        """ samples: list of SampledMolecule objects. """
+        energies = []
+        for sample in samples:
+            rdmol = sample.rdkit_mol
+            if rdmol is not None:
+                try:
+                    Chem.SanitizeMol(rdmol)
+                except:
+                    continue
+                energy = compute_mmff_energy(rdmol)
+                if energy is not None:
+                    energies.append(energy)
+
+        return energies
+
+    def compute_energy_divergence(self, samples: List[SampledMolecule]):
+
+        if self.processed_data_dir is None:
+            raise ValueError('You must specify processed_data_dir upon initialization to compute energy divergences')
+
+        # compute the FF energy of each molecule
+        energies = self.compute_sample_energy(samples)
+
+        # compute the Jensen-Shannon divergence between the energy distribution of the samples and the training set
+        js_div = self.energy_div_calculator.js_divergence(energies)
+
+        return js_div
 
 
 def check_stability(molecule: SampledMolecule):
