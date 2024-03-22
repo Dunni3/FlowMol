@@ -31,7 +31,7 @@ class SampleAnalyzer():
             self.energy_div_calculator = DivergenceCalculator(energy_dist_file)
             
 
-    def analyze(self, sampled_molecules: List[SampledMolecule]):
+    def analyze(self, sampled_molecules: List[SampledMolecule], return_counts: bool = False):
 
         # compute the atom-level stabiltiy of a molecule. this is the number of atoms that have valid valencies.
         # note that since is computed at the atom level, even if the entire molecule is unstable, we can still get an idea
@@ -50,7 +50,11 @@ class SampleAnalyzer():
         frac_mols_stable_valence = n_stable_molecules / n_molecules # the fraction of generated molecules whose atoms all have valid valencies
 
         # compute validity as determined by rdkit, and the average size of the largest fragment, and the average number of fragments
-        frac_valid_mols, avg_frag_frac, avg_num_components = self.compute_validity(sampled_molecules)
+        validity_result = self.compute_validity(sampled_molecules, return_counts=return_counts)
+        if return_counts:
+            frac_valid_mols, avg_frag_frac, avg_num_components, n_valid, sum_frag_fracs, n_frag_fracs, sum_num_components, n_num_components = validity_result
+        else:
+            frac_valid_mols, avg_frag_frac, avg_num_components = validity_result
 
         metrics_dict = {
             'frac_atoms_stable': frac_atoms_stable,
@@ -59,10 +63,25 @@ class SampleAnalyzer():
             'avg_frag_frac': avg_frag_frac,
             'avg_num_components': avg_num_components
         }
+
+        if return_counts:
+            counts_dict = {}
+            counts_dict['n_stable_atoms'] = n_stable_atoms
+            counts_dict['n_atoms'] = n_atoms
+            counts_dict['n_stable_molecules'] = n_stable_molecules
+            counts_dict['n_molecules'] = n_molecules
+            counts_dict['n_valid'] = n_valid
+            counts_dict['sum_frag_fracs'] = sum_frag_fracs
+            counts_dict['n_frag_fracs'] = n_frag_fracs
+            counts_dict['sum_num_components'] = sum_num_components
+            counts_dict['n_num_components'] = n_num_components
+            return counts_dict
+
+
         return metrics_dict
 
     # this function taken from MiDi molecular_metrics.py script
-    def compute_validity(self, sampled_molecules: List[SampledMolecule]):
+    def compute_validity(self, sampled_molecules: List[SampledMolecule], return_counts: bool = False):
         """ generated: list of couples (positions, atom_types)"""
         n_valid = 0
         num_components = []
@@ -99,6 +118,9 @@ class SampleAnalyzer():
         frac_valid_mols = n_valid / len(sampled_molecules)
         avg_frag_frac = sum(frag_fracs) / len(frag_fracs)
         avg_num_components = sum(num_components) / len(num_components)
+
+        if return_counts:
+            return frac_valid_mols, avg_frag_frac, avg_num_components, n_valid, sum(frag_fracs), len(frag_fracs), sum(num_components), len(num_components)
 
         return frac_valid_mols, avg_frag_frac, avg_num_components
 
