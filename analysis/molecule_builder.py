@@ -4,9 +4,12 @@ from rdkit.Geometry import Point3D
 import dgl
 from typing import List, Dict
 from data_processing.priors import rigid_alignment
+from torch.nn.functional import one_hot
 
 bond_type_map = [None, Chem.rdchem.BondType.SINGLE, Chem.rdchem.BondType.DOUBLE, Chem.rdchem.BondType.TRIPLE,
              Chem.rdchem.BondType.AROMATIC]
+
+bond_type_to_idx = { bond_type:idx for idx, bond_type in enumerate(bond_type_map)}
 
 
 class SampledMolecule:
@@ -36,6 +39,46 @@ class SampledMolecule:
         if traj_frames is not None:
             self.traj_mols = self.process_traj_frames(traj_frames) # convert frames into a list of rdkit molecules
 
+    @classmethod
+    def from_rdkit_mol(cls, mol: Chem.Mol, atom_type_map: List[str]):
+        """Creates a SampledMolecule from an rdkit molecule."""
+
+        atom_type_to_idx = {atom_type: i for i, atom_type in enumerate(atom_type_map)}
+
+        # get positions
+        positions = mol.GetConformer().GetPositions()
+        positions = torch.from_numpy(positions)
+
+        # get atom elements as a string
+        # atom_types_str = [atom.GetSymbol() for atom in molecule.GetAtoms()]
+        atom_types_idx = torch.zeros(mol.GetNumAtoms()).long()
+        atom_charges = torch.zeros_like(atom_types_idx)
+        for i, atom in enumerate(mol.GetAtoms()):
+            atom_types_idx[i] = atom_type_to_idx[atom.GetSymbol()]
+            atom_charges[i] = atom.GetFormalCharge()
+
+        # get one-hot encoded of existing bonds only (no non-existing bonds)
+        adj = torch.from_numpy(Chem.rdmolops.GetAdjacencyMatrix(mol, useBO=True))
+        edge_index = adj.triu().nonzero().contiguous() # upper triangular portion of adjacency matrix
+
+        bond_types = adj[edge_index[:, 0], edge_index[:, 1]]
+        bond_src_idxs = edge_index[:, 0]
+        bond_dst_idxs = edge_index[:, 1]
+        bond_types[bond_types == 1.5] = 4
+        edge_attr = bond_types.type(torch.int32)
+
+        # create graph
+        g = dgl.graph((bond_src_idxs, bond_dst_idxs), num_nodes=mol.GetNumAtoms())
+
+        # add data to the graph
+        g.ndata['x_1'] = positions
+        g.ndata['a_1'] = one_hot(atom_types_idx.long(), num_classes=len(atom_type_map)).float()
+        g.ndata['c_1'] = one_hot(atom_charges.long() + 2, num_classes=6).float()
+        g.edata['e_1'] = one_hot(edge_attr.long(), num_classes=5).float()
+        g.edata['ue_mask'] = torch.ones(g.num_edges()).bool()
+
+        return cls(g, atom_type_map=atom_type_map)
+    
     # this code is adapted from MiDi: https://github.com/cvignac/MiDi/blob/ba07fc5b1313855c047ba0b90e7aceae47e34e38/midi/analysis/rdkit_functions.py
     def build_molecule(self):
         mol = build_molecule(self.positions, self.atom_types, self.atom_charges, self.bond_src_idxs, self.bond_dst_idxs, self.bond_types)

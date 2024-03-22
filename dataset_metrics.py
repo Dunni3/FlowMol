@@ -19,6 +19,7 @@ RDLogger.DisableLog('rdApp.*')
 def parse_args():
     p = argparse.ArgumentParser(description='Dataset Metrics')
     p.add_argument('--config', type=Path, required=True, help='Path to config file')
+    p.add_argument('--n_mols', type=int, default=None)
     return p.parse_args()
 
 def dataset_to_mols(train_dataset, atom_type_map) -> List[SampledMolecule]:
@@ -59,6 +60,11 @@ if __name__ == "__main__":
     # create sample analyzer
     sample_analyzer = SampleAnalyzer()
 
+    if args.n_mols is not None:
+        # randomly select n_mols numbers from the range (0, len(dataset))
+        indices = np.random.choice(len(train_dataset), args.n_mols, replace=False)
+        train_dataset = [train_dataset[i] for i in indices]
+
     # convert the training dataset to a list of SampledMolecule objects
     mols = dataset_to_mols(train_dataset, config['dataset']['atom_map'])
 
@@ -66,9 +72,9 @@ if __name__ == "__main__":
     energies = sample_analyzer.compute_sample_energy(mols)
 
     # compute a discrete distribution of energies
-    bins = np.linspace(-200, 500, 200)
+    bins = np.linspace(-200, 500, 200) # this range of bins captures ~99% of the density for the MMFF energies of both QM9 and GEOM-DRUGS datasets -- is that reasonable?
     counts_dataset, _ = np.histogram(energies, bins=bins, density=False)
-    p_dataset = counts_dataset / counts_dataset.sum()
+    p_dataset = counts_dataset / len(energies)
 
     # save the reference distribution
     processed_data_dir = Path(config['dataset']['processed_data_dir'])

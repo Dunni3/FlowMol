@@ -8,6 +8,7 @@ from analysis.molecule_builder import SampledMolecule
 from analysis.metrics import SampleAnalyzer
 from typing import List
 from rdkit import Chem
+from model_utils.load import read_config_file
 import pickle
 import math
 
@@ -57,6 +58,12 @@ if __name__ == "__main__":
     # load model
     model = MolFM.load_from_checkpoint(checkpoint_file)
 
+    # get config file
+    config_file = model_dir / 'config.yaml'
+
+    # read config file
+    config = read_config_file(config_file)
+
     # set device to cuda:0 if available otherwise cpu
     device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
 
@@ -92,15 +99,26 @@ if __name__ == "__main__":
 
     # compute metrics if necessary
     if args.metrics:
-        metrics = SampleAnalyzer().analyze(molecules)
+        processed_data_dir = config['dataset']['processed_data_dir']
+        sample_analyzer = SampleAnalyzer(processed_data_dir=processed_data_dir)
+        metrics = sample_analyzer.analyze(molecules)
+
+        # compute js-divergence of energies
+        js_div = sample_analyzer.compute_energy_divergence(molecules)
+        metrics['energy_js_div'] = js_div
+
         metrics_txt_file = output_file.parent / f'{output_file.stem}_metrics.txt'
         metrics_pkl_file = output_file.parent / f'{output_file.stem}_metrics.pkl'
+
+
         print(f'Writing metrics to {metrics_txt_file} and {metrics_pkl_file}')
         with open(metrics_txt_file, 'w') as f:
             for k, v in metrics.items():
                 f.write(f'{k}: {v}\n')
         with open(metrics_pkl_file, 'wb') as f:
             pickle.dump(metrics, f)
+
+        
         
 
 
