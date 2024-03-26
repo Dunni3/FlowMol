@@ -100,7 +100,7 @@ if __name__ == "__main__":
     # compute metrics if necessary
     if args.metrics:
         processed_data_dir = config['dataset']['processed_data_dir']
-        sample_analyzer = SampleAnalyzer(processed_data_dir=processed_data_dir)
+        sample_analyzer = SampleAnalyzer(processed_data_dir=Path(processed_data_dir))
         metrics = sample_analyzer.analyze(molecules)
 
         # compute js-divergence of energies
