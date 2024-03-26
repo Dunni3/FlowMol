@@ -77,7 +77,7 @@ if __name__ == "__main__":
         for i in range(n_batches):
             start = i * args.batch_size
             end = min(start + args.batch_size, len(train_dataset))
-            mols = [ train_dataset[datset_idx] for dataset_idx in range(start, end)]
+            mols = [ train_dataset[dataset_idx] for dataset_idx in range(start, end)]
             mols = dataset_to_mols(mols, config['dataset']['atom_map'])
             energies.extend(sample_analyzer.compute_sample_energy(mols))
             batch_metrics.append(sample_analyzer.analyze(mols, return_counts=True))
