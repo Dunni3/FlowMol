@@ -17,10 +17,15 @@ class DirichletConditionalFlow:
 
     def c_factor(self, bs, alpha):
         out1 = scipy.special.beta(alpha, self.K - 1)
-        out2 = np.where(bs < 1, out1 / ((1 - bs) ** (self.K - 1)), 0)
+
+        denom = (1 - bs) ** (self.K - 1)
+        really_small_mask = np.isclose(denom, 0, atol=1.0e-8)
+        out2 = np.where(~really_small_mask, out1 / denom, 0)
+
         denom = bs**(alpha - 1)
         really_small_mask = np.isclose(denom, 0, atol=1.0e-8)
         out = np.where(~really_small_mask, out2 /denom, 0)
+
         I_func = self.beta_cdfs_derivative[np.argmin(np.abs(alpha - self.alphas))]
         interp = -np.interp(bs, self.bs, I_func)
         final = interp * out

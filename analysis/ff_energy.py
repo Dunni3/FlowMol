@@ -6,7 +6,12 @@ def compute_uff_energy(mol):
     return ff.CalcEnergy()
 
 def compute_mmff_energy(mol):
-    ff = Chem.MMFFGetMoleculeForceField(mol, Chem.MMFFGetMoleculeProperties(mol), ignoreInterfragInteractions=False)
+    try:
+        ff = Chem.MMFFGetMoleculeForceField(mol, Chem.MMFFGetMoleculeProperties(mol), ignoreInterfragInteractions=False)
+    except Exception as e:
+        print(e)
+        print('Failed to get force-field object')
+        return None
     if ff:
         return ff.CalcEnergy()
     return None
