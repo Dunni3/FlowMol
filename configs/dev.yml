@@ -7,7 +7,7 @@ training:
     accelerator: gpu
     devices: 1
     accumulate_grad_batches: 1
-    limit_val_batches: 0.05
+    limit_val_batches: 0.5
 
   evaluation:
     mols_to_sample: 64 # how many molecules to sample during evaluation
@@ -79,6 +79,7 @@ mol_fm:
 
 vector_field:
   w_max: 8
+  update_edge_w_distance: True
   n_vec_channels: 16
   n_hidden_scalars: 64
   n_hidden_edge_feats: 64

@@ -27,6 +27,7 @@ class EndpointVectorField(nn.Module):
                     n_update_gvps: int = 3,
                     separate_mol_updaters: bool = False,
                     message_norm: Union[float, str] = 100,
+                    update_edge_w_distance: bool = False,
                     rbf_dmax = 20,
                     rbf_dim = 16,
                     exclude_charges: bool = False
@@ -99,7 +100,7 @@ class EndpointVectorField(nn.Module):
             n_updaters = 1
         for _ in range(n_updaters):
             self.node_position_updaters.append(NodePositionUpdate(n_hidden_scalars, n_vec_channels, n_gvps=3, n_cp_feats=n_cp_feats))
-            self.edge_updaters.append(EdgeUpdate(n_hidden_scalars, n_hidden_edge_feats))
+            self.edge_updaters.append(EdgeUpdate(n_hidden_scalars, n_hidden_edge_feats, update_edge_w_distance=update_edge_w_distance, rbf_dim=rbf_dim))
 
 
         self.node_output_head = nn.Sequential(
@@ -169,10 +170,10 @@ class EndpointVectorField(nn.Module):
                             updater_idx = 0
 
                         node_positions = self.node_position_updaters[updater_idx](node_scalar_features, node_positions, node_vec_features)
-                        edge_features = self.edge_updaters[updater_idx](g, node_scalar_features, edge_features)
 
-                        if not (conv_idx == len(self.conv_layers) - 1 and recycle_idx == self.n_recycles - 1):
-                            x_diff, d = self.precompute_distances(g, node_positions)
+                        x_diff, d = self.precompute_distances(g, node_positions)
+
+                        edge_features = self.edge_updaters[updater_idx](g, node_scalar_features, edge_features, d=d)
 
             
             # predict final charges and atom type logits
@@ -614,11 +615,17 @@ class NodePositionUpdate(nn.Module):
     
 class EdgeUpdate(nn.Module):
 
-    def __init__(self, n_node_scalars, n_edge_feats):
+    def __init__(self, n_node_scalars, n_edge_feats, update_edge_w_distance=False, rbf_dim=16):
         super().__init__()
 
+        self.update_edge_w_distance = update_edge_w_distance
+
+        input_dim = n_node_scalars*2 + n_edge_feats
+        if update_edge_w_distance:
+            input_dim += rbf_dim
+
         self.edge_update_fn = nn.Sequential(
-            nn.Linear(n_node_scalars*2 + n_edge_feats, n_edge_feats),
+            nn.Linear(input_dim, n_edge_feats),
             nn.SiLU(),
             nn.Linear(n_edge_feats, n_edge_feats),
             nn.SiLU(),
@@ -626,7 +633,7 @@ class EdgeUpdate(nn.Module):
 
         self.edge_norm = nn.LayerNorm(n_edge_feats)
 
-    def forward(self, g: dgl.DGLGraph, node_scalars, edge_feats):
+    def forward(self, g: dgl.DGLGraph, node_scalars, edge_feats, d):
         
 
         # get indicies of source and destination nodes
@@ -635,8 +642,11 @@ class EdgeUpdate(nn.Module):
         mlp_inputs = [
             node_scalars[src_idxs],
             node_scalars[dst_idxs],
-            edge_feats
+            edge_feats,
         ]
+
+        if self.update_edge_w_distance:
+            mlp_inputs.append(d)
 
         edge_feats = self.edge_norm(edge_feats + self.edge_update_fn(torch.cat(mlp_inputs, dim=-1)))
         return edge_feats
