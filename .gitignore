@@ -8,6 +8,7 @@ sweep_runs/
 misc_scripts/
 wandb/
 notebooks/
+configs/
 
 
 # Byte-compiled / optimized / DLL files

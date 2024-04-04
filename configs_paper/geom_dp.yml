@@ -1,11 +1,11 @@
 training:
   output_dir: runs_paper_ed/
-  batch_size: 8
+  batch_size: 16
   num_workers: 4
   trainer_args:
-    max_epochs: 60
+    max_epochs: 20
     accelerator: gpu
-    devices: 4
+    devices: 2
     num_nodes: 1
     strategy: ddp_find_unused_parameters_true
     accumulate_grad_batches: 2
