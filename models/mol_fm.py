@@ -390,7 +390,6 @@ class MolFM(pl.LightningModule):
         return g
     
 
-
     def configure_optimizers(self):
         try:
             weight_decay = self.lr_scheduler_config['weight_decay']

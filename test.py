@@ -118,10 +118,6 @@ if __name__ == "__main__":
         with open(metrics_pkl_file, 'wb') as f:
             pickle.dump(metrics, f)
 
-        
-        
-
-
     # check that output file is an sdf file
     if output_file.suffix != '.sdf':
         raise ValueError('output file must be an sdf file')

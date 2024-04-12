@@ -14,10 +14,11 @@ bond_type_to_idx = { bond_type:idx for idx, bond_type in enumerate(bond_type_map
 
 class SampledMolecule:
 
-    def __init__(self, g: dgl.DGLGraph, atom_type_map: List[str], traj_frames: Dict[str, torch.Tensor] = None, exclude_charges: bool = False):
+    def __init__(self, g: dgl.DGLGraph, atom_type_map: List[str], traj_frames: Dict[str, torch.Tensor] = None, exclude_charges: bool = False, align_traj: bool = True):
         """Represents a molecule sampled from a model. Converts the DGL graph to an rdkit molecule and keeps all associated information."""
 
         self.exclude_charges = exclude_charges
+        self.align_traj = align_traj
         
         # save the graph
         self.g = g
@@ -118,7 +119,8 @@ class SampledMolecule:
             positions, atom_types, atom_charges, bond_types, bond_src_idxs, bond_dst_idxs = extract_moldata_from_graph(g_dummy, self.atom_type_map)
 
             # align positions to final frame
-            positions = rigid_alignment(positions, x_final)
+            if self.align_traj:
+                positions = rigid_alignment(positions, x_final)
 
             # build rdkit molecule
             mol = build_molecule(positions, atom_types, atom_charges, bond_src_idxs, bond_dst_idxs, bond_types)

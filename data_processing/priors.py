@@ -3,6 +3,7 @@ from scipy.optimize import linear_sum_assignment
 import torch
 from torch.nn.functional import softmax, one_hot
 import dgl
+from utils.dirflow import simplex_proj
 
 def gaussian(n: int, d: int, std: float = 1.0):
     """
@@ -29,6 +30,18 @@ def centered_normal_prior_batched_graph(g: dgl.DGLGraph, node_batch_idx: torch.T
 
     return prior_sample
     
+
+
+def barycenter_prior(n: int, d: int, blur: float = 0.0):
+
+    p = torch.ones(n,d) / d
+
+    if blur != 0.0:
+        p = p + torch.randn_like(p) * blur
+        p = simplex_proj(p)
+
+    return p
+
 
 def biased_simplex_prior(n, d, vertex_prob: float = 0.75, std: float = 0.2, vertex_idx: int = 0):
     """
@@ -222,7 +235,8 @@ train_prior_register = {
     'biased-simplex': biased_simplex_prior,
     'marginal': sample_marginal,
     'c-given-a': sample_p_c_given_a,
-    'gaussian': gaussian
+    'gaussian': gaussian,
+    'barycenter': barycenter_prior
 }
 
 inference_prior_register = {
@@ -231,7 +245,8 @@ inference_prior_register = {
     'biased-simplex': biased_simplex_prior,
     'marginal': sample_marginal,
     'c-given-a': sample_p_c_given_a,
-    'gaussian': gaussian
+    'gaussian': gaussian,
+    'barycenter': barycenter_prior
 }
 
 @torch.no_grad()
