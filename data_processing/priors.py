@@ -5,11 +5,15 @@ from torch.nn.functional import softmax, one_hot
 import dgl
 from utils.dirflow import simplex_proj
 
-def gaussian(n: int, d: int, std: float = 1.0):
+def gaussian(n: int, d: int, std: float = 1.0, simplex_center: bool = False):
     """
     Generate a prior feature by sampling from a Gaussian distribution.
     """
-    return torch.randn(n, d) * std
+    p = torch.randn(n, d) * std
+    
+    if simplex_center:
+        p = p + 1/d
+    return p
 
 
 def centered_normal_prior(n: int, d: int, std: float = 4.0):

@@ -9,7 +9,7 @@ def read_config_file(config_file: Path) -> dict:
         config = yaml.load(f, Loader=yaml.FullLoader)
     return config
 
-def model_from_config(config: dict) -> MolFM:
+def model_from_config(config: dict, seed_ckpt: Path = None) -> MolFM:
 
     atom_type_map = config['dataset']['atom_map']
 
@@ -23,16 +23,27 @@ def model_from_config(config: dict) -> MolFM:
     n_atoms_hist_filepath = processed_data_dir / 'train_data_n_atoms_histogram.pt'
     marginal_dists_file = processed_data_dir / 'train_data_marginal_dists.pt'
 
-
-    model = MolFM(atom_type_map=atom_type_map, 
-                    n_atoms_hist_file=n_atoms_hist_filepath,
-                    marginal_dists_file=marginal_dists_file,
-                    sample_interval=sample_interval,
-                    n_mols_to_sample=mols_to_sample,
-                    vector_field_config=config['vector_field'],
-                    interpolant_scheduler_config=config['interpolant_scheduler'], 
-                    lr_scheduler_config=config['lr_scheduler'],
-                    **config['mol_fm'])
+    if seed_ckpt is not None:
+        model = MolFM.load_from_checkpoint(seed_ckpt, 
+                                            atom_type_map=atom_type_map,
+                                            n_atoms_hist_file=n_atoms_hist_filepath,
+                                            marginal_dists_file=marginal_dists_file,
+                                            sample_interval=sample_interval,
+                                            n_mols_to_sample=mols_to_sample,
+                                            vector_field_config=config['vector_field'],
+                                            interpolant_scheduler_config=config['interpolant_scheduler'], 
+                                            lr_scheduler_config=config['lr_scheduler'],
+                                            **config['mol_fm'])
+    else:
+        model = MolFM(atom_type_map=atom_type_map, 
+                        n_atoms_hist_file=n_atoms_hist_filepath,
+                        marginal_dists_file=marginal_dists_file,
+                        sample_interval=sample_interval,
+                        n_mols_to_sample=mols_to_sample,
+                        vector_field_config=config['vector_field'],
+                        interpolant_scheduler_config=config['interpolant_scheduler'], 
+                        lr_scheduler_config=config['lr_scheduler'],
+                        **config['mol_fm'])
     
     return model
 

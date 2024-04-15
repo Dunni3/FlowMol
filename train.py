@@ -22,6 +22,7 @@ def parse_args():
     p = argparse.ArgumentParser(description='Training Script')
     p.add_argument('--config', type=Path, default=None)
     p.add_argument('--resume', type=Path, default=None, help='Path to run directory or checkpoint file to resume from')
+    p.add_argument('--seed-model', type=Path, default=None, help='Path to a model checkpoint to seed the model with')
 
     # create a boolean argument for whether or not this is a debug run
     p.add_argument('--debug', action='store_true')
@@ -126,7 +127,7 @@ if __name__ == "__main__":
     data_module: MoleculeDataModule = data_module_from_config(config)
 
     # create model
-    model: MolFM = model_from_config(config)
+    model: MolFM = model_from_config(config, seed_ckpt=args.seed_model)
 
     # get pl trainer config
     trainer_config = config['training']['trainer_args']
