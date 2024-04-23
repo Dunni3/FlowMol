@@ -41,8 +41,12 @@ class SampledMolecule:
             self.traj_mols = self.process_traj_frames(traj_frames) # convert frames into a list of rdkit molecules
 
     @classmethod
-    def from_rdkit_mol(cls, mol: Chem.Mol, atom_type_map: List[str]):
+    def from_rdkit_mol(cls, mol: Chem.Mol, atom_type_map: List[str] = None):
         """Creates a SampledMolecule from an rdkit molecule."""
+
+        if atom_type_map is None:
+            atom_types = [ atom.GetSymbol() for atom in mol.GetAtoms() ]
+            atom_type_map = list(set(atom_types))
 
         atom_type_to_idx = {atom_type: i for i, atom_type in enumerate(atom_type_map)}
 

@@ -11,6 +11,7 @@ from rdkit import Chem
 from model_utils.load import read_config_file
 import pickle
 import math
+import time
 
 def parse_args():
     p = argparse.ArgumentParser(description='Testing Script')
@@ -24,6 +25,7 @@ def parse_args():
     p.add_argument('--visualize', action='store_true', help='Visualize the sampled trajectories')
     p.add_argument('--metrics', action='store_true', help='Compute metrics on the sampled molecules')
     p.add_argument('--max_batch_size', type=int, default=128, help='Maximum batch size for sampling molecules')
+    p.add_argument('--baseline_comparison', action='store_true', help='Whether these samples are for comparison to the baseline. If true, output format will be different.')
 
     p.add_argument('--seed', type=int, default=None)
 
@@ -77,6 +79,7 @@ if __name__ == "__main__":
     n_batches = math.ceil(args.n_mols / args.max_batch_size)
 
     molecules = []
+    start = time.time()
     for batch_idx in range(n_batches):
 
         n_mols_needed = args.n_mols - len(molecules)
@@ -89,13 +92,25 @@ if __name__ == "__main__":
             batch_molecules: List[SampledMolecule] = model.sample(n_atoms, device=device, n_timesteps=args.n_timesteps, visualize=args.visualize)
 
         molecules.extend(batch_molecules)
+    end = time.time()
+    sampling_time = end - start
 
     # get output file
     if args.output_file is not None:
         output_file = args.output_file
+    elif args.baseline_comparison:
+        output_file = model_dir / 'samples' / f'{model_dir.name}_baseline_comparison.pkl'
     else:
         output_file = model_dir / 'samples' / 'sampled_mols.sdf'
     output_file.parent.mkdir(parents=True, exist_ok=True)
+
+    # handle the case where we are sampling molecules for comparison to the baseline
+    if args.baseline_comparison:
+        print(f'Writing molecules to {output_file}')
+        rdkit_mols = [ m.rdkit_mol for m in molecules ]
+        with open(output_file, 'wb') as f:
+            pickle.dump((rdkit_mols, sampling_time), f)
+        exit()
 
     # compute metrics if necessary
     if args.metrics:

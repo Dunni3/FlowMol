@@ -115,6 +115,10 @@ if __name__ == "__main__":
     # compute a discrete distribution of energies
     bins = np.linspace(-200, 500, 200) # this range of bins captures ~99% of the density for the MMFF energies of both QM9 and GEOM-DRUGS datasets -- is that reasonable?
     counts_dataset, _ = np.histogram(energies, bins=bins, density=False)
+    # compute the fraction of the molecules which fall outside these bins
+    frac_outside = 1 - counts_dataset.sum() / len(energies)
+    # print the fraction of the molecules which fall outside the bins
+    print(f'fraction of molecules outside the bins: {frac_outside:.4f}')
     p_dataset = counts_dataset / len(energies)
 
     # save the reference distribution

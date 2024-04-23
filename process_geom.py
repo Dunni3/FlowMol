@@ -86,6 +86,13 @@ if __name__ == "__main__":
     with open(args.config, 'r') as f:
         config = yaml.load(f, Loader=yaml.FullLoader)
 
+    # get number of conformers per molecule
+    try:
+        n_conformers = config['dataset']['confs_per_mol']
+    except KeyError:
+        n_conformers = None
+    print(f'n_conformers set to {n_conformers}')
+
 
     # get processed data directory and create it if it doesn't exist
     processed_data_dir = Path(config['dataset']['processed_data_dir'])
@@ -140,7 +147,13 @@ if __name__ == "__main__":
     all_smiles = []
     for molecule_chunk in raw_data:
         all_smiles.append(molecule_chunk[0])
-        for conformer in molecule_chunk[1]:
+
+        if n_conformers is not None:
+            n_confs_this_mol = min(n_conformers, len(molecule_chunk[1]))
+        else:
+            n_confs_this_mol = len(molecule_chunk[1])
+            
+        for conformer in molecule_chunk[1][:n_confs_this_mol]:
             all_molecules.append(conformer)
     del raw_data
 
