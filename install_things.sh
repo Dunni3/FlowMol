@@ -1,8 +1,7 @@
 #!/bin/bash
 
 # activate the conda environemnt
-# source /home/ian/mambaforge/etc/profile.d/mamba.sh
-# source /home/ian/mambaforge/etc/profile.d/conda.sh
+mamba activate flowmol
 
 # get the name of the current conda environment
 ENV_NAME=$(basename "$CONDA_PREFIX")
