@@ -3,7 +3,7 @@ import torch
 from pathlib import Path
 import pytorch_lightning as pl
 from pytorch_lightning import seed_everything
-from models.mol_fm import MolFM
+from models.mol_fm import FlowMol
 from analysis.molecule_builder import SampledMolecule
 from analysis.metrics import SampleAnalyzer
 from typing import List
@@ -58,7 +58,7 @@ if __name__ == "__main__":
         checkpoint_file = args.checkpoint
 
     # load model
-    model = MolFM.load_from_checkpoint(checkpoint_file)
+    model = FlowMol.load_from_checkpoint(checkpoint_file)
 
     # get config file
     config_file = model_dir / 'config.yaml'

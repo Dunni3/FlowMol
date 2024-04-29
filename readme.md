@@ -74,3 +74,4 @@ python process_geom.py data/geom_raw/train_data.pickle --config=trained_models/g
 python process_geom.py data/geom_raw/test_data.pickle --config=trained_models/geom_gauss_ep/config.yml
 python process_geom.py data/geom_raw/val_data.pickle --config=trained_models/geom_gauss_ep/config.yml
 ```
+

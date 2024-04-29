@@ -18,7 +18,7 @@ from analysis.molecule_builder import SampledMolecule
 from analysis.metrics import SampleAnalyzer
 from einops import rearrange
 
-class MolFM(pl.LightningModule):
+class FlowMol(pl.LightningModule):
 
     canonical_feat_order = ['x', 'a', 'c', 'e']
     node_feats = ['x', 'a', 'c']

@@ -1,4 +1,4 @@
-from models.mol_fm import MolFM
+from models.mol_fm import FlowMol
 from pathlib import Path
 import yaml
 from data_processing.data_module import MoleculeDataModule
@@ -9,7 +9,7 @@ def read_config_file(config_file: Path) -> dict:
         config = yaml.load(f, Loader=yaml.FullLoader)
     return config
 
-def model_from_config(config: dict, seed_ckpt: Path = None) -> MolFM:
+def model_from_config(config: dict, seed_ckpt: Path = None) -> FlowMol:
 
     atom_type_map = config['dataset']['atom_map']
 
@@ -24,7 +24,7 @@ def model_from_config(config: dict, seed_ckpt: Path = None) -> MolFM:
     marginal_dists_file = processed_data_dir / 'train_data_marginal_dists.pt'
 
     if seed_ckpt is not None:
-        model = MolFM.load_from_checkpoint(seed_ckpt, 
+        model = FlowMol.load_from_checkpoint(seed_ckpt, 
                                             atom_type_map=atom_type_map,
                                             n_atoms_hist_file=n_atoms_hist_filepath,
                                             marginal_dists_file=marginal_dists_file,
@@ -35,7 +35,7 @@ def model_from_config(config: dict, seed_ckpt: Path = None) -> MolFM:
                                             lr_scheduler_config=config['lr_scheduler'],
                                             **config['mol_fm'])
     else:
-        model = MolFM(atom_type_map=atom_type_map, 
+        model = FlowMol(atom_type_map=atom_type_map, 
                         n_atoms_hist_file=n_atoms_hist_filepath,
                         marginal_dists_file=marginal_dists_file,
                         sample_interval=sample_interval,

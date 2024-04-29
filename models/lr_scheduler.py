@@ -6,14 +6,14 @@ from pathlib import Path
 
 from typing import TYPE_CHECKING
 if TYPE_CHECKING:
-    from models.mol_fm import MolFM
+    from models.mol_fm import FlowMol
 
 # TODO: refacotr scheduler to have a minimium learning rate when doing restarts
 
 class LRScheduler:
 
     def __init__(self,
-                 model: MolFM,
+                 model: FlowMol,
                  optimizer: Optimizer,
                  base_lr: float,
                  weight_decay: float = 0,
