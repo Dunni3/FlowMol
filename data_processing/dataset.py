@@ -23,6 +23,8 @@ class MoleculeDataset(torch.utils.data.Dataset):
 
         if 'joint_node_alignment' not in self.prior_config:
             self.prior_config['joint_node_alignment'] = False
+
+        if self.prior_config['joint_node_alignment']:
             self.prior_config['x']['align'] = False
 
         # load the marginal distributions of atom types and the conditional distribution of charges given atom type
