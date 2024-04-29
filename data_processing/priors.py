@@ -302,3 +302,29 @@ def edge_prior(upper_edge_mask: torch.Tensor, edge_prior_config: dict):
     edge_prior[upper_edge_mask] = upper_edge_prior
     edge_prior[~upper_edge_mask] = upper_edge_prior
     return edge_prior
+
+def joint_node_alignment(dst_dict: dict, prior_dict: dict, product_space_weights: list):
+    """
+    Aligns the prior samples for the node features to the destination node features.
+    """
+    feats = ['x', 'a', 'c']
+    assert isinstance(product_space_weights, list) and len(product_space_weights) == len(feats), "product_space_weights must be a list of length 3"
+    c = None
+    for feat, weight in zip(feats, product_space_weights):
+        c_i = torch.cdist(prior_dict[feat], dst_dict[feat], p=2)*weight
+        if c is None:
+            c = c_i
+        else:
+            c += c_i
+    
+    # compute and apply optimal node ordering
+    _, prior_idx = linear_sum_assignment(c)
+    for feat in feats:
+        prior_dict[feat] = prior_dict[feat][prior_idx]
+
+    # apply rigid alignment on positions
+    prior_dict['x'] = rigid_alignment(prior_dict['x'], dst_dict['x'])
+
+    return prior_dict
+
+    

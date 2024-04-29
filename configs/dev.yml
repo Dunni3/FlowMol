@@ -76,6 +76,8 @@ mol_fm:
       align: False
       type: 'barycenter'
       kwargs: {blur: 0.03}
+    joint_node_alignment: True
+    product_space_weights: [1.0, 0.5, 0.25]
 
 vector_field:
   # w_max: 8

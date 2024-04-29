@@ -2,7 +2,7 @@ import torch
 from pathlib import Path
 import dgl
 from torch.nn.functional import one_hot
-from data_processing.priors import coupled_node_prior, edge_prior
+from data_processing.priors import coupled_node_prior, edge_prior, joint_node_alignment
 
 # create a function named collate that takes a list of samples from the dataset and combines them into a batch
 # this might not be necessary. I think we can pass the argument collate_fn=dgl.batch to the DataLoader
@@ -20,6 +20,10 @@ class MoleculeDataset(torch.utils.data.Dataset):
 
         # get the processed data directory
         processed_data_dir: Path = Path(dataset_config['processed_data_dir'])
+
+        if 'joint_node_alignment' not in self.prior_config:
+            self.prior_config['joint_node_alignment'] = False
+            self.prior_config['x']['align'] = False
 
         # load the marginal distributions of atom types and the conditional distribution of charges given atom type
         marginal_dists_file = processed_data_dir / 'train_data_marginal_dists.pt'
@@ -119,6 +123,9 @@ class MoleculeDataset(torch.utils.data.Dataset):
             'c': atom_charges
         }
         prior_node_feats = coupled_node_prior(dst_dict=dst_dict, prior_config=self.prior_config)
+        if self.prior_config['joint_node_alignment']:
+            prior_node_feats = joint_node_alignment(dst_dict, prior_node_feats, self.prior_config['product_space_weights'])
+
         for feat in prior_node_feats:
             g.ndata[f'{feat}_0'] = prior_node_feats[feat]
 
