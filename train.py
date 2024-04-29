@@ -13,7 +13,7 @@ import dgl
 import sys
 
 # from models.ligand_edm import LigandEquivariantDiffusion
-from models.mol_fm import FlowMol
+from models.flowmol import FlowMol
 from data_processing.data_module import MoleculeDataModule
 from model_utils.sweep_config import merge_config_and_args, register_hyperparameter_args
 from model_utils.load import read_config_file, model_from_config, data_module_from_config

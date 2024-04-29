@@ -3,7 +3,7 @@ import torch
 from pathlib import Path
 import pytorch_lightning as pl
 from pytorch_lightning import seed_everything
-from models.mol_fm import FlowMol
+from models.flowmol import FlowMol
 from analysis.molecule_builder import SampledMolecule
 from analysis.metrics import SampleAnalyzer
 from typing import List
