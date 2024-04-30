@@ -2,28 +2,17 @@
 
 ![Image](figures/ga.png)
 
-# processing a split of the geom dataset
-
-```console
-python process_geom.py data/raw/test_data.pickle --config configs/dev.yml
-```
-
 # Environment Setup
 
 Create a conda/mamba envrionment with python 3.10: `mamba create -n flowmol python=3.10`
 
 After activating the envrionment we just created, setup the environment by running the bash script `build_env.sh`. This script just runs a handful of install commands. The script uses mamba by default. If you have conda installed just change the `mamba` command to `conda` in the script.
 
-
-# Trained models
-
-Download trained models by running this bash script from the root of the repository:  
-
 # Project Structure
 
 ## How we define a model (config files)
 
-Specifications of the model and the data that the model is trained on are all packaged into one config file. The config files are just yaml files. Once you setup your config file, you pass it as input to the data processing scripts in addition to the training scripts. An example config file is provided at `configs/dev_config.yml`. This example config file also has some helpful comments in it describing what the different parameters mean.
+Specifications of the model and the data that the model is trained on are all packaged into one config file. The config files are just yaml files. Once you setup your config file, you pass it as input to the data processing scripts in addition to the training scripts. An example config file is provided at `configs/dev.yml`. This example config file also has some helpful comments in it describing what the different parameters mean.
 
 Actual config files used to train models presented in the paper are available in the `trained_models/` directory.
 
