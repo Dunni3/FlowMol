@@ -1,7 +1,6 @@
 # Mixed Continuous and Categorical Flow Matching for 3D De Novo Molecule Generation
 
-# getting the data
-
+![Image](figures/ga.png)
 
 # processing a split of the geom dataset
 
