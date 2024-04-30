@@ -19,9 +19,9 @@ def parse_args():
     p.add_argument('--checkpoint', type=Path, help='Path to checkpoint file', default=None)
     p.add_argument('--output_file', type=Path, help='Path to output file', default=None)
 
-    p.add_argument('--n_mols', type=int, default=100)
-    p.add_argument('--n_atoms_per_mol', type=int, default=None)
-    p.add_argument('--n_timesteps', type=int, default=20)
+    p.add_argument('--n_mols', type=int, default=100, help='The number of molecules to generate.')
+    p.add_argument('--n_atoms_per_mol', type=int, default=None, help="The number of atoms in every molecule. If None, the number of atoms will be sampled independently for each molecule from the training data distribution.")
+    p.add_argument('--n_timesteps', type=int, default=20, help="Number of timesteps for integration via Euler's method")
     p.add_argument('--visualize', action='store_true', help='Visualize the sampled trajectories')
     p.add_argument('--metrics', action='store_true', help='Compute metrics on the sampled molecules')
     p.add_argument('--max_batch_size', type=int, default=128, help='Maximum batch size for sampling molecules')

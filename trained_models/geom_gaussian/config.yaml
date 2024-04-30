@@ -18,7 +18,7 @@ dataset:
   dataset_name: geom
   dataset_size: null
   processed_data_dir: data/geom/
-  raw_data_dir: data/raw/
+  raw_data_dir: data/geom_raw/
 interpolant_scheduler:
   cosine_params:
     a: 2

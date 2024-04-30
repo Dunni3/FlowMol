@@ -1,9 +1,4 @@
-# TODO:
-- [ ] create trained models directory
-- [ ] change geom config files so that raw data dir is data/geom_raw
-- [ ] record versions of all things installed in the project
-- [ ] cite pytorch and DGL in the paper
-- [ ] upload trained models somewhere and write script for downloading them
+# Mixed Continuous and Categorical Flow Matching for 3D De Novo Molecule Generation
 
 # getting the data
 
@@ -18,12 +13,8 @@ python process_geom.py data/raw/test_data.pickle --config configs/dev.yml
 
 Create a conda/mamba envrionment with python 3.10: `mamba create -n flowmol python=3.10`
 
-After activating the envrionment we jsut created, setup the environment by running the bash script `install_things.sh`
+After activating the envrionment we just created, setup the environment by running the bash script `build_env.sh`. This script just runs a handful of install commands. The script uses mamba by default. If you have conda installed just change the `mamba` command to `conda` in the script.
 
-This repository was built using the following versions of software:
-- python 3.10.0
-- pytorch 2.?.0
-- dgl 0.7.2 ... these are wrongish versions they were just filled in by copilot
 
 # Trained models
 
@@ -75,3 +66,29 @@ python process_geom.py data/geom_raw/test_data.pickle --config=trained_models/ge
 python process_geom.py data/geom_raw/val_data.pickle --config=trained_models/geom_gauss_ep/config.yml
 ```
 
+# Downloading Trained Models
+
+Trained models are available in this repository within the `trained_models/` directory. Model checkpoints are stored in this repository using git-lfs. Download/install git-lfs by following the instructions [here](https://git-lfs.github.com/). Once you have git-lfs installed, you can download the trained models by running the following command from the root of this repository:
+```console
+git lfs pull
+```
+
+Checkout the [trained models readme](trained_models/readme.md) for more information on the trained models.
+
+# Sampling
+
+To sample from a trained model, use the `test.py` script and pass a model checkpoint with the `--checkpoint` argument. Here's an example command to sample from a trained model:
+
+```console
+python test.py --checkpoint=trained_models/qm9_gauss_ep/checkpoints/model.ckpt --n_mols=1000 --n_timesteps=100 --max_batch_size=500 --output_file=brand_new_molecules.sdf
+```
+
+The output file, if specified, must be an SDF file. If not specified, sampled molecules will be written to the model directory. You can also have the script produce a molecule for every integration step to see the evolution of the molecule over time by adding the `--visualize` flag. You can compute all of the metrics reported in the paper by adding the `--metrics` flag.
+
+# Training
+
+Run the `train.py` script. You can either pass a config file, or you can pass a trained model checkpoint for resuming. Note in the latter case, the script assumes the checkpoint is inside of a directory that contains a config file. To see the expected file structure of a model directory, refer to the [trained models readme](trained_models/readme.md). Here's an example command to train a model:
+
+```console
+python train.py --config=trained_models/qm9_gaussian/config.yaml
+```
