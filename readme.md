@@ -22,12 +22,13 @@ Note, you don't have to reprocess the dataset for every model you train, as long
 
 # Downloading Trained Models
 
-Trained models are available in this repository within the `trained_models/` directory. Model checkpoints are stored in this repository using git-lfs. Download/install git-lfs by following the instructions [here](https://git-lfs.github.com/). Once you have git-lfs installed, you can download the trained models by running the following command from the root of this repository:
+Run the following command to download trained models:
+
 ```console
-git lfs pull
+wget -r -np -nH --cut-dirs=2 --reject 'index.html*' https://bits.csb.pitt.edu/files/FlowMol/trained_models/
 ```
 
-Checkout the [trained models readme](trained_models/readme.md) for more information on the trained models.
+Trained models will now be available within the `trained_models/` directory. Checkout the [trained models readme](trained_models/readme.md) for more information on the trained models.
 
 # Sampling
 
