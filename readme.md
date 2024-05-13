@@ -35,7 +35,7 @@ Trained models will now be available within the `trained_models/` directory. Che
 To sample from a trained model, use the `test.py` script and pass a model checkpoint with the `--checkpoint` argument. Here's an example command to sample from a trained model:
 
 ```console
-python test.py --checkpoint=trained_models/qm9_gauss_ep/checkpoints/model.ckpt --n_mols=1000 --n_timesteps=100 --max_batch_size=500 --output_file=brand_new_molecules.sdf
+python test.py --checkpoint=trained_models/qm9_gaussian/checkpoints/model.ckpt --n_mols=1000 --n_timesteps=100 --max_batch_size=500 --output_file=brand_new_molecules.sdf
 ```
 
 The output file, if specified, must be an SDF file. If not specified, sampled molecules will be written to the model directory. You can also have the script produce a molecule for every integration step to see the evolution of the molecule over time by adding the `--visualize` flag. You can compute all of the metrics reported in the paper by adding the `--metrics` flag.
