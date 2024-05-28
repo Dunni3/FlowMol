@@ -27,6 +27,9 @@ def parse_args():
     p.add_argument('--max_batch_size', type=int, default=128, help='Maximum batch size for sampling molecules')
     p.add_argument('--baseline_comparison', action='store_true', help='Whether these samples are for comparison to the baseline. If true, output format will be different.')
 
+    p.add_argument('--stochasticity', type=float, default=None, help='Stochasticity for sampling molecules, only applies to models using CTMC')
+    p.add_argument('--hc_thresh', type=float, default=None, help='High confidence threshold for purity sampling, only applies to models using CTMC')
+    
     p.add_argument('--seed', type=int, default=None)
 
     args = p.parse_args()
@@ -36,6 +39,10 @@ def parse_args():
     
     if args.model_dir is None and args.checkpoint is None:
         raise ValueError('must specify model_dir or checkpoint')
+
+    if args.hc_thresh is not None:
+        if args.hc_thresh < 0 or args.hc_thresh > 1:
+            raise ValueError('hc_thresh must be on the interval [0, 1]')
 
     return args
 
@@ -86,10 +93,22 @@ if __name__ == "__main__":
         batch_size = min(n_mols_needed, args.max_batch_size)
 
         if args.n_atoms_per_mol is None:
-            batch_molecules: List[SampledMolecule]  = model.sample_random_sizes(batch_size, device=device, n_timesteps=args.n_timesteps, visualize=args.visualize)
+            batch_molecules: List[SampledMolecule]  = model.sample_random_sizes(
+                batch_size, 
+                device=device, 
+                n_timesteps=args.n_timesteps, 
+                visualize=args.visualize,
+                stochasticity=args.stochasticity,
+                high_confidence_threshold=args.hc_thresh)
         else:
             n_atoms = torch.full((batch_size,), args.n_atoms_per_mol, dtype=torch.long, device=device)
-            batch_molecules: List[SampledMolecule] = model.sample(n_atoms, device=device, n_timesteps=args.n_timesteps, visualize=args.visualize)
+            batch_molecules: List[SampledMolecule] = model.sample(
+                n_atoms, 
+                device=device, 
+                n_timesteps=args.n_timesteps, 
+                visualize=args.visualize,
+                stochasticity=args.stochasticity,
+                high_confidence_threshold=args.hc_thresh)
 
         molecules.extend(batch_molecules)
     end = time.time()

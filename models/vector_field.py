@@ -30,7 +30,12 @@ class EndpointVectorField(nn.Module):
                     update_edge_w_distance: bool = False,
                     rbf_dmax = 20,
                     rbf_dim = 16,
-                    exclude_charges: bool = False
+                    exclude_charges: bool = False,
+                    has_mask: bool = False # if we are using CTMC, input categorical features will have mask tokens,
+                    # this means their one-hot representations will have an extra dimension,
+                    # and the neural network instantiated by this method need to account for this
+                    # it is definitely anti-pattern to have a parameter in parent class that is only needed for one sub-class (CTMCVectorField)
+                    # however, this is the fastest way to get CTMCVectorField working right now, so we will be anti-pattern for the sake of time
     ):
         super().__init__()
 
@@ -58,9 +63,16 @@ class EndpointVectorField(nn.Module):
 
         assert n_vec_channels >= 3, 'n_vec_channels must be >= 3'
 
+        self.n_cat_feats = { # number of possible values for each categorical variable (not including mask tokens in the case of CTMC)
+            'a': n_atom_types,
+            'c': n_charges,
+            'e': n_bond_types
+        }
+
+        n_mask_feats = int(has_mask)
 
         self.scalar_embedding = nn.Sequential(
-            nn.Linear(n_atom_types + n_charges + 1, n_hidden_scalars),
+            nn.Linear(n_atom_types + n_charges + 1 + 2*n_mask_feats, n_hidden_scalars),
             nn.SiLU(),
             nn.Linear(n_hidden_scalars, n_hidden_scalars),
             nn.SiLU(),
@@ -68,7 +80,7 @@ class EndpointVectorField(nn.Module):
         )
 
         self.edge_embedding = nn.Sequential(
-            nn.Linear(n_bond_types, n_hidden_edge_feats),
+            nn.Linear(n_bond_types + n_mask_feats, n_hidden_edge_feats),
             nn.SiLU(),
             nn.Linear(n_hidden_edge_feats, n_hidden_edge_feats),
             nn.SiLU(),
