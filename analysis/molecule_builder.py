@@ -23,6 +23,8 @@ class SampledMolecule:
         align_traj: bool = True):
         """Represents a molecule sampled from a model. Converts the DGL graph to an rdkit molecule and keeps all associated information."""
 
+        atom_type_map = list(atom_type_map) # create a shallow copy of the atom type map so that we don't modify the original
+
         self.exclude_charges = exclude_charges
         self.align_traj = align_traj
         self.ctmc_mol = ctmc_mol

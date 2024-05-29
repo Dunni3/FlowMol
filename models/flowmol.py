@@ -60,6 +60,13 @@ class FlowMol(pl.LightningModule):
         self.weight_ae = weight_ae
         self.target_blur = target_blur
 
+        # TODO: delete this block of code, it is only here so I can sample from a molecule that was checkpoitned with a bug in it
+        if len(atom_type_map) > 20:
+            atom_type_map = [ v for v in atom_type_map if v != "Se" ]
+            self.atom_type_map = atom_type_map
+            n_atom_types = len(atom_type_map)
+            self.n_atom_types = len(atom_type_map)
+
         if self.weight_ae and parameterization == 'vector-field':
             raise NotImplementedError('weighting the atom and edge losses is not yet implemented for the vector-field parameterization')
         

@@ -239,7 +239,7 @@ class CTMCVectorField(EndpointVectorField):
                     node_batch_idx=node_batch_idx, hc_thresh=hc_thresh, device=g.device)
             else:
                 # uniformly sample nodes to unmask
-                will_unmask = torch.rand(num_nodes, device=device) < unmask_prob
+                will_unmask = torch.rand(xt.shape[0], device=device) < unmask_prob
                 will_unmask = will_unmask * (xt == self.mask_idxs[feat]) # only unmask nodes that are currently masked
 
             if not last_step:
