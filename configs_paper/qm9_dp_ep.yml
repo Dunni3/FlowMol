@@ -22,7 +22,7 @@ training:
 wandb:
   project: mol-fm
   group:
-  name: qm-dp-ep
+  name: qm-dp-ep-fixp
   mode: online # can be disabled, online, offline
 
 lr_scheduler:
