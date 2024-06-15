@@ -1,5 +1,5 @@
 training:
-  output_dir: runs_paper_ed/
+  output_dir: runs_paper_fixm/
   batch_size: 16
   num_workers: 4
   trainer_args:
@@ -8,7 +8,7 @@ training:
     devices: 2
     num_nodes: 1
     strategy: ddp_find_unused_parameters_true
-    accumulate_grad_batches: 2
+    accumulate_grad_batches: 1
     limit_val_batches: 0.002
 
   evaluation:
@@ -19,13 +19,13 @@ training:
 wandb:
   project: mol-fm
   group: "for-reals"
-  name: geom-dp
+  name: geom-dp-fixp
   mode: online # can be disabled, online, offline
 
 lr_scheduler:
   # to turn off warmup and restarts, set both warmup_length and restart_interval to 0
   base_lr: 1.0e-4
-  warmup_length: 1.0
+  warmup_length: 0.0
   restart_interval: 0 # 0 means no restart
   restart_type: 'linear'
   weight_decay: 1.0e-12

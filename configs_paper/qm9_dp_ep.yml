@@ -1,6 +1,6 @@
 training:
-  output_dir: runs_paper_ed/
-  batch_size: 64
+  output_dir: runs_paper_fixm/
+  batch_size: 128
   num_workers: 8
   max_num_edges: 4.0e+5
   trainer_args:
@@ -27,8 +27,8 @@ wandb:
 
 lr_scheduler:
   # to turn off warmup and restarts, set both warmup_length and restart_interval to 0
-  base_lr: 1.0e-4
-  warmup_length: 1.0
+  base_lr: 2.5e-4
+  warmup_length: 0.0
   restart_interval: 0 # 0 means no restart
   restart_type: 'linear'
   weight_decay: 1.0e-12
