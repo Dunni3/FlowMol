@@ -82,6 +82,9 @@ class CTMCVectorField(EndpointVectorField):
     def integrate(self, g: dgl.DGLGraph, node_batch_idx: torch.Tensor, 
         upper_edge_mask: torch.Tensor, n_timesteps: int, visualize=False, stochasticity=None, high_confidence_threshold=None):
         """Integrate the trajectories of molecules along the vector field."""
+        
+        # TODO: this overrides EndpointVectorField.integrate just because it has some extra arguments
+        # we should refactor this so that we don't have to copy the entire function
 
         # get edge_batch_idx
         edge_batch_idx = get_edge_batch_idxs(g)
@@ -117,6 +120,7 @@ class CTMCVectorField(EndpointVectorField):
                 init_frame = data_src[f'{feat}_0'].detach().cpu()
                 init_frame = torch.split(init_frame, split_sizes)
                 traj_frames[feat] = [ init_frame ]
+                traj_frames[f'{feat}_1_pred'] = []
     
         for s_idx in range(1,t.shape[0]):
 
@@ -155,6 +159,10 @@ class CTMCVectorField(EndpointVectorField):
                     frame = torch.split(frame, split_sizes)
                     traj_frames[feat].append(frame)
 
+                    ep_frame = g_data_src[f'{feat}_1_pred'].detach().cpu()
+                    ep_frame = torch.split(ep_frame, split_sizes)
+                    traj_frames[f'{feat}_1_pred'].append(ep_frame)
+
         # set x_1 = x_t
         for feat in self.canonical_feat_order:
 
@@ -169,12 +177,12 @@ class CTMCVectorField(EndpointVectorField):
 
             # currently, traj_frames[key] is a list of lists. each sublist contains the frame for every molecule in the batch
             # we want to rearrange this so that traj_frames is a list of dictionaries, where each dictionary contains the frames for a single molecule
-            n_frames = len(traj_frames['x'])
             reshaped_traj_frames = []
             for mol_idx in range(g.batch_size):
                 molecule_dict = {}
-                for feat in self.canonical_feat_order:
+                for feat in traj_frames.keys():
                     feat_traj = []
+                    n_frames = len(traj_frames[feat])
                     for frame_idx in range(n_frames):
                         feat_traj.append(traj_frames[feat][frame_idx][mol_idx])
                     molecule_dict[feat] = torch.stack(feat_traj)
@@ -222,12 +230,19 @@ class CTMCVectorField(EndpointVectorField):
         x1 = dst_dict['x']
         g.ndata['x_t'] = x1_weight*x1 + xt_weight*g.ndata['x_t']
 
+        # record predicted endpoint for visualization
+        g.ndata['x_1_pred'] = x1.detach().clone()
+
         # take integration step for node categorical features
         for feat_idx, feat in enumerate(self.canonical_feat_order):
             if feat not in ['a', 'c']:
                 continue
             xt = g.ndata[f'{feat}_t'].argmax(-1) # has shape (num_nodes,)
             x1 = Categorical(dst_dict[feat]).sample() # has shape (num_nodes,)
+
+            # record predicted endpoint for visualization
+            g.ndata[f'{feat}_1_pred'] = one_hot(x1.detach().clone(), num_classes=self.n_cat_feats[feat]+1).float()
+
             unmask_prob = dt*( alpha_t_prime_i[feat_idx] + eta*alpha_t_i[feat_idx]  ) / (1 - alpha_t_i[feat_idx])
 
             # sample which nodes will be unmasked
@@ -261,6 +276,13 @@ class CTMCVectorField(EndpointVectorField):
         n_edges = g.num_edges() // 2
         xt = g.edata['e_t'][upper_edge_mask].argmax(-1) # has shape (n_edges,)
         x1 = Categorical(dst_dict['e']).sample() # has shape (n_edges,)
+
+        # record predicted endpoint for visualization
+        e_1_pred = torch.zeros((g.num_edges(), self.n_cat_feats['e']+1), device=xt.device)
+        e_1_pred[upper_edge_mask] = one_hot(x1.detach().clone(), num_classes=self.n_cat_feats['e']+1).float()
+        e_1_pred[~upper_edge_mask] = e_1_pred[upper_edge_mask]
+        g.edata['e_1_pred'] = e_1_pred
+
         unmask_prob = dt*( alpha_t_prime_i[feat_idx] + eta*alpha_t_i[feat_idx]  ) / (1 - alpha_t_i[feat_idx])
 
         # sample which edges will be unmasked

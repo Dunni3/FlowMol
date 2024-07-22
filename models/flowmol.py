@@ -439,24 +439,36 @@ class FlowMol(pl.LightningModule):
         n_atoms = self.n_atoms_dist.sample((n_molecules,))
         return self.n_atoms_map[n_atoms]
 
-    def sample_random_sizes(self, n_molecules: int, device="cuda:0", n_timesteps: int = 20, visualize=False,
-    stochasticity=None, high_confidence_threshold=None):
+    def sample_random_sizes(self, n_molecules: int, device="cuda:0", n_timesteps: int = 20,
+    stochasticity=None, high_confidence_threshold=None, xt_traj=False, ep_traj=False):
         """Sample n_moceules with the number of atoms sampled from the distribution of the training set."""
 
         # get the number of atoms that will be in each molecules
         atoms_per_molecule = self.sample_n_atoms(n_molecules).to(device)
 
-        return self.sample(atoms_per_molecule, n_timesteps=n_timesteps, device=device, visualize=visualize, stochasticity=stochasticity, high_confidence_threshold=high_confidence_threshold)
+        return self.sample(atoms_per_molecule, 
+            n_timesteps=n_timesteps, 
+            device=device,  
+            stochasticity=stochasticity, 
+            high_confidence_threshold=high_confidence_threshold,
+            xt_traj=xt_traj,
+            ep_traj=ep_traj)
     
 
     @torch.no_grad()
-    def sample(self, n_atoms: torch.Tensor, n_timesteps: int = 20, device="cuda:0", visualize=False,
-        stochasticity=None, high_confidence_threshold=None):
+    def sample(self, n_atoms: torch.Tensor, n_timesteps: int = 20, device="cuda:0",
+        stochasticity=None, high_confidence_threshold=None, xt_traj=False, ep_traj=False):
         """Sample molecules with the given number of atoms.
         
         Args:
             n_atoms (torch.Tensor): Tensor of shape (batch_size,) containing the number of atoms in each molecule.
         """
+
+        if xt_traj or ep_traj:
+            visualize = True
+        else:
+            visualize = False
+
         batch_size = n_atoms.shape[0]
 
         # get the edge indicies for each unique number of atoms
@@ -517,6 +529,10 @@ class FlowMol(pl.LightningModule):
             if visualize:
                 args.append(traj_frames[mol_idx])
 
-            molecules.append(SampledMolecule(*args, ctmc_mol=ctmc_mol, exclude_charges=self.exclude_charges))
+            molecules.append(SampledMolecule(*args, 
+                ctmc_mol=ctmc_mol, 
+                build_xt_traj=xt_traj,
+                build_ep_traj=ep_traj,
+                exclude_charges=self.exclude_charges))
 
         return molecules

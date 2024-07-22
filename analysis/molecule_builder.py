@@ -20,7 +20,9 @@ class SampledMolecule:
         traj_frames: Dict[str, torch.Tensor] = None,
         ctmc_mol: bool = False, # whether the molecule was sampled from a CTMC model. Important because one-hot encodings will contain a mask token. 
         exclude_charges: bool = False, 
-        align_traj: bool = True):
+        align_traj: bool = True,
+        build_xt_traj=True,
+        build_ep_traj=True,):
         """Represents a molecule sampled from a model. Converts the DGL graph to an rdkit molecule and keeps all associated information."""
 
         atom_type_map = list(atom_type_map) # create a shallow copy of the atom type map so that we don't modify the original
@@ -54,7 +56,13 @@ class SampledMolecule:
         self.traj_frames = traj_frames
 
         if traj_frames is not None:
-            self.traj_mols = self.process_traj_frames(traj_frames) # convert frames into a list of rdkit molecules
+
+            if build_xt_traj:
+                self.traj_mols = self.process_traj_frames(traj_frames) # convert frames into a list of rdkit molecules
+
+            # construct molecules for endpoint trajectory
+            if 'x_1_pred' in traj_frames and build_ep_traj:
+                self.ep_traj_mols = self.process_traj_frames(traj_frames, ep_traj=True)
 
     @classmethod
     def from_rdkit_mol(cls, mol: Chem.Mol, atom_type_map: List[str] = None):
@@ -116,24 +124,38 @@ class SampledMolecule:
         valencies = torch.sum(adj, dim=-1).long()
         return valencies
     
-    def process_traj_frames(self, traj_frames: Dict[str, torch.Tensor]):
+    def process_traj_frames(self, traj_frames: Dict[str, torch.Tensor], ep_traj: bool = False):
         """Converts the trajectory frames to a list of rdkit molecules."""
         # convert the frames to a list of rdkit molecules
         g_dummy = copy_graph(self.g)
 
-        n_frames = traj_frames['x'].shape[0]
-
-        x_final = traj_frames['x'][-1] # has shape (n_atoms, 3)
+        if ep_traj:
+            n_frames = traj_frames['x_1_pred'].shape[0]
+            x_final = traj_frames['x_1_pred'][-1]
+        else:
+            n_frames = traj_frames['x'].shape[0]
+            x_final = traj_frames['x'][-1] # has shape (n_atoms, 3)
 
         traj_mols = []
         for frame_idx in range(n_frames):
 
             # put current frame data into graph
             for feat in traj_frames.keys():
+
+                if '1_pred' in feat:
+                    continue
+
                 if feat == 'e':
-                    g_dummy.edata['e_1'] = traj_frames[feat][frame_idx].clone()
+                    data_src = g_dummy.edata
                 else:
-                    g_dummy.ndata[f'{feat}_1'] = traj_frames[feat][frame_idx].clone()
+                    data_src = g_dummy.ndata
+
+                if ep_traj:
+                    traj_key = f'{feat}_1_pred'
+                else:
+                    traj_key = feat
+
+                data_src[f'{feat}_1'] = traj_frames[traj_key][frame_idx].clone()
 
             # extract mol data from graph
             positions, atom_types, atom_charges, bond_types, bond_src_idxs, bond_dst_idxs = extract_moldata_from_graph(

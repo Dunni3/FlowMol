@@ -275,6 +275,7 @@ class EndpointVectorField(nn.Module):
                 init_frame = data_src[f'{feat}_0'].detach().cpu()
                 init_frame = torch.split(init_frame, split_sizes)
                 traj_frames[feat] = [ init_frame ]
+                traj_frames[f'{feat}_1_pred'] = []
     
         for s_idx in range(1,t.shape[0]):
 
@@ -296,7 +297,6 @@ class EndpointVectorField(nn.Module):
                     else:
                         g_data_src = g.ndata
 
-                    frame = g_data_src[f'{feat}_t'].detach().cpu()
                     if feat == 'e':
                         split_sizes = g.batch_num_edges()
                     else:
@@ -305,6 +305,17 @@ class EndpointVectorField(nn.Module):
                     frame = g_data_src[f'{feat}_t'].detach().cpu()
                     frame = torch.split(frame, split_sizes)
                     traj_frames[feat].append(frame)
+
+
+                    # record endpoint frame for visualization
+                    ep_key = f'{feat}_1_pred'
+                    if ep_key not in g_data_src: 
+                        # the endpoint key wont be there for VectorField because
+                        # i haven't dervived a method of obtaining intermediate xhats from the vector field
+                        continue
+                    ep_frame = g_data_src[ep_key].detach().cpu()
+                    ep_frame = torch.split(ep_frame, split_sizes)
+                    traj_frames[ep_key].append(ep_frame)
 
         # set x_1 = x_t
         for feat in self.canonical_feat_order:
@@ -320,12 +331,12 @@ class EndpointVectorField(nn.Module):
 
             # currently, traj_frames[key] is a list of lists. each sublist contains the frame for every molecule in the batch
             # we want to rearrange this so that traj_frames is a list of dictionaries, where each dictionary contains the frames for a single molecule
-            n_frames = len(traj_frames['x'])
             reshaped_traj_frames = []
             for mol_idx in range(g.batch_size):
                 molecule_dict = {}
-                for feat in self.canonical_feat_order:
+                for feat in traj_frames.keys():
                     feat_traj = []
+                    n_frames = len(traj_frames[feat])
                     for frame_idx in range(n_frames):
                         feat_traj.append(traj_frames[feat][frame_idx][mol_idx])
                     molecule_dict[feat] = torch.stack(feat_traj)
@@ -365,6 +376,9 @@ class EndpointVectorField(nn.Module):
             else:
                 g_data_src = g.ndata
                 x1 = dst_dict[feat]
+
+            # record predicted endoint, for visualization purposes
+            g_data_src[f'{feat}_1_pred'] = x1.detach().clone()
 
             g_data_src[f'{feat}_t'] = x1_weight*x1 + xt_weight*g_data_src[f'{feat}_t']
 
@@ -516,6 +530,9 @@ class DirichletVectorField(EndpointVectorField):
         x1 = dst_dict['x']
         g.ndata['x_t'] = x1_weight*x1 + xt_weight*g.ndata['x_t']
 
+        # record predicted endoint, for visualization purposes
+        g.ndata['x_1_pred'] = x1.detach().clone()
+
         # convert alpha values to w
         w_t = self.alpha_to_w(alpha_t_i)
         w_s = self.alpha_to_w(alpha_s_i)
@@ -558,6 +575,9 @@ class DirichletVectorField(EndpointVectorField):
             # set x_t = x_s
             g.ndata[f'{feat}_t'] = x_s
 
+            # record predicted endoint, for visualization purposes
+            g.ndata[f'{feat}_1_pred'] = dst_dict[feat].detach().clone()
+
         # now we compute marginal vector field and take a step for edge features
         e_idx = self.canonical_feat_order.index('e')
         w_t_e = w_t[e_idx]
@@ -583,6 +603,12 @@ class DirichletVectorField(EndpointVectorField):
         x_s = x_t + marginal_vec_field*(w_s_e - w_t_e)
         g.edata['e_t'][upper_edge_mask] = x_s
         g.edata['e_t'][~upper_edge_mask] = x_s
+
+        # record predicted endpoint for bond orders
+        e_1_pred = torch.zeros_like(g.edata['e_1_true'])
+        e_1_pred[upper_edge_mask] = dst_dict['e']
+        e_1_pred[~upper_edge_mask] = dst_dict['e']
+        g.edata['e_1_pred'] = e_1_pred
         
         return g
     
