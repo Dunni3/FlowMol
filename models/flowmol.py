@@ -434,13 +434,14 @@ class FlowMol(pl.LightningModule):
         self.n_atoms_dist = torch.distributions.Categorical(probs=n_atoms_prob)
         self.n_atoms_map = n_atoms
 
-    def sample_n_atoms(self, n_molecules: int):
+    def sample_n_atoms(self, n_molecules: int, **kwargs):
         """Draw samples from the distribution of the number of atoms in a ligand."""
-        n_atoms = self.n_atoms_dist.sample((n_molecules,))
+        n_atoms = self.n_atoms_dist.sample((n_molecules,), **kwargs)
         return self.n_atoms_map[n_atoms]
 
     def sample_random_sizes(self, n_molecules: int, device="cuda:0", n_timesteps: int = 20,
-    stochasticity=None, high_confidence_threshold=None, xt_traj=False, ep_traj=False):
+    stochasticity=None, high_confidence_threshold=None, 
+    xt_traj=False, ep_traj=False, **kwargs):
         """Sample n_moceules with the number of atoms sampled from the distribution of the training set."""
 
         # get the number of atoms that will be in each molecules
@@ -452,12 +453,12 @@ class FlowMol(pl.LightningModule):
             stochasticity=stochasticity, 
             high_confidence_threshold=high_confidence_threshold,
             xt_traj=xt_traj,
-            ep_traj=ep_traj)
+            ep_traj=ep_traj, **kwargs)
     
 
     @torch.no_grad()
     def sample(self, n_atoms: torch.Tensor, n_timesteps: int = 20, device="cuda:0",
-        stochasticity=None, high_confidence_threshold=None, xt_traj=False, ep_traj=False):
+        stochasticity=None, high_confidence_threshold=None, xt_traj=False, ep_traj=False, **kwargs):
         """Sample molecules with the given number of atoms.
         
         Args:
@@ -506,7 +507,7 @@ class FlowMol(pl.LightningModule):
             integrate_kwargs['stochasticity'] = stochasticity
             integrate_kwargs['high_confidence_threshold'] = high_confidence_threshold
 
-        itg_result = self.vector_field.integrate(g, node_batch_idx, **integrate_kwargs)
+        itg_result = self.vector_field.integrate(g, node_batch_idx, **integrate_kwargs, **kwargs)
 
         if visualize:
             g, traj_frames = itg_result

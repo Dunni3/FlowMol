@@ -241,7 +241,8 @@ class EndpointVectorField(nn.Module):
         
         return x_diff, d
       
-    def integrate(self, g: dgl.DGLGraph, node_batch_idx: torch.Tensor, upper_edge_mask: torch.Tensor, n_timesteps: int, visualize=False):
+    def integrate(self, g: dgl.DGLGraph, 
+    node_batch_idx: torch.Tensor, upper_edge_mask: torch.Tensor, n_timesteps: int, visualize=False, **kwargs):
         """Integrate the trajectories of molecules along the vector field."""
 
         # get the timepoint for integration
@@ -287,7 +288,7 @@ class EndpointVectorField(nn.Module):
             alpha_t_prime_i = alpha_t_prime[s_idx - 1]
 
             # compute next step and set x_t = x_s
-            g = self.step(g, s_i, t_i, alpha_t_i, alpha_s_i, alpha_t_prime_i, node_batch_idx, upper_edge_mask)
+            g = self.step(g, s_i, t_i, alpha_t_i, alpha_s_i, alpha_t_prime_i, node_batch_idx, upper_edge_mask, **kwargs)
 
             if visualize:
                 for feat in self.canonical_feat_order:

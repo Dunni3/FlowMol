@@ -4,6 +4,7 @@ from models.vector_field import EndpointVectorField
 from torch.nn.functional import one_hot
 from torch.distributions.categorical import Categorical
 from data_processing.utils import get_edge_batch_idxs
+import torch.nn.functional as F
 
 from utils.ctmc_utils import purity_sampling
 
@@ -80,7 +81,10 @@ class CTMCVectorField(EndpointVectorField):
         return g
 
     def integrate(self, g: dgl.DGLGraph, node_batch_idx: torch.Tensor, 
-        upper_edge_mask: torch.Tensor, n_timesteps: int, visualize=False, stochasticity=None, high_confidence_threshold=None):
+        upper_edge_mask: torch.Tensor, n_timesteps: int, 
+        visualize=False, stochasticity=None, 
+        high_confidence_threshold=None,
+        **kwargs):
         """Integrate the trajectories of molecules along the vector field."""
         
         # TODO: this overrides EndpointVectorField.integrate just because it has some extra arguments
@@ -138,8 +142,12 @@ class CTMCVectorField(EndpointVectorField):
                 last_step = False
 
             # compute next step and set x_t = x_s
-            g = self.step(g, s_i, t_i, alpha_t_i, alpha_s_i, alpha_t_prime_i, node_batch_idx, edge_batch_idx, upper_edge_mask, 
-                stochasticity=stochasticity, last_step=last_step, high_confidence_threshold=high_confidence_threshold)
+            g = self.step(g, s_i, t_i, alpha_t_i, alpha_s_i, 
+            alpha_t_prime_i, node_batch_idx, edge_batch_idx, upper_edge_mask, 
+                stochasticity=stochasticity, 
+                last_step=last_step, 
+                high_confidence_threshold=high_confidence_threshold,
+                **kwargs)
 
             if visualize:
                 for feat in self.canonical_feat_order:
@@ -198,7 +206,8 @@ class CTMCVectorField(EndpointVectorField):
              node_batch_idx: torch.Tensor, edge_batch_idx: torch.Tensor, upper_edge_mask: torch.Tensor, 
              stochasticity: float = None,
              high_confidence_threshold: float = None, 
-             last_step: bool = False):
+             last_step: bool = False,
+             temperature: float = 1.0):
 
         device = g.device
 
@@ -238,7 +247,11 @@ class CTMCVectorField(EndpointVectorField):
             if feat not in ['a', 'c']:
                 continue
             xt = g.ndata[f'{feat}_t'].argmax(-1) # has shape (num_nodes,)
-            x1 = Categorical(dst_dict[feat]).sample() # has shape (num_nodes,)
+
+            p_s_1 = dst_dict[feat]
+            p_s_1 = F.softmax(torch.log(p_s_1)/temperature, dim=-1) # log probabilities
+
+            x1 = Categorical(p_s_1).sample() # has shape (num_nodes,)
 
             # record predicted endpoint for visualization
             g.ndata[f'{feat}_1_pred'] = one_hot(x1.detach().clone(), num_classes=self.n_cat_feats[feat]+1).float()
@@ -249,7 +262,7 @@ class CTMCVectorField(EndpointVectorField):
             if hc_thresh > 0:
                 # select more high-confidence predictions for unmasking than low-confidence predictions
                 will_unmask = purity_sampling(
-                    xt=xt, x1=x1, x1_probs=dst_dict[feat], unmask_prob=unmask_prob,
+                    xt=xt, x1=x1, x1_probs=p_s_1, unmask_prob=unmask_prob,
                     mask_index=self.mask_idxs[feat], batch_size=g.batch_size, batch_num_nodes=g.batch_num_nodes(),
                     node_batch_idx=node_batch_idx, hc_thresh=hc_thresh, device=g.device)
             else:
@@ -275,7 +288,9 @@ class CTMCVectorField(EndpointVectorField):
         feat_idx = 3
         n_edges = g.num_edges() // 2
         xt = g.edata['e_t'][upper_edge_mask].argmax(-1) # has shape (n_edges,)
-        x1 = Categorical(dst_dict['e']).sample() # has shape (n_edges,)
+        p_e_1 = dst_dict[feat]
+        p_e_1 = F.softmax(torch.log(p_e_1)/temperature, dim=-1)
+        x1 = Categorical(p_e_1).sample() # has shape (n_edges,)
 
         # record predicted endpoint for visualization
         e_1_pred = torch.zeros((g.num_edges(), self.n_cat_feats['e']+1), device=xt.device)
@@ -288,7 +303,7 @@ class CTMCVectorField(EndpointVectorField):
         # sample which edges will be unmasked
         if hc_thresh > 0:
             will_unmask = purity_sampling(
-                xt=xt, x1=x1, x1_probs=dst_dict[feat], unmask_prob=unmask_prob,
+                xt=xt, x1=x1, x1_probs=p_e_1, unmask_prob=unmask_prob,
                 mask_index=self.mask_idxs[feat], batch_size=g.batch_size, batch_num_nodes=g.batch_num_edges() / 2,
                 node_batch_idx=edge_batch_idx[upper_edge_mask], hc_thresh=hc_thresh, device=g.device)
         else:
