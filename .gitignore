@@ -10,6 +10,9 @@ misc_info/
 wandb/
 notebooks/
 configs/
+multi_traj_mols*
+runs_*/
+eval_data/
 
 
 # Byte-compiled / optimized / DLL files

@@ -7,16 +7,16 @@ import dgl
 import torch.nn.functional as fn
 from torch.distributions import Exponential
 
-from .lr_scheduler import LRScheduler
-from .interpolant_scheduler import InterpolantScheduler
-from .vector_field import EndpointVectorField, VectorField, DirichletVectorField
-from .ctmc_vector_field import CTMCVectorField
+from flowmol.models.lr_scheduler import LRScheduler
+from flowmol.models.interpolant_scheduler import InterpolantScheduler
+from flowmol.models.vector_field import EndpointVectorField, VectorField, DirichletVectorField
+from flowmol.models.ctmc_vector_field import CTMCVectorField
 
-from data_processing.utils import build_edge_idxs, get_upper_edge_mask, get_batch_idxs
-from data_processing.priors import uniform_simplex_prior, biased_simplex_prior, batched_rigid_alignment, rigid_alignment
-from data_processing.priors import inference_prior_register, edge_prior
-from analysis.molecule_builder import SampledMolecule
-from analysis.metrics import SampleAnalyzer
+from flowmol.data_processing.utils import build_edge_idxs, get_upper_edge_mask, get_batch_idxs
+from flowmol.data_processing.priors import uniform_simplex_prior, biased_simplex_prior, batched_rigid_alignment, rigid_alignment
+from flowmol.data_processing.priors import inference_prior_register, edge_prior
+from flowmol.analysis.molecule_builder import SampledMolecule
+from flowmol.analysis.metrics import SampleAnalyzer
 from einops import rearrange
 
 class FlowMol(pl.LightningModule):

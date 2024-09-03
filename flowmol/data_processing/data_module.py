@@ -3,8 +3,8 @@ from torch.utils.data import DataLoader
 import torch
 import dgl
 
-from data_processing.dataset import MoleculeDataset
-from data_processing.samplers import SameSizeMoleculeSampler, SameSizeDistributedMoleculeSampler
+from flowmol.data_processing.dataset import MoleculeDataset
+from flowmol.data_processing.samplers import SameSizeMoleculeSampler, SameSizeDistributedMoleculeSampler
 
 class MoleculeDataModule(pl.LightningDataModule):
 

@@ -1,15 +1,15 @@
 import argparse
 from pathlib import Path
 import yaml
-from model_utils.load import data_module_from_config, read_config_file
-from analysis.molecule_builder import SampledMolecule
-from analysis.metrics import SampleAnalyzer
-from utils.divergences import save_reference_dist
+from flowmol.model_utils.load import data_module_from_config, read_config_file
+from flowmol.analysis.molecule_builder import SampledMolecule
+from flowmol.analysis.metrics import SampleAnalyzer
+from flowmol.utils.divergences import save_reference_dist
 from typing import List
 import numpy as np
 import pickle
 from tqdm import tqdm
-from data_processing.utils import get_upper_edge_mask
+from flowmol.data_processing.utils import get_upper_edge_mask
 import math
 from collections import defaultdict
 

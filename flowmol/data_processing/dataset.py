@@ -2,7 +2,7 @@ import torch
 from pathlib import Path
 import dgl
 from torch.nn.functional import one_hot
-from data_processing.priors import coupled_node_prior, edge_prior
+from flowmol.data_processing.priors import coupled_node_prior, edge_prior
 
 # create a function named collate that takes a list of samples from the dataset and combines them into a batch
 # this might not be necessary. I think we can pass the argument collate_fn=dgl.batch to the DataLoader

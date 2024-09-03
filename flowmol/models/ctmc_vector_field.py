@@ -1,12 +1,12 @@
 import torch
 import dgl
-from models.vector_field import EndpointVectorField
+from flowmol.models.vector_field import EndpointVectorField
 from torch.nn.functional import one_hot
 from torch.distributions.categorical import Categorical
-from data_processing.utils import get_edge_batch_idxs
+from flowmol.data_processing.utils import get_edge_batch_idxs
 import torch.nn.functional as F
 
-from utils.ctmc_utils import purity_sampling
+from flowmol.utils.ctmc_utils import purity_sampling
 
 class CTMCVectorField(EndpointVectorField):
 

@@ -3,7 +3,7 @@ from rdkit import Chem, RDLogger
 from rdkit.Geometry import Point3D
 import dgl
 from typing import List, Dict
-from data_processing.priors import rigid_alignment
+from flowmol.data_processing.priors import rigid_alignment
 from torch.nn.functional import one_hot
 
 bond_type_map = [None, Chem.rdchem.BondType.SINGLE, Chem.rdchem.BondType.DOUBLE, Chem.rdchem.BondType.TRIPLE,

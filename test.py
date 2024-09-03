@@ -3,12 +3,12 @@ import torch
 from pathlib import Path
 import pytorch_lightning as pl
 from pytorch_lightning import seed_everything
-from models.flowmol import FlowMol
-from analysis.molecule_builder import SampledMolecule
-from analysis.metrics import SampleAnalyzer
+from flowmol.models.flowmol import FlowMol
+from flowmol.analysis.molecule_builder import SampledMolecule
+from flowmol.analysis.metrics import SampleAnalyzer
 from typing import List
 from rdkit import Chem
-from model_utils.load import read_config_file
+from flowmol.model_utils.load import read_config_file
 import pickle
 import math
 import time

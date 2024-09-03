@@ -4,8 +4,8 @@ import torch
 from rdkit import Chem
 from collections import Counter
 import wandb
-from utils.divergences import DivergenceCalculator
-from analysis.ff_energy import compute_mmff_energy
+from flowmol.utils.divergences import DivergenceCalculator
+from flowmol.analysis.ff_energy import compute_mmff_energy
 
 allowed_bonds = {'H': {0: 1, 1: 0, -1: 0},
                  'C': {0: [3, 4], 1: 3, -1: 3},

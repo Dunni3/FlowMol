@@ -5,9 +5,9 @@ import dgl.function as fn
 from typing import Union
 import scipy
 
-from .gvp import GVPConv, GVP, _rbf, _norm_no_nan
-from .interpolant_scheduler import InterpolantScheduler
-from utils.dirflow import DirichletConditionalFlow, simplex_proj
+from flowmol.models.gvp import GVPConv, GVP, _rbf, _norm_no_nan
+from flowmol.models.interpolant_scheduler import InterpolantScheduler
+from flowmol.utils.dirflow import DirichletConditionalFlow, simplex_proj
 
 class EndpointVectorField(nn.Module):
 

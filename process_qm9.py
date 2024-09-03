@@ -15,8 +15,8 @@ from rdkit import Chem
 from multiprocessing import Pool
 import pandas as pd
 
-from data_processing.geom import MoleculeFeaturizer
-from utils.dataset_stats import compute_p_c_given_a
+from flowmol.data_processing.geom import MoleculeFeaturizer
+from flowmol.utils.dataset_stats import compute_p_c_given_a
 
 def chunks(lst, n):
     """Yield successive n-sized chunks from lst."""

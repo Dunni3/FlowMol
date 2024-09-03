@@ -1,5 +1,5 @@
 from torch.utils.data import Sampler, DistributedSampler
-from data_processing.dataset import MoleculeDataset
+from flowmol.data_processing.dataset import MoleculeDataset
 import torch
 
 class SameSizeMoleculeSampler(Sampler):

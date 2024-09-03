@@ -3,7 +3,7 @@ from scipy.optimize import linear_sum_assignment
 import torch
 from torch.nn.functional import softmax, one_hot
 import dgl
-from utils.dirflow import simplex_proj
+from flowmol.utils.dirflow import simplex_proj
 
 def gaussian(n: int, d: int, std: float = 1.0, simplex_center: bool = False):
     """
