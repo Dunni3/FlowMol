@@ -76,7 +76,7 @@ def sample_marginal(n: int, d: int, p: torch.Tensor, blur: float = None):
 
     if blur is not None:
         prior_one_hot = prior_one_hot + torch.randn_like(prior_one_hot) * blur
-        prior_one_hot = softmax(prior_one_hot, dim=1)
+        prior_one_hot = softmax(prior_one_hot/(1/d), dim=1)
 
     return prior_one_hot
 
@@ -94,7 +94,7 @@ def sample_p_c_given_a(n: int, d: int, atom_types: torch.Tensor, p_c_given_a: to
 
     if blur is not None:
         charge_simplex = charge_simplex + torch.randn_like(charge_simplex) * blur
-        charge_simplex = softmax(charge_simplex, dim=1)
+        charge_simplex = softmax(charge_simplex/(1/d), dim=1)
 
     return charge_simplex
 
