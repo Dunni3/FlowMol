@@ -28,7 +28,7 @@ def parse_args():
     p.add_argument('--metrics', action='store_true', help='Compute metrics on the sampled molecules')
     p.add_argument('--max_batch_size', type=int, default=128, help='Maximum batch size for sampling molecules')
     p.add_argument('--baseline_comparison', action='store_true', help='Whether these samples are for comparison to the baseline. If true, output format will be different.')
-    p.add_argument('--temp', type=float, default=1.0, help='Temperature for sampling categorical features')
+    # p.add_argument('--temp', type=float, default=1.0, help='Temperature for sampling categorical features')
 
     p.add_argument('--stochasticity', type=float, default=None, help='Stochasticity for sampling molecules, only applies to models using CTMC')
     p.add_argument('--hc_thresh', type=float, default=None, help='High confidence threshold for purity sampling, only applies to models using CTMC')
@@ -110,7 +110,7 @@ if __name__ == "__main__":
                 ep_traj=args.ep_traj,
                 stochasticity=args.stochasticity,
                 high_confidence_threshold=args.hc_thresh,
-                temperature=args.temp
+                cat_temp_func=lambda t: 0.1
             )
         else:
             n_atoms = torch.full((batch_size,), args.n_atoms_per_mol, dtype=torch.long, device=device)
@@ -122,7 +122,6 @@ if __name__ == "__main__":
                 ep_traj=args.ep_traj,
                 stochasticity=args.stochasticity,
                 high_confidence_threshold=args.hc_thresh,
-                temperature=args.temp
                 )
 
         molecules.extend(batch_molecules)

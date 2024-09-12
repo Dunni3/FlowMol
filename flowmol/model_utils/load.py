@@ -1,4 +1,4 @@
-from models.flowmol import FlowMol
+from flowmol.models.flowmol import FlowMol
 from pathlib import Path
 import yaml
 from flowmol.data_processing.data_module import MoleculeDataModule

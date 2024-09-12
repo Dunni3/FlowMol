@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 import dgl
 import dgl.function as fn
-from typing import Union
+from typing import Union, Callable
 import scipy
 
 from flowmol.models.gvp import GVPConv, GVP, _rbf, _norm_no_nan
@@ -31,6 +31,8 @@ class EndpointVectorField(nn.Module):
                     rbf_dmax = 20,
                     rbf_dim = 16,
                     exclude_charges: bool = False,
+                    continuous_inv_temp_schedule = None,
+                    continuous_inv_temp_max: float = 10.0,
                     has_mask: bool = False # if we are using CTMC, input categorical features will have mask tokens,
                     # this means their one-hot representations will have an extra dimension,
                     # and the neural network instantiated by this method need to account for this
@@ -62,6 +64,10 @@ class EndpointVectorField(nn.Module):
         self.rbf_dim = rbf_dim
 
         assert n_vec_channels >= 3, 'n_vec_channels must be >= 3'
+
+        self.continuous_inv_temp_schedule = continuous_inv_temp_schedule
+        self.continouts_inv_temp_max = continuous_inv_temp_max
+        self.continuous_inv_temp_func = self.build_continuous_inv_temp_func(self.continuous_inv_temp_schedule, self.continouts_inv_temp_max) 
 
         self.n_cat_feats = { # number of possible values for each categorical variable (not including mask tokens in the case of CTMC)
             'a': n_atom_types,
@@ -126,6 +132,19 @@ class EndpointVectorField(nn.Module):
             nn.SiLU(),
             nn.Linear(n_hidden_edge_feats, n_bond_types)
         )
+
+    def build_continuous_inv_temp_func(self, schedule, max_inv_temp=None):
+
+        if schedule is None:
+            inv_temp_func = lambda t: 1.0
+        elif schedule == 'linear':
+            inv_temp_func = lambda t: max_inv_temp*(1 - t)
+        elif callable(schedule):
+            inv_temp_func = schedule
+        else:
+            raise ValueError(f'Invalid continuous_inv_temp_schedule: {schedule}')
+        return inv_temp_func
+        
 
     def forward(self, g: dgl.DGLGraph, t: torch.Tensor, 
                  node_batch_idx: torch.Tensor, upper_edge_mask: torch.Tensor, apply_softmax=False, remove_com=False):
@@ -242,7 +261,10 @@ class EndpointVectorField(nn.Module):
         return x_diff, d
       
     def integrate(self, g: dgl.DGLGraph, 
-    node_batch_idx: torch.Tensor, upper_edge_mask: torch.Tensor, n_timesteps: int, visualize=False, **kwargs):
+        node_batch_idx: torch.Tensor,
+        upper_edge_mask: torch.Tensor, 
+        n_timesteps: int, 
+        visualize=False, **kwargs):
         """Integrate the trajectories of molecules along the vector field."""
 
         # get the timepoint for integration
@@ -350,7 +372,12 @@ class EndpointVectorField(nn.Module):
     
     def step(self, g: dgl.DGLGraph, s_i: torch.Tensor, t_i: torch.Tensor,
              alpha_t_i: torch.Tensor, alpha_s_i: torch.Tensor, alpha_t_prime_i: torch.Tensor,
-             node_batch_idx: torch.Tensor, upper_edge_mask: torch.Tensor):
+             node_batch_idx: torch.Tensor, upper_edge_mask: torch.Tensor,
+             inv_temp_func=None,
+            **kwargs):
+        
+        if inv_temp_func is None:
+            inv_temp_func = self.continuous_inv_temp_func
         
         # predict the destination of the trajectory given the current timepoint
         dst_dict = self(
@@ -359,31 +386,59 @@ class EndpointVectorField(nn.Module):
             node_batch_idx=node_batch_idx,
             upper_edge_mask=upper_edge_mask,
             apply_softmax=True,
-            remove_com=True
+            remove_com=True,
         )
 
         # compute x_s for each feature and set x_t = x_s
         for feat_idx, feat in enumerate(self.canonical_feat_order):
-            x1_weight = alpha_t_prime_i[feat_idx]*(s_i - t_i)/(1 - alpha_t_i[feat_idx])
-            xt_weight = 1 - x1_weight
+            if feat == "e":
+                data_src = g.edata
+            else:
+                data_src = g.ndata
+
+            x_t = data_src[f'{feat}_t']
+            x_1 = dst_dict[feat]
 
             if feat == "e":
-                g_data_src = g.edata
+                x_t = x_t[upper_edge_mask]
+
+            # evaluate the vector field at the current timepoint
+            vf = self.vector_field(x_t, x_1, alpha_t_i[feat_idx], alpha_t_prime_i[feat_idx])
+
+            # apply temperature scaling
+            vf = vf*inv_temp_func(t_i)
+
+            # x1_weight = alpha_t_prime_i[feat_idx]*(s_i - t_i)/(1 - alpha_t_i[feat_idx])
+            # xt_weight = 1 - x1_weight
+
+            # apply euler integration step
+            x_s = x_t + vf*(s_i - t_i)
+
+            if feat == "e":
 
                 # set the edge features so that corresponding upper and lower triangle edges have the same value
-                x1 = torch.zeros_like(g.edata['e_0'])
-                x1[upper_edge_mask] = dst_dict[feat]
-                x1[~upper_edge_mask] = dst_dict[feat]
-            else:
-                g_data_src = g.ndata
-                x1 = dst_dict[feat]
+                e_s = torch.zeros_like(g.edata['e_0'])
+                e_s[upper_edge_mask] = x_s
+                e_s[~upper_edge_mask] = dst_dict[feat]
+                x_s = e_s
+
+                e_1 = torch.zeros_like(g.edata['e_0'])
+                e_1[upper_edge_mask] = dst_dict[feat]
+                e_1[~upper_edge_mask] = dst_dict[feat]
+                x_1 = e_1
 
             # record predicted endoint, for visualization purposes
-            g_data_src[f'{feat}_1_pred'] = x1.detach().clone()
+            data_src[f'{feat}_1_pred'] = x_1.detach().clone()
 
-            g_data_src[f'{feat}_t'] = x1_weight*x1 + xt_weight*g_data_src[f'{feat}_t']
+            # record updated feature in the graph
+            data_src[f'{feat}_t'] = x_s
 
         return g
+
+
+    def vector_field(self, x_t, x_1, alpha_t, alpha_t_prime):
+        vf = alpha_t_prime/(1 - alpha_t) * (x_1 - x_t)
+        return vf
 
 
     def sample_conditional_path(self, g, t, node_batch_idx, edge_batch_idx, upper_edge_mask):
