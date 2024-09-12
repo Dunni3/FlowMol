@@ -419,7 +419,7 @@ class EndpointVectorField(nn.Module):
                 # set the edge features so that corresponding upper and lower triangle edges have the same value
                 e_s = torch.zeros_like(g.edata['e_0'])
                 e_s[upper_edge_mask] = x_s
-                e_s[~upper_edge_mask] = dst_dict[feat]
+                e_s[~upper_edge_mask] = x_s
                 x_s = e_s
 
                 e_1 = torch.zeros_like(g.edata['e_0'])
