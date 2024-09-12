@@ -13,10 +13,10 @@ import dgl
 import sys
 
 # from models.ligand_edm import LigandEquivariantDiffusion
-from models.flowmol import FlowMol
-from data_processing.data_module import MoleculeDataModule
-from model_utils.sweep_config import merge_config_and_args, register_hyperparameter_args
-from model_utils.load import read_config_file, model_from_config, data_module_from_config
+from flowmol.models.flowmol import FlowMol
+from flowmol.data_processing.data_module import MoleculeDataModule
+from flowmol.model_utils.sweep_config import merge_config_and_args, register_hyperparameter_args
+from flowmol.model_utils.load import read_config_file, model_from_config, data_module_from_config
 
 def parse_args():
     p = argparse.ArgumentParser(description='Training Script')
