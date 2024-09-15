@@ -4,6 +4,7 @@ from rdkit.Geometry import Point3D
 import dgl
 from typing import List, Dict
 from flowmol.data_processing.priors import rigid_alignment
+from flowmol.data_processing.utils import get_upper_edge_mask
 from torch.nn.functional import one_hot
 
 bond_type_map = [None, Chem.rdchem.BondType.SINGLE, Chem.rdchem.BondType.DOUBLE, Chem.rdchem.BondType.TRIPLE,
@@ -272,3 +273,17 @@ def copy_graph(g: dgl.DGLGraph) -> dgl.DGLGraph:
 
 
     return g_copy
+
+def dataset_mol_to_sampled_mol(g, atom_type_map) -> SampledMolecule:
+    for feat in 'xace':
+        if feat == 'e':
+            data_src = g.edata
+        else:
+            data_src = g.ndata
+        data_src[f'{feat}_1'] = data_src[f'{feat}_1_true']
+
+    g.edata['ue_mask'] = get_upper_edge_mask(g)
+    return SampledMolecule(g, atom_type_map)
+
+def dataset_mol_to_rdmol(g, atom_type_map):
+    dataset_mol_to_sampled_mol(g, atom_type_map).rdkit_mol
