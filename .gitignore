@@ -3,6 +3,9 @@
 /data/*
 runs/
 runs_paper/
+*slurm*/
+*sweep*/
+configs_*/
 slurm_output/
 sweep_runs/
 misc_scripts/
@@ -13,6 +16,7 @@ configs/
 multi_traj_mols*
 runs_*/
 eval_data/
+functional_validity_pipeline/
 
 
 # Byte-compiled / optimized / DLL files
