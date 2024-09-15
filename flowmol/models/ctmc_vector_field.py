@@ -322,8 +322,6 @@ class CTMCVectorField(EndpointVectorField):
         dt = s_i - t_i
 
         # take integration step for positions
-        x1_weight = alpha_t_prime_i[0]*(s_i - t_i)/(1 - alpha_t_i[0])
-        xt_weight = 1 - x1_weight
         x_1 = dst_dict['x']
         x_t = g.ndata['x_t']
         vf = self.vector_field(x_t, x_1, alpha_t_i[0], alpha_t_prime_i[0])
