@@ -581,13 +581,13 @@ class DirichletVectorField(EndpointVectorField):
         )
 
         # take integration step for positions
-        x1_weight = alpha_t_prime_i[0]*(s_i - t_i)/(1 - alpha_t_i[0])
-        xt_weight = 1 - x1_weight
-        x1 = dst_dict['x']
-        g.ndata['x_t'] = x1_weight*x1 + xt_weight*g.ndata['x_t']
+        x_1 = dst_dict['x']
+        x_t = g.ndata['x_t']
+        vf = self.vector_field(x_t, x_1, alpha_t_i[0], alpha_t_prime_i[0])
+        g.ndata['x_t'] = x_t + (s_i - t_i)*vf
 
         # record predicted endoint, for visualization purposes
-        g.ndata['x_1_pred'] = x1.detach().clone()
+        g.ndata['x_1_pred'] = x_1.detach().clone()
 
         # convert alpha values to w
         w_t = self.alpha_to_w(alpha_t_i)
