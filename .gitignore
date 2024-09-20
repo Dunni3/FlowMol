@@ -17,6 +17,7 @@ multi_traj_mols*
 runs_*/
 eval_data/
 functional_validity_pipeline/
+baseline_comparison*
 
 
 # Byte-compiled / optimized / DLL files

@@ -110,7 +110,6 @@ if __name__ == "__main__":
                 ep_traj=args.ep_traj,
                 stochasticity=args.stochasticity,
                 high_confidence_threshold=args.hc_thresh,
-                cat_temp_func=lambda t: 0.1
             )
         else:
             n_atoms = torch.full((batch_size,), args.n_atoms_per_mol, dtype=torch.long, device=device)

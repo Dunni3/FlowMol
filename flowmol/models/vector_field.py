@@ -661,7 +661,7 @@ class DirichletVectorField(EndpointVectorField):
         g.edata['e_t'][~upper_edge_mask] = x_s
 
         # record predicted endpoint for bond orders
-        e_1_pred = torch.zeros_like(g.edata['e_1_true'])
+        e_1_pred = torch.zeros_like(g.edata['e_0'])
         e_1_pred[upper_edge_mask] = dst_dict['e']
         e_1_pred[~upper_edge_mask] = dst_dict['e']
         g.edata['e_1_pred'] = e_1_pred
