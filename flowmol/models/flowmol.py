@@ -6,6 +6,7 @@ import pytorch_lightning as pl
 import dgl
 import torch.nn.functional as fn
 from torch.distributions import Exponential
+from pathlib import Path
 
 from flowmol.models.lr_scheduler import LRScheduler
 from flowmol.models.interpolant_scheduler import InterpolantScheduler
@@ -59,6 +60,7 @@ class FlowMol(pl.LightningModule):
         self.parameterization = parameterization
         self.weight_ae = weight_ae
         self.target_blur = target_blur
+        self.n_atoms_hist_file = n_atoms_hist_file
 
         # TODO: delete this block of code, it is only here so I can sample from a molecule that was checkpoitned with a bug in it
         if len(atom_type_map) > 20:
@@ -75,6 +77,13 @@ class FlowMol(pl.LightningModule):
         
         if self.target_blur < 0.0:
             raise ValueError('target_blur must be non-negative')
+        
+        # if provided filepath to data dir does not exist, assume it is relative to the repo root
+        processed_data_dir = Path(self.marginal_dists_file).parent
+        if not processed_data_dir.exists():
+            repo_root = Path(__file__).parent.parent.parent
+            self.marginal_dists_file = repo_root / self.marginal_dists_file
+            self.n_atoms_hist_file = repo_root / self.n_atoms_hist_file
 
         # do some boring stuff regarding the prior distribution
         self.configure_prior()
@@ -101,8 +110,7 @@ class FlowMol(pl.LightningModule):
         self.exp_dist = Exponential(1.0)
         
         # construct histogram of number of atoms in each ligand
-        self.n_atoms_hist_file = n_atoms_hist_file
-        self.build_n_atoms_dist(n_atoms_hist_file=n_atoms_hist_file)
+        self.build_n_atoms_dist(n_atoms_hist_file=self.n_atoms_hist_file)
 
         # create interpolant scheduler and vector field
         self.interpolant_scheduler = InterpolantScheduler(canonical_feat_order=self.canonical_feat_order, 

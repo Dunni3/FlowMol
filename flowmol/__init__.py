@@ -1,0 +1,1 @@
+from flowmol.models.flowmol import FlowMol
