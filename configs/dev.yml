@@ -85,8 +85,12 @@ vector_field:
   n_message_gvps: 3
   n_update_gvps: 3
   message_norm: 100
-  rbf_dmax: 12
-  rbf_dim: 16
+  rbf_dmax: 10
+  rbf_dim: 32
+  time_embedding_dim: 64
+  a_token_dim: 64
+  c_token_dim: 64
+  e_token_dim: 64
 
 interpolant_scheduler:
   schedule_type: # can be 'cosine', 'linear' or a dictionary with keys 'x', 'a', 'c', 'e'

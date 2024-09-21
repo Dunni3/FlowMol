@@ -8,6 +8,7 @@ import scipy
 from flowmol.models.gvp import GVPConv, GVP, _rbf, _norm_no_nan
 from flowmol.models.interpolant_scheduler import InterpolantScheduler
 from flowmol.utils.dirflow import DirichletConditionalFlow, simplex_proj
+from flowmol.utils.embedding import get_time_embedding
 
 class EndpointVectorField(nn.Module):
 
@@ -33,6 +34,10 @@ class EndpointVectorField(nn.Module):
                     exclude_charges: bool = False,
                     continuous_inv_temp_schedule = None,
                     continuous_inv_temp_max: float = 10.0,
+                    time_embedding_dim: int = 1,
+                    a_token_dim: int = 0,
+                    c_token_dim: int = 0,
+                    e_token_dim: int = 0,
                     has_mask: bool = False # if we are using CTMC, input categorical features will have mask tokens,
                     # this means their one-hot representations will have an extra dimension,
                     # and the neural network instantiated by this method need to account for this
@@ -53,9 +58,11 @@ class EndpointVectorField(nn.Module):
         self.exclude_charges = exclude_charges
         self.interpolant_scheduler = interpolant_scheduler
         self.canonical_feat_order = canonical_feat_order
+        self.time_embedding_dim = time_embedding_dim
 
         if self.exclude_charges:
-            self.n_charges = 0
+            raise ValueError("exclude_charges is deprecated")
+            # self.n_charges = 0
 
         self.convs_per_update = convs_per_update
         self.n_molecule_updates = n_molecule_updates
@@ -77,8 +84,30 @@ class EndpointVectorField(nn.Module):
 
         n_mask_feats = int(has_mask)
 
+        # create token embeddings as identity layers
+        # for non-CTMC parameterizations we need to repersent
+        # categorical features as continuous vectors
+        # but when we use CTMC we can use actual embedding functions
+        self.token_dims = {
+            'a': a_token_dim,
+            'c': c_token_dim,
+            'e': e_token_dim
+        }
+        self.token_embeddings = nn.ModuleDict()
+        for feat, token_dim in self.token_dims.items():
+            if token_dim == 0:
+                self.token_embeddings[feat] = None
+            else:
+                self.token_embeddings[feat] = nn.Embedding(self.n_cat_feats[feat] + n_mask_feats, token_dim)
+
+        # fix 0 token dims to the number of categories
+        for modality, token_dim in self.token_dims.items():
+            if token_dim == 0:
+                self.token_dims[modality] = self.n_cat_feats[modality] + n_mask_feats
+
+
         self.scalar_embedding = nn.Sequential(
-            nn.Linear(n_atom_types + n_charges + 1 + 2*n_mask_feats, n_hidden_scalars),
+            nn.Linear(self.token_dims['a'] + self.token_dims['c'] + self.time_embedding_dim, n_hidden_scalars),
             nn.SiLU(),
             nn.Linear(n_hidden_scalars, n_hidden_scalars),
             nn.SiLU(),
@@ -86,7 +115,7 @@ class EndpointVectorField(nn.Module):
         )
 
         self.edge_embedding = nn.Sequential(
-            nn.Linear(n_bond_types + n_mask_feats, n_hidden_edge_feats),
+            nn.Linear(self.token_dims['e'], n_hidden_edge_feats),
             nn.SiLU(),
             nn.Linear(n_hidden_edge_feats, n_hidden_edge_feats),
             nn.SiLU(),
@@ -153,15 +182,24 @@ class EndpointVectorField(nn.Module):
 
         with g.local_scope():
             # gather node and edge features for input to convolutions
-            node_scalar_features = [
-                g.ndata['a_t'],
-                t[node_batch_idx].unsqueeze(-1)
-            ]
 
-            # if we are not excluding charges, include them in the node scalar features
-            if not self.exclude_charges:
+            # atom and charge type embeddings to be used as node scalar features
+            node_scalar_features = []
+            if self.token_embeddings['a'] is None:
+                node_scalar_features.append(g.ndata['a_t'])
                 node_scalar_features.append(g.ndata['c_t'])
+            else:
+                node_scalar_features.append(self.token_embeddings['a'](g.ndata['a_t'].argmax(dim=-1)))
+                node_scalar_features.append(self.token_embeddings['c'](g.ndata['c_t'].argmax(dim=-1)))
 
+            # include time embeddings in the node scalar features
+            if self.time_embedding_dim == 1:
+                node_scalar_features.append(t[node_batch_idx].unsqueeze(-1))
+            else:
+                t_emb = get_time_embedding(t, embedding_dim=self.time_embedding_dim)
+                t_emb = t_emb[node_batch_idx]
+                node_scalar_features.append(t_emb)
+            
             node_scalar_features = torch.cat(node_scalar_features, dim=-1)
             node_scalar_features = self.scalar_embedding(node_scalar_features)
 
@@ -175,7 +213,11 @@ class EndpointVectorField(nn.Module):
             # but this actually breaks rotational equivariance
             # node_vec_features[:, :3, :] = torch.eye(3, device=device).unsqueeze(0).repeat(num_nodes, 1, 1)
 
-            edge_features = g.edata['e_t']
+            # embed edge features
+            if self.token_embeddings['e'] is None:
+                edge_features = g.edata['e_t']
+            else:
+                edge_features = self.token_embeddings['e'](g.edata['e_t'].argmax(dim=-1))
             edge_features = self.edge_embedding(edge_features)
 
             x_diff, d = self.precompute_distances(g)
