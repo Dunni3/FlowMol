@@ -43,7 +43,8 @@ class FlowMol(pl.LightningModule):
                  lr_scheduler_config: dict = {},
                  interpolant_scheduler_config: dict = {},
                  vector_field_config: dict = {},
-                 prior_config: dict = {}
+                 prior_config: dict = {},
+                 ema_weight: float = 0.999,
                  ):
         super().__init__()
 
