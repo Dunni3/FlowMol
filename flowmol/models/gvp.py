@@ -380,10 +380,11 @@ class GVPConv(nn.Module):
             # create MLP that will compute (unnormalized) attention weights
             inp_dim = 2*s_kq_dim + v_kq_dim + edge_feat_size + rbf_dim
             self.att_mlp = nn.Sequential(
+                # nn.LayerNorm(inp_dim),
                 nn.Linear(inp_dim, inp_dim*2),
                 nn.SiLU(),
                 nn.Linear(inp_dim*2, self.n_att_head),
-                nn.SiLU(),
+                # nn.SiLU(),
                 nn.LayerNorm(self.n_att_head),
             )
 
@@ -533,7 +534,7 @@ class GVPConv(nn.Module):
     def compute_attention_weights(self, edges):
 
         # dot prduct all v_k and v_q along the last dimension
-        v_kq = torch.einsum('ijk,ijk->ij', edges.src['v_k'], edges.dst['v_q'])
+        v_kq = torch.einsum('ijk,ijk->ij', edges.src['v_k'], edges.dst['v_q']) # /(self.v_kq_dim)**0.5
 
         att_weight_input = [
             edges.src['s_k'],
