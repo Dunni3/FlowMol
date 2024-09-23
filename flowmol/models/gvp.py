@@ -385,7 +385,7 @@ class GVPConv(nn.Module):
                 nn.SiLU(),
                 nn.Linear(inp_dim*2, self.n_att_head),
                 # nn.SiLU(),
-                nn.LayerNorm(self.n_att_head),
+                # nn.LayerNorm(self.n_att_head),
             )
 
             # if message size is smaller than node embedding size, we need to project aggregated messages back to the node embedding size
