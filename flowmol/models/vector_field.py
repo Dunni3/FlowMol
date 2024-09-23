@@ -38,6 +38,11 @@ class EndpointVectorField(nn.Module):
                     a_token_dim: int = 0,
                     c_token_dim: int = 0,
                     e_token_dim: int = 0,
+                    attention: bool = False,
+                    s_kq_dim: int = 32,
+                    v_kq_dim: int = 32,
+                    s_message_dim: int = None,
+                    v_message_dim: int = None,
                     has_mask: bool = False # if we are using CTMC, input categorical features will have mask tokens,
                     # this means their one-hot representations will have an extra dimension,
                     # and the neural network instantiated by this method need to account for this
@@ -133,7 +138,12 @@ class EndpointVectorField(nn.Module):
                 n_update_gvps=n_update_gvps,
                 message_norm=message_norm,
                 rbf_dmax=rbf_dmax,
-                rbf_dim=rbf_dim
+                rbf_dim=rbf_dim,
+                attention=attention,
+                s_kq_dim=s_kq_dim,
+                v_kq_dim=v_kq_dim,
+                s_message_dim=s_message_dim,
+                v_message_dim=v_message_dim,
             )
             )
         self.conv_layers = nn.ModuleList(self.conv_layers)

@@ -4,6 +4,7 @@ import dgl
 import dgl.function as fn
 from typing import List, Tuple, Union, Dict
 import math
+from dgl.nn.functional import edge_softmax
 
 # helper functions
 def exists(val):
@@ -203,9 +204,19 @@ class GVPConv(nn.Module):
 
     """GVP graph convolution on a homogenous graph."""
 
-    def __init__(self, scalar_size: int = 128, vector_size: int = 16, n_cp_feats: int = 0,
-                  scalar_activation=nn.SiLU, vector_activation=nn.Sigmoid,
-                  n_message_gvps: int = 1, n_update_gvps: int = 1,
+    def __init__(self, 
+                  scalar_size: int = 128, 
+                  vector_size: int = 16, 
+                  n_cp_feats: int = 0,
+                  scalar_activation=nn.SiLU, 
+                  vector_activation=nn.Sigmoid,
+                  n_message_gvps: int = 1, 
+                  n_update_gvps: int = 1,
+                  attention: bool = False,
+                  s_kq_dim: int = 32,
+                  v_kq_dim: int = 32,
+                  s_message_dim: int = None,
+                  v_message_dim: int = None,
                   use_dst_feats: bool = False, rbf_dmax: float = 20, rbf_dim: int = 16,
                   edge_feat_size: int = 0, coords_range=10, message_norm: Union[float, str] = 10, dropout: float = 0.0,):
         
@@ -227,6 +238,26 @@ class GVPConv(nn.Module):
         self.rbf_dim = rbf_dim
         self.dropout_rate = dropout
         self.message_norm = message_norm
+
+        # dims for message reduction and also attention
+        self.s_message_dim = s_message_dim
+        self.v_message_dim = v_message_dim
+        self.s_kq_dim = s_kq_dim
+        self.v_kq_dim = s_kq_dim
+        self.attention = attention
+
+        # fix message_dim situation
+        # TODO: implement separate message dim
+        if s_message_dim is None:
+            self.s_message_dim = scalar_size
+        else: 
+            raise NotImplementedError("s_message_dim must be None")
+        
+        if v_message_dim is None:
+            self.v_message_dim = vector_size
+        else:
+            raise NotImplementedError("v_message_dim must be None")
+
 
         # create message passing function
         message_gvps = []
@@ -286,6 +317,29 @@ class GVPConv(nn.Module):
         else:
             self.agg_func = fn.sum
 
+
+        if attention:
+            # TODO: could have fewer heads than the number of features
+            self.n_att_head = self.s_message_dim + self.v_message_dim
+
+            # TODO, make sequential of gvps
+            self.kq_gvp = GVP(
+                # TODO: could generate kqs from small embedding of nodes
+                dim_feats_in=scalar_size,
+                dim_feats_out=2*s_kq_dim,
+                dim_vectors_in=vector_size,
+                dim_vectors_out=2*v_kq_dim,
+            )
+
+            inp_dim = 2*s_kq_dim + v_kq_dim + edge_feat_size + rbf_dim
+            self.att_mlp = nn.Sequential(
+                nn.Linear(inp_dim, inp_dim*2),
+                nn.SiLU(),
+                nn.Linear(inp_dim*2, self.n_att_head),
+                nn.SiLU(),
+                nn.LayerNorm(self.n_att_head),
+            )
+
     def forward(self, g: dgl.DGLGraph, 
                 scalar_feats: torch.Tensor,
                 coord_feats: torch.Tensor,
@@ -297,7 +351,7 @@ class GVPConv(nn.Module):
 
         with g.local_scope():
 
-            g.ndata['h'] = scalar_feats
+            g.ndata['s'] = scalar_feats
             g.ndata['x'] = coord_feats
             g.ndata['v'] = vec_feats
 
@@ -308,9 +362,7 @@ class GVPConv(nn.Module):
             # edge feature
             if self.edge_feat_size > 0:
                 assert edge_feats is not None, "Edge features must be provided."
-                g.edata["a"] = edge_feats
-
-
+                g.edata["ef"] = edge_feats
 
             # normalize x_diff and compute rbf embedding of edge distance
             # dij = torch.norm(g.edges[self.edge_type].data['x_diff'], dim=-1, keepdim=True)
@@ -321,8 +373,32 @@ class GVPConv(nn.Module):
                 g.edata['x_diff'] = g.edata['x_diff'] / dij
                 g.edata['d'] = _rbf(dij.squeeze(1), D_max=self.rbf_dmax, D_count=self.rbf_dim)
 
+            if self.attention:
+                s_kq, v_kq = self.kq_gvp((g.ndata['s'], g.ndata['v']))
+                s_k, s_q = s_kq.chunk(2, dim=1)
+                v_k, v_q = v_kq.chunk(2, dim=1)
+
+                g.ndata['s_k'] = s_k # has shape (n_atoms, s_kq_dim)
+                g.ndata['s_q'] = s_q
+                g.ndata['v_k'] = v_k # has shape (n_atoms, v_kq_dim, 3)
+                g.ndata['v_q'] = v_q
+
+                # compute attention weights
+                g.apply_edges(self.compute_attention_weights)
+
+                # softmax attention weights
+                att_weights = edge_softmax(g, g.edata['att_weights'])
+                g.edata['a_s'] = att_weights[:, :self.s_message_dim] # has shape (n_edges, s_message_dim)
+                g.edata['a_v'] = att_weights[:, self.s_message_dim:][:, :, None] # has shape (n_edges, v_message_dim, 1)
+
+
             # compute messages on every edge
             g.apply_edges(self.message)
+
+            # if self.attenion, multiple messages by attention weights
+            if self.attention:
+                g.edata['scalar_msg'] = g.edata['scalar_msg'] * g.edata['a_s']
+                g.edata['vec_msg'] = g.edata['vec_msg'] * g.edata['a_v']
 
             # aggregate messages from every edge
             g.update_all(fn.copy_e("scalar_msg", "m"), self.agg_func("m", "scalar_msg"))
@@ -341,7 +417,7 @@ class GVPConv(nn.Module):
             scalar_msg, vec_msg = self.dropout(scalar_msg, vec_msg)
 
             # update scalar and vector features, apply layernorm
-            scalar_feat = g.ndata['h'] + scalar_msg
+            scalar_feat = g.ndata['s'] + scalar_msg
             vec_feat = g.ndata['v'] + vec_msg
             scalar_feat, vec_feat = self.message_layer_norm(scalar_feat, vec_feat)
 
@@ -363,15 +439,32 @@ class GVPConv(nn.Module):
         vec_feats = torch.cat(vec_feats, dim=1)
 
         # create scalar features
-        scalar_feats = [ edges.src['h'], edges.data['d'] ]
+        scalar_feats = [ edges.src['s'], edges.data['d'] ]
         if self.edge_feat_size > 0:
-            scalar_feats.append(edges.data['a'])
+            scalar_feats.append(edges.data['ef'])
 
         if self.use_dst_feats:
-            scalar_feats.append(edges.dst['h'])
+            scalar_feats.append(edges.dst['s'])
 
         scalar_feats = torch.cat(scalar_feats, dim=1)
 
         scalar_message, vector_message = self.edge_message((scalar_feats, vec_feats))
 
         return {"scalar_msg": scalar_message, "vec_msg": vector_message}
+    
+    def compute_attention_weights(self, edges):
+
+        # dot prduct all v_k and v_q along the last dimension
+        v_kq = torch.einsum('ijk,ijk->ij', edges.src['v_k'], edges.dst['v_q'])
+
+        att_weight_input = [
+            edges.src['s_k'],
+            edges.src['s_q'],
+            v_kq,
+            edges.data['ef'],
+            edges.data['d']
+        ]
+
+        att_weights = self.att_mlp(torch.cat(att_weight_input, dim=1))
+
+        return {'att_weights': att_weights}
