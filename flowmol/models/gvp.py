@@ -212,13 +212,19 @@ class GVPConv(nn.Module):
                   vector_activation=nn.Sigmoid,
                   n_message_gvps: int = 1, 
                   n_update_gvps: int = 1,
+                  n_kq_gvps: int = 1,
                   attention: bool = False,
                   s_kq_dim: int = 32,
                   v_kq_dim: int = 32,
                   s_message_dim: int = None,
                   v_message_dim: int = None,
-                  use_dst_feats: bool = False, rbf_dmax: float = 20, rbf_dim: int = 16,
-                  edge_feat_size: int = 0, coords_range=10, message_norm: Union[float, str] = 10, dropout: float = 0.0,):
+                  n_expansion_gvps: int = 1,
+                  use_dst_feats: bool = False, 
+                  rbf_dmax: float = 20, 
+                  rbf_dim: int = 16,
+                  edge_feat_size: int = 0, 
+                  message_norm: Union[float, str] = 10, 
+                  dropout: float = 0.0,):
         
         super().__init__()
 
@@ -246,21 +252,19 @@ class GVPConv(nn.Module):
         self.v_kq_dim = s_kq_dim
         self.attention = attention
 
-        # fix message_dim situation
-        # TODO: implement separate message dim
         if s_message_dim is None:
             self.s_message_dim = scalar_size
-        else: 
-            raise NotImplementedError("s_message_dim must be None")
         
         if v_message_dim is None:
             self.v_message_dim = vector_size
-        else:
-            raise NotImplementedError("v_message_dim must be None")
 
 
         # create message passing function
         message_gvps = []
+
+        s_slope = (self.s_message_dim - scalar_size) / n_message_gvps
+        v_slope = (self.v_message_dim - vector_size) / n_message_gvps
+
         for i in range(n_message_gvps):
 
             dim_vectors_in = vector_size
@@ -270,18 +274,41 @@ class GVPConv(nn.Module):
             if i == 0:
                 dim_vectors_in += 1
                 dim_feats_in += rbf_dim + edge_feat_size
+            else:
+                # if not first layer, input size is the output size of the previous layer
+                dim_feats_in = dim_feats_out
+                dim_vectors_in = dim_vectors_out
                 
             # if this is the first layer and we are using destination node features to compute messages, add them to the input dimensions
             if use_dst_feats and i == 0:
                 dim_vectors_in += vector_size
                 dim_feats_in += scalar_size
 
+            # determine number of scalars output from this layer
+            # if message size is smaller than scalar size, do linear interpolation on layer sizes through the gvps
+            # otherwise, jump to final output size at first gvp and stay there to the end
+            if self.s_message_dim < scalar_size:
+                dim_feats_out = int(s_slope*i + scalar_size)
+                if i == n_message_gvps - 1:
+                    dim_feats_out = self.s_message_dim
+            else:
+                dim_feats_out = self.s_message_dim
+
+            # same logic applied to the number of vectors output from this layer
+            if self.v_message_dim < vector_size:
+                dim_vectors_out = int(v_slope*i + vector_size)
+                if i == n_message_gvps - 1:
+                    dim_vectors_out = self.v_message_dim
+            else:
+                dim_vectors_out = self.v_message_dim
+
+
             message_gvps.append(
                 GVP(dim_vectors_in=dim_vectors_in, 
-                    dim_vectors_out=vector_size,
-                    n_cp_feats=n_cp_feats, 
+                    dim_vectors_out=dim_vectors_out,
+                    n_cp_feats=n_cp_feats,
                     dim_feats_in=dim_feats_in, 
-                    dim_feats_out=scalar_size, 
+                    dim_feats_out=dim_feats_out,
                     feats_activation=scalar_activation(), 
                     vectors_activation=vector_activation(), 
                     vector_gating=True)
@@ -310,7 +337,8 @@ class GVPConv(nn.Module):
         if isinstance(self.message_norm, str) and self.message_norm not in ['mean', 'sum']:
             raise ValueError(f"message_norm must be either 'mean', 'sum', or a number, got {self.message_norm}")
         else:
-            assert isinstance(self.message_norm, (float, int)), "message_norm must be either 'mean', 'sum', or a number"
+            if self.message_norm not in ['mean', 'sum']:
+                assert isinstance(self.message_norm, (float, int)), "message_norm must be either 'mean', 'sum', or a number"
 
         if self.message_norm == 'mean':
             self.agg_func = fn.mean
@@ -322,15 +350,34 @@ class GVPConv(nn.Module):
             # TODO: could have fewer heads than the number of features
             self.n_att_head = self.s_message_dim + self.v_message_dim
 
-            # TODO, make sequential of gvps
-            self.kq_gvp = GVP(
-                # TODO: could generate kqs from small embedding of nodes
-                dim_feats_in=scalar_size,
-                dim_feats_out=2*s_kq_dim,
-                dim_vectors_in=vector_size,
-                dim_vectors_out=2*v_kq_dim,
-            )
+            # create keq and query generating gvp function
+            kq_gvps = []
+            for i in range(n_kq_gvps):
 
+                dim_feats_out = 2*s_kq_dim
+                dim_vectors_out = 2*v_kq_dim
+
+                if i == 0:
+                    dim_feats_in = scalar_size
+                    dim_vectors_in = vector_size
+                else:
+                    dim_feats_in = 2*s_kq_dim
+                    dim_vectors_in = 2*v_kq_dim
+
+                kq_gvps.append(GVP(
+                    dim_feats_in=dim_feats_in,
+                    dim_feats_out=dim_feats_out,
+                    dim_vectors_in=dim_vectors_in,
+                    dim_vectors_out=dim_vectors_out,
+                    n_cp_feats=n_cp_feats,
+                    feats_activation=scalar_activation(), 
+                    vectors_activation=vector_activation(), 
+                    vector_gating=True)
+                )
+            self.kq_gvp = nn.Sequential(*kq_gvps)
+
+
+            # create MLP that will compute (unnormalized) attention weights
             inp_dim = 2*s_kq_dim + v_kq_dim + edge_feat_size + rbf_dim
             self.att_mlp = nn.Sequential(
                 nn.Linear(inp_dim, inp_dim*2),
@@ -339,6 +386,34 @@ class GVPConv(nn.Module):
                 nn.SiLU(),
                 nn.LayerNorm(self.n_att_head),
             )
+
+            # if message size is smaller than node embedding size, we need to project aggregated messages back to the node embedding size
+            if self.s_message_dim != scalar_size or self.v_message_dim != vector_size:
+                projection_gvps = []
+                for i in range(n_expansion_gvps):
+                    if i == 0:
+                        dim_feats_in = self.s_message_dim
+                        dim_vectors_in = self.v_message_dim
+                    else:
+                        dim_feats_in = scalar_size
+                        dim_vectors_in = vector_size
+
+                    dim_feats_out = scalar_size
+                    dim_vectors_out = vector_size
+
+                    projection_gvps.append(
+                        GVP(dim_vectors_in=dim_vectors_in, 
+                            dim_vectors_out=dim_vectors_out,
+                            n_cp_feats=n_cp_feats,
+                            dim_feats_in=dim_feats_in, 
+                            dim_feats_out=dim_feats_out,
+                            feats_activation=scalar_activation(), 
+                            vectors_activation=vector_activation(), 
+                            vector_gating=True)
+                    )
+                    self.message_projection = nn.Sequential(*projection_gvps)
+            else:
+                self.message_projection = nn.Identity()
 
     def forward(self, g: dgl.DGLGraph, 
                 scalar_feats: torch.Tensor,
@@ -412,6 +487,9 @@ class GVPConv(nn.Module):
 
             scalar_msg = g.ndata["scalar_msg"] / z
             vec_msg = g.ndata["vec_msg"] / z
+
+            # apply projection (expansion) to aggregated messages
+            scalar_msg, vec_msg = self.message_projection((scalar_msg, vec_msg))
 
             # dropout scalar and vector messages
             scalar_msg, vec_msg = self.dropout(scalar_msg, vec_msg)
