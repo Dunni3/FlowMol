@@ -698,7 +698,8 @@ class NodePositionUpdate(nn.Module):
                     dim_vectors_in=n_vec_channels,
                     dim_vectors_out=vectors_out,
                     n_cp_feats=n_cp_feats,
-                    vectors_activation=vectors_activation
+                    vectors_activation=vectors_activation,
+                    vector_gating=True
                 )
             )
         self.gvps = nn.Sequential(*self.gvps)
