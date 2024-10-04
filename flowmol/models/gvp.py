@@ -388,33 +388,33 @@ class GVPConv(nn.Module):
                 # nn.LayerNorm(self.n_att_head),
             )
 
-            # if message size is smaller than node embedding size, we need to project aggregated messages back to the node embedding size
-            if self.s_message_dim != scalar_size or self.v_message_dim != vector_size:
-                projection_gvps = []
-                for i in range(n_expansion_gvps):
-                    if i == 0:
-                        dim_feats_in = self.s_message_dim
-                        dim_vectors_in = self.v_message_dim
-                    else:
-                        dim_feats_in = scalar_size
-                        dim_vectors_in = vector_size
+        # if message size is smaller than node embedding size, we need to project aggregated messages back to the node embedding size
+        if self.s_message_dim != scalar_size or self.v_message_dim != vector_size:
+            projection_gvps = []
+            for i in range(n_expansion_gvps):
+                if i == 0:
+                    dim_feats_in = self.s_message_dim
+                    dim_vectors_in = self.v_message_dim
+                else:
+                    dim_feats_in = scalar_size
+                    dim_vectors_in = vector_size
 
-                    dim_feats_out = scalar_size
-                    dim_vectors_out = vector_size
+                dim_feats_out = scalar_size
+                dim_vectors_out = vector_size
 
-                    projection_gvps.append(
-                        GVP(dim_vectors_in=dim_vectors_in, 
-                            dim_vectors_out=dim_vectors_out,
-                            n_cp_feats=n_cp_feats,
-                            dim_feats_in=dim_feats_in, 
-                            dim_feats_out=dim_feats_out,
-                            feats_activation=scalar_activation(), 
-                            vectors_activation=vector_activation(), 
-                            vector_gating=True)
-                    )
-                    self.message_projection = nn.Sequential(*projection_gvps)
-            else:
-                self.message_projection = nn.Identity()
+                projection_gvps.append(
+                    GVP(dim_vectors_in=dim_vectors_in, 
+                        dim_vectors_out=dim_vectors_out,
+                        n_cp_feats=n_cp_feats,
+                        dim_feats_in=dim_feats_in, 
+                        dim_feats_out=dim_feats_out,
+                        feats_activation=scalar_activation(), 
+                        vectors_activation=vector_activation(), 
+                        vector_gating=True)
+                )
+            self.message_projection = nn.Sequential(*projection_gvps)
+        else:
+            self.message_projection = nn.Identity()
 
     def forward(self, g: dgl.DGLGraph, 
                 scalar_feats: torch.Tensor,
