@@ -6,6 +6,8 @@ from collections import Counter
 import wandb
 from flowmol.utils.divergences import DivergenceCalculator
 from flowmol.analysis.ff_energy import compute_mmff_energy
+from flowmol.analysis.reos import REOS
+from flowmol.analysis.ring_systems import RingSystemCounter
 
 allowed_bonds = {'H': {0: 1, 1: 0, -1: 0},
                  'C': {0: [3, 4], 1: 3, -1: 3},
@@ -153,6 +155,28 @@ class SampleAnalyzer():
 
         return js_div
 
+    def reos_and_rings(self, samples: List[SampledMolecule]):
+        """ samples: list of SampledMolecule objects. """
+        rd_mols = [sample.rdkit_mol for sample in samples]
+        sanitized_mols = []
+        for mol in rd_mols:
+            try:
+                Chem.SanitizeMol(mol)
+                sanitized_mols.append(mol)
+            except:
+                continue
+        reos = REOS(active_rules=["Glaxo", "Dundee"])
+        ring_system_counter = RingSystemCounter()
+
+        reos_flags = reos.mols_to_flag_arr(sanitized_mols)
+        ring_counts = ring_system_counter.count_ring_systems(sanitized_mols)
+
+        result = {
+                    'reos_flag_arr': reos_flags,
+                    'reos_flag_header': reos.flag_arr_header,
+                    'ring_counts': ring_counts
+                }
+        return result
 
 def check_stability(molecule: SampledMolecule):
     """ molecule: Molecule object. """
