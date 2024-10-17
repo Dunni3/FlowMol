@@ -353,7 +353,10 @@ class CTMCVectorField(EndpointVectorField):
 
 
                 xt, x_1_sampled = \
-                self.campbell_step(p_1_given_t=p_s_1, 
+                self.campbell_step(
+                                g=g,
+                                feat=feat,
+                                p_1_given_t=p_s_1, 
                                 xt=xt, 
                                 stochasticity=eta, 
                                 hc_thresh=hc_thresh, 
@@ -361,11 +364,12 @@ class CTMCVectorField(EndpointVectorField):
                                 alpha_t_prime=alpha_t_prime_i[feat_idx],
                                 dt=dt, 
                                 batch_size=g.batch_size, 
-                                batch_num_nodes=g.batch_num_edges()//2 if feat == 'e' else g.batch_num_nodes(), 
+                                batch_num_nodes=g.batch_num_edges() if feat == 'e' else g.batch_num_nodes(), 
                                 n_classes=self.n_cat_feats[feat]+1,
                                 mask_index=self.mask_idxs[feat],
                                 last_step=last_step,
-                                batch_idx=edge_batch_idx[upper_edge_mask] if feat == 'e' else node_batch_idx,
+                                batch_idx=edge_batch_idx if feat == 'e' else node_batch_idx,
+                                upper_edge_mask=upper_edge_mask if feat == 'e' else None,
                                 )
 
             elif dfm_type == 'gat':
@@ -405,7 +409,10 @@ class CTMCVectorField(EndpointVectorField):
         return g
 
         
-    def campbell_step(self, p_1_given_t: torch.Tensor,
+    def campbell_step(self, 
+                      g: dgl.DGLGraph,
+                      feat: str,
+                      p_1_given_t: torch.Tensor,
                       xt: torch.Tensor, 
                       stochasticity: float, 
                       hc_thresh: float, 
@@ -418,6 +425,7 @@ class CTMCVectorField(EndpointVectorField):
                       mask_index:int,
                       last_step: bool, 
                       batch_idx: torch.Tensor,
+                      upper_edge_mask: torch.Tensor
 ):
         x1 = Categorical(p_1_given_t).sample() # has shape (num_nodes,)
 
@@ -430,10 +438,22 @@ class CTMCVectorField(EndpointVectorField):
         # sample which nodes will be unmasked
         if hc_thresh > 0:
             # select more high-confidence predictions for unmasking than low-confidence predictions
+            # TODO: remove arguments unused by purity sampling
             will_unmask = purity_sampling(
-                xt=xt, x1=x1, x1_probs=p_1_given_t, unmask_prob=unmask_prob,
-                mask_index=mask_index, batch_size=batch_size, batch_num_nodes=batch_num_nodes,
-                node_batch_idx=batch_idx, hc_thresh=hc_thresh, device=xt.device)
+                g=g,
+                feat=feat,
+                xt=xt,
+                x1=x1,
+                x1_probs=p_1_given_t,
+                unmask_prob=unmask_prob,
+                mask_index=mask_index,
+                batch_size=batch_size,
+                batch_num_nodes=batch_num_nodes,
+                batch_idx=batch_idx,
+                hc_thresh=hc_thresh,
+                device=xt.device,
+                upper_edge_mask=upper_edge_mask,
+            )
         else:
             # uniformly sample nodes to unmask
             will_unmask = torch.rand(xt.shape[0], device=xt.device) < unmask_prob
