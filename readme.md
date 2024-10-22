@@ -65,12 +65,22 @@ python process_qm9.py --config=trained_models/qm9_gauss_ep/config.yml
 
 ## GEOM-Drugs
 
-Starting from the root of this repository, run `mkdir data/geom_raw`. Download the train, validation, and test splits [provided by MiDi](https://github.com/cvignac/MiDi#datasets) into the `data/geom_raw` directory. Then, from the root of this repository, run these commands to process the geom dataset:
+We use the dataset [created by MiDi](https://github.com/cvignac/MiDi). Run the following command from the root of this repository to download the geom-drugs dataset:
+
+```console
+wget -r -np -nH --cut-dirs=2 --reject "index.html*" -P data/ https://bits.csb.pitt.edu/files/geom_raw/
+```
+
+Then, from the root of this repository, run these commands to process the geom dataset:
+
+
 ```console
 python process_geom.py data/geom_raw/train_data.pickle --config=trained_models/geom_gauss_ep/config.yml
 python process_geom.py data/geom_raw/test_data.pickle --config=trained_models/geom_gauss_ep/config.yml
 python process_geom.py data/geom_raw/val_data.pickle --config=trained_models/geom_gauss_ep/config.yml
 ```
+
+Note that these commands assumed you have downloaded our trained models as described above.
 
 # Training
 
