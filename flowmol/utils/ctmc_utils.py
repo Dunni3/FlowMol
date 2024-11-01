@@ -41,23 +41,16 @@ def purity_sampling(
     g: dgl.DGLGraph,
     feat: str,
     xt,
-    x1,
     x1_probs,
     unmask_prob,
     mask_index,
     batch_size,
     batch_num_nodes,
-    batch_idx,
-    hc_thresh,
     device,
-    upper_edge_mask,
-    remasking=False):
+    upper_edge_mask,):
 
     masked_nodes = xt == mask_index # mask of which nodes are currently unmasked
     purities = x1_probs.max(-1)[0] # the highest probability of any category for each node
-
-    if remasking:
-        conflict = F.cross_entropy(x1_probs, xt, reduction='none', ignore_index=mask_index)
 
     if feat == 'e':
         # recreate a version of purities that includes lower edges
@@ -121,5 +114,80 @@ def purity_sampling(
     return will_unmask
 
 
-def conflict_remasking(x1, xt, mask_index):
-    pass
+def conflict_remasking(
+    g: dgl.DGLGraph,
+    feat: str,
+    xt,
+    x1_probs,
+    mask_prob,
+    mask_index,
+    batch_size,
+    batch_num_nodes,
+    device,
+    upper_edge_mask):
+
+    masked_nodes = xt == mask_index # mask of which nodes are currently unmasked
+    conflict_scores = F.cross_entropy(torch.log(x1_probs), xt, reduction='none', ignore_index=mask_index) # has shape (num_nodes,)
+
+    if feat == 'e':
+        # recreate a version of purities that includes lower edges
+        conflict_scores_ul = torch.zeros(g.num_edges(), device=device, dtype=conflict_scores.dtype)
+        conflict_scores_ul[upper_edge_mask] = conflict_scores
+        conflict_scores_ul[~upper_edge_mask] = -1
+        conflict_scores = conflict_scores_ul
+
+        # duplicate masked_nodes for lower edges, mark all lower edges as unmasked
+        masked_nodes_ul = torch.zeros(g.num_edges(), device=device, dtype=torch.bool)
+        masked_nodes_ul[upper_edge_mask] = masked_nodes
+        masked_nodes = masked_nodes_ul
+
+    # compute the number of masked nodes per graph in the batch
+    indptr = torch.zeros(batch_size+1, device=device, dtype=torch.long)
+    indptr[1:] = batch_num_nodes.cumsum(0)
+    masked_nodes_per_graph = segment_csr(masked_nodes.long(), indptr) # has shape (batch_size,)
+    unmasked_nodes_per_graph = batch_num_nodes - masked_nodes_per_graph
+
+    # set conflict scores of masked nodes to -1
+    conflict_scores[masked_nodes] = -1
+
+    # sample the number of nodes to mask per graph
+    n_mask_per_graph = Binomial(total_count=unmasked_nodes_per_graph, probs=mask_prob).sample()
+
+    with g.local_scope():
+        if feat == 'e':
+            data_src = g.edata
+            topk_func = dgl.topk_edges
+        else:
+            data_src = g.ndata
+            topk_func = dgl.topk_nodes
+
+
+        data_src['conflict_score'] = conflict_scores.unsqueeze(-1)
+        k = int(n_mask_per_graph.max())
+
+        if k != 0:
+            _, topk_idxs_batched = topk_func(g, feat='conflict_score', k=k, sortby=0)
+            
+            # topk_idxs contains indicies relative to each batch
+            # but we need to convert them to batched-graph indicies
+            topk_idxs_batched = topk_idxs_batched + indptr[:-1].unsqueeze(-1)
+
+    # slice out the top k nodes for each graph
+    if k != 0:
+        col_indices = torch.arange(k, device=device).unsqueeze(0)
+        mask = col_indices < n_mask_per_graph.unsqueeze(1)
+        
+        # Apply mask to get only desired indices
+        nodes_to_mask = topk_idxs_batched[mask]
+    else:
+        nodes_to_mask = torch.tensor([], device=device, dtype=torch.long)
+
+    if feat == 'e':
+        will_mask = torch.zeros(g.num_edges(), dtype=torch.bool, device=device)
+        will_mask[nodes_to_mask] = True
+        will_mask = will_mask[upper_edge_mask]
+    else:
+        will_mask = torch.zeros_like(xt, dtype=torch.bool)
+        will_mask[nodes_to_mask] = True
+
+    return will_mask

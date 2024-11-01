@@ -289,7 +289,8 @@ class CTMCVectorField(EndpointVectorField):
              stochasticity: float = 8.0,
              high_confidence_threshold: float = 0.9, 
              last_step: bool = False,
-             inv_temp_func: Callable = None,):
+             inv_temp_func: Callable = None,
+             use_conflict_remasking: bool = False):
 
         device = g.device
 
@@ -370,6 +371,7 @@ class CTMCVectorField(EndpointVectorField):
                                 last_step=last_step,
                                 batch_idx=edge_batch_idx if feat == 'e' else node_batch_idx,
                                 upper_edge_mask=upper_edge_mask if feat == 'e' else None,
+                                use_conflict_remasking=use_conflict_remasking
                                 )
 
             elif dfm_type == 'gat':
@@ -426,7 +428,7 @@ class CTMCVectorField(EndpointVectorField):
                       last_step: bool, 
                       batch_idx: torch.Tensor,
                       upper_edge_mask: torch.Tensor,
-                      conflict_remasking: bool = False,
+                      use_conflict_remasking: bool = False,
 ):
         x1 = Categorical(p_1_given_t).sample() # has shape (num_nodes,)
 
@@ -444,14 +446,11 @@ class CTMCVectorField(EndpointVectorField):
                 g=g,
                 feat=feat,
                 xt=xt,
-                x1=x1,
                 x1_probs=p_1_given_t,
                 unmask_prob=unmask_prob,
                 mask_index=mask_index,
                 batch_size=batch_size,
                 batch_num_nodes=batch_num_nodes,
-                batch_idx=batch_idx,
-                hc_thresh=hc_thresh,
                 device=xt.device,
                 upper_edge_mask=upper_edge_mask,
             )
@@ -461,8 +460,19 @@ class CTMCVectorField(EndpointVectorField):
             will_unmask = will_unmask * (xt == mask_index) # only unmask nodes that are currently masked
 
         if not last_step:
-            if conflict_remasking:
-                will_mask = conflict_remasking()
+            if use_conflict_remasking:
+                will_mask = conflict_remasking(
+                g=g,
+                feat=feat,
+                xt=xt,
+                x1_probs=p_1_given_t,
+                mask_prob=mask_prob,
+                mask_index=mask_index,
+                batch_size=batch_size,
+                batch_num_nodes=batch_num_nodes,
+                device=xt.device,
+                upper_edge_mask=upper_edge_mask,
+            )
             else:
                 # compute which nodes will be masked
                 will_mask = torch.rand(xt.shape[0], device=xt.device) < mask_prob
