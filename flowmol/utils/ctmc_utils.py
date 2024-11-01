@@ -2,6 +2,7 @@ import torch
 from torch_scatter import segment_csr
 import dgl
 from torch.distributions import Binomial
+import torch.nn.functional as F
 
 def threshold_purity_sampling(xt, x1, x1_probs, unmask_prob, mask_index, batch_size, batch_num_nodes, batch_idx, hc_thresh, device):
 
@@ -49,10 +50,14 @@ def purity_sampling(
     batch_idx,
     hc_thresh,
     device,
-    upper_edge_mask,):
+    upper_edge_mask,
+    remasking=False):
 
     masked_nodes = xt == mask_index # mask of which nodes are currently unmasked
     purities = x1_probs.max(-1)[0] # the highest probability of any category for each node
+
+    if remasking:
+        conflict = F.cross_entropy(x1_probs, xt, reduction='none', ignore_index=mask_index)
 
     if feat == 'e':
         # recreate a version of purities that includes lower edges
@@ -116,3 +121,5 @@ def purity_sampling(
     return will_unmask
 
 
+def conflict_remasking(x1, xt, mask_index):
+    pass

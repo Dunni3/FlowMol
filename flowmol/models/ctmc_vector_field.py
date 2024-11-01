@@ -6,7 +6,7 @@ from torch.distributions.categorical import Categorical
 from flowmol.data_processing.utils import get_edge_batch_idxs
 import torch.nn.functional as F
 
-from flowmol.utils.ctmc_utils import purity_sampling
+from flowmol.utils.ctmc_utils import purity_sampling, conflict_remasking
 from typing import Union, Callable
 
 class CTMCVectorField(EndpointVectorField):
@@ -425,7 +425,8 @@ class CTMCVectorField(EndpointVectorField):
                       mask_index:int,
                       last_step: bool, 
                       batch_idx: torch.Tensor,
-                      upper_edge_mask: torch.Tensor
+                      upper_edge_mask: torch.Tensor,
+                      conflict_remasking: bool = False,
 ):
         x1 = Categorical(p_1_given_t).sample() # has shape (num_nodes,)
 
@@ -460,9 +461,12 @@ class CTMCVectorField(EndpointVectorField):
             will_unmask = will_unmask * (xt == mask_index) # only unmask nodes that are currently masked
 
         if not last_step:
-            # compute which nodes will be masked
-            will_mask = torch.rand(xt.shape[0], device=xt.device) < mask_prob
-            will_mask = will_mask * (xt != mask_index) # only mask nodes that are currently unmasked
+            if conflict_remasking:
+                will_mask = conflict_remasking()
+            else:
+                # compute which nodes will be masked
+                will_mask = torch.rand(xt.shape[0], device=xt.device) < mask_prob
+                will_mask = will_mask * (xt != mask_index) # only mask nodes that are currently unmasked
 
             # mask the nodes
             xt[will_mask] = mask_index
