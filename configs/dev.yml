@@ -90,14 +90,16 @@ vector_field:
 
 interpolant_scheduler:
   schedule_type: # can be 'cosine', 'linear' or a dictionary with keys 'x', 'a', 'c', 'e'
-    x: 'cosine'
-    a: 'cosine'
-    c: 'cosine'
-    e: 'cosine'
+    x: 'linear'
+    a: 'linear'
+    c: 'linear'
+    e: 'linear'
   
   cosine_params:
     x: 1
-    a: 2.0
-    c: 2.0
-    e: 1.5
+
+  exp_params:
+    x:
+      c: -5.0
+      nu: 2.0
 

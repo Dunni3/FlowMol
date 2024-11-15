@@ -4,9 +4,12 @@ from typing import Dict, Tuple, Union
 
 class InterpolantScheduler(nn.Module):
 
-    supported_schedule_types = ['cosine', 'linear']
+    supported_schedule_types = ['cosine', 'linear', 'exp']
 
-    def __init__(self, canonical_feat_order: str, schedule_type: Union[str, Dict[str, str]] = 'cosine', cosine_params: dict = {}):
+    def __init__(self, canonical_feat_order: str, 
+                 schedule_type: Union[str, Dict[str, str]] = 'cosine', 
+                 cosine_params: dict = {},
+                 exp_params: dict = {}):
         super().__init__()
 
         self.feats = canonical_feat_order
@@ -30,15 +33,6 @@ class InterpolantScheduler(nn.Module):
                     raise ValueError(f'must specify schedule_type for feature {feat}')
 
             self.schedule_dict = schedule_type 
-
-        # if schedule_type == 'cosine':
-        #     self.alpha_t = self.cosine_alpha_t
-        #     self.alpha_t_prime = self.cosine_alpha_t_prime
-        # elif schedule_type == 'linear':
-        #     self.alpha_t = self.linear_alpha_t
-        #     self.alpha_t_prime = self.linear_alpha_t_prime
-        # else:
-        #     raise NotImplementedError(f'unsupported schedule_type: {schedule_type}')
             
 
         # for features which have a cosine schedule, check that the parameter "nu" is provided
@@ -53,9 +47,13 @@ class InterpolantScheduler(nn.Module):
         if 'cosine' in self.schedule_types:
             for feat in cosine_params:
                 cosine_params[feat] = torch.tensor(cosine_params[feat]).unsqueeze(0)
+
         
         # save the cosine_params as an attribute
         self.cosine_params = cosine_params
+        
+        # save exp_params as an attribute
+        self.exp_params = exp_params
 
         self.device = None
 
@@ -105,10 +103,12 @@ class InterpolantScheduler(nn.Module):
                 alpha_t = self.cosine_alpha_t(t, nu=self.cosine_params[feat])
             elif schedule_type == 'linear':
                 alpha_t = self.linear_alpha_t(t)
+            elif schedule_type == 'exp':
+                alpha_t = self.exp_alpha_t(t, **self.exp_params[feat])
             
             per_feat_alpha.append(alpha_t)
 
-        alpha_t = torch.cat(per_feat_alpha, dim=1)
+        alpha_t = torch.stack(per_feat_alpha, dim=1)
         return alpha_t
     
     def alpha_t_prime(self, t: torch.Tensor) -> torch.Tensor:
@@ -121,17 +121,18 @@ class InterpolantScheduler(nn.Module):
                 alpha_t_prime = self.cosine_alpha_t_prime(t, nu=self.cosine_params[feat])
             elif schedule_type == 'linear':
                 alpha_t_prime = self.linear_alpha_t_prime(t)
+            elif schedule_type == 'exp':
+                alpha_t_prime = self.exp_alpha_t_prime(t, **self.exp_params[feat])
             
             per_feat_alpha_prime.append(alpha_t_prime)
 
-        alpha_t_prime = torch.cat(per_feat_alpha_prime, dim=1)
+        alpha_t_prime = torch.stack(per_feat_alpha_prime, dim=1)
         return alpha_t_prime
 
 
     def cosine_alpha_t(self, t: torch.Tensor, nu: torch.Tensor) -> Dict[str, torch.Tensor]:
         # t has shape (n_timepoints,)
         # alpha_t has shape (n_timepoints, n_feats) containing the alpha_t for each feature
-        t = t.unsqueeze(-1)
         alpha_t = 1 - torch.cos(torch.pi*0.5*torch.pow(t, nu)).square()
         return alpha_t
     
@@ -140,15 +141,24 @@ class InterpolantScheduler(nn.Module):
         if self.clamp_t:
             t = torch.clamp_(t, min=1e-9)
 
-        t = t.unsqueeze(-1)
         sin_input = torch.pi*torch.pow(t, nu)
         alpha_t_prime = torch.pi*0.5*torch.sin(sin_input)*nu*torch.pow(t, nu-1)
         return alpha_t_prime
     
     def linear_alpha_t(self, t: torch.Tensor) -> Dict[str, torch.Tensor]:
-        alpha_t = t.unsqueeze(-1)
+        alpha_t = t
         return alpha_t
     
     def linear_alpha_t_prime(self, t: torch.Tensor) -> Dict[str, torch.Tensor]:
-        alpha_t_prime = torch.ones_like(t).unsqueeze(-1)
+        alpha_t_prime = torch.ones_like(t)
+        return alpha_t_prime
+    
+    def exp_alpha_t(self, t: torch.Tensor, c: float, nu: float) -> Dict[str, torch.Tensor]:
+        ctnu = c*torch.pow(t, nu)
+        alpha_t = 1 - torch.exp(ctnu)
+        return alpha_t
+    
+    def exp_alpha_t_prime(self, t: torch.Tensor, c: float, nu: float) -> Dict[str, torch.Tensor]:
+        ctnu = c*torch.pow(t, nu)
+        alpha_t_prime = -c*nu*torch.pow(t, nu-1)*torch.exp(ctnu)
         return alpha_t_prime
