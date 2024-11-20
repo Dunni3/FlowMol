@@ -218,13 +218,15 @@ class GVPConv(nn.Module):
                   v_kq_dim: int = 32,
                   s_message_dim: int = None,
                   v_message_dim: int = None,
+                  n_heads: int = 1,
                   n_expansion_gvps: int = 1,
                   use_dst_feats: bool = False, 
                   rbf_dmax: float = 20, 
                   rbf_dim: int = 16,
                   edge_feat_size: int = 0, 
                   message_norm: Union[float, str] = 10, 
-                  dropout: float = 0.0,):
+                  dropout: float = 0.0,
+                  ):
         
         super().__init__()
 
@@ -251,6 +253,7 @@ class GVPConv(nn.Module):
         self.s_kq_dim = s_kq_dim
         self.v_kq_dim = s_kq_dim
         self.attention = attention
+        self.n_heads = n_heads
 
         if s_message_dim is None:
             self.s_message_dim = scalar_size
@@ -258,17 +261,54 @@ class GVPConv(nn.Module):
         if v_message_dim is None:
             self.v_message_dim = vector_size
 
+        # determine whether we are performing compressed message passing
+        if self.s_message_dim != scalar_size or self.v_message_dim != vector_size:
+            self.compressed_messaging = True
+        else:
+            self.compressed_messaging = False
+
+
+        # if message size is smaller than node embedding size, we need to project node features down to message size
+        if self.compressed_messaging:
+            compression_gvps = []
+            for i in range(n_expansion_gvps): # implicit here that n_expansion_gvps is the same as n_compression_gvps
+                if i == 0:
+                    dim_feats_in = scalar_size
+                    dim_vectors_in = vector_size
+                else:
+                    dim_feats_in = max(self.s_message_dim, scalar_size)
+                    dim_vectors_in = max(self.v_message_dim, vector_size)
+
+                if i == n_expansion_gvps - 1:
+                    dim_feats_out = self.s_message_dim
+                    dim_vectors_out = self.v_message_dim
+                else:
+                    dim_feats_out = max(self.s_message_dim, scalar_size)
+                    dim_vectors_out = max(self.v_message_dim, vector_size)
+
+                compression_gvps.append(
+                    GVP(dim_vectors_in=dim_vectors_in, 
+                        dim_vectors_out=dim_vectors_out,
+                        n_cp_feats=n_cp_feats,
+                        dim_feats_in=dim_feats_in, 
+                        dim_feats_out=dim_feats_out,
+                        feats_activation=scalar_activation(), 
+                        vectors_activation=vector_activation(), 
+                        vector_gating=True)
+                )
+            self.node_compression = nn.Sequential(*compression_gvps)
+        else:
+            self.node_compression = nn.Identity()
+
 
         # create message passing function
         message_gvps = []
-
         s_slope = (self.s_message_dim - scalar_size) / n_message_gvps
         v_slope = (self.v_message_dim - vector_size) / n_message_gvps
-
         for i in range(n_message_gvps):
 
-            dim_vectors_in = vector_size
-            dim_feats_in = scalar_size
+            dim_vectors_in = self.v_message_dim
+            dim_feats_in = self.s_message_dim
 
             # on the first layer, there is an extra edge vector for the displacement vector between the two node positions
             if i == 0:
@@ -346,11 +386,8 @@ class GVPConv(nn.Module):
             self.agg_func = fn.sum
 
 
-        if attention:
-            # TODO: could have fewer heads than the number of features
-            self.n_att_head = self.s_message_dim + self.v_message_dim
-
-            # create keq and query generating gvp function
+        if attention:            
+            # create key and query generating gvp function
             kq_gvps = []
             for i in range(n_kq_gvps):
 
@@ -358,8 +395,8 @@ class GVPConv(nn.Module):
                 dim_vectors_out = 2*v_kq_dim
 
                 if i == 0:
-                    dim_feats_in = scalar_size
-                    dim_vectors_in = vector_size
+                    dim_feats_in = self.s_message_dim
+                    dim_vectors_in = self.v_message_dim
                 else:
                     dim_feats_in = 2*s_kq_dim
                     dim_vectors_in = 2*v_kq_dim
@@ -383,38 +420,49 @@ class GVPConv(nn.Module):
                 # nn.LayerNorm(inp_dim),
                 nn.Linear(inp_dim, inp_dim*2),
                 nn.SiLU(),
-                nn.Linear(inp_dim*2, self.n_att_head),
+                nn.Linear(inp_dim*2, inp_dim*2),
+                nn.SiLU(),
+                nn.Linear(inp_dim*2, self.n_heads*2),
                 # nn.SiLU(),
                 nn.LayerNorm(self.n_att_head),
             )
 
-            # if message size is smaller than node embedding size, we need to project aggregated messages back to the node embedding size
-            if self.s_message_dim != scalar_size or self.v_message_dim != vector_size:
-                projection_gvps = []
-                for i in range(n_expansion_gvps):
-                    if i == 0:
-                        dim_feats_in = self.s_message_dim
-                        dim_vectors_in = self.v_message_dim
-                    else:
-                        dim_feats_in = scalar_size
-                        dim_vectors_in = vector_size
+            # compute number of features per attention head
+            if s_message_dim % n_heads != 0 or v_message_dim % n_heads != 0:
+                raise ValueError("Number of attention heads must divide the message size.")
 
-                    dim_feats_out = scalar_size
-                    dim_vectors_out = vector_size
+            self.s_feats_per_head = s_message_dim // n_heads
+            self.v_feats_per_head = v_message_dim // n_heads
 
-                    projection_gvps.append(
-                        GVP(dim_vectors_in=dim_vectors_in, 
-                            dim_vectors_out=dim_vectors_out,
-                            n_cp_feats=n_cp_feats,
-                            dim_feats_in=dim_feats_in, 
-                            dim_feats_out=dim_feats_out,
-                            feats_activation=scalar_activation(), 
-                            vectors_activation=vector_activation(), 
-                            vector_gating=True)
-                    )
-                    self.message_projection = nn.Sequential(*projection_gvps)
-            else:
-                self.message_projection = nn.Identity()
+            # self.n_heads = self.s_message_dim + self.v_message_dim
+
+        # if message size is smaller than node embedding size, we need to project aggregated messages back to the node embedding size
+        if self.compressed_messaging:
+            projection_gvps = []
+            for i in range(n_expansion_gvps):
+                if i == 0:
+                    dim_feats_in = self.s_message_dim
+                    dim_vectors_in = self.v_message_dim
+                else:
+                    dim_feats_in = scalar_size
+                    dim_vectors_in = vector_size
+
+                dim_feats_out = scalar_size
+                dim_vectors_out = vector_size
+
+                projection_gvps.append(
+                    GVP(dim_vectors_in=dim_vectors_in, 
+                        dim_vectors_out=dim_vectors_out,
+                        n_cp_feats=n_cp_feats,
+                        dim_feats_in=dim_feats_in, 
+                        dim_feats_out=dim_feats_out,
+                        feats_activation=scalar_activation(), 
+                        vectors_activation=vector_activation(), 
+                        vector_gating=True)
+                )
+            self.message_expansion = nn.Sequential(*projection_gvps)
+        else:
+            self.message_expansion = nn.Identity()
 
     def forward(self, g: dgl.DGLGraph, 
                 scalar_feats: torch.Tensor,
@@ -449,6 +497,10 @@ class GVPConv(nn.Module):
                 g.edata['x_diff'] = g.edata['x_diff'] / dij
                 g.edata['d'] = _rbf(dij.squeeze(1), D_max=self.rbf_dmax, D_count=self.rbf_dim)
 
+
+            # apply node compression
+            g.ndata['s'], g.ndata['v'] = self.node_compression((g.ndata['s'], g.ndata['v']))
+
             if self.attention:
                 s_kq, v_kq = self.kq_gvp((g.ndata['s'], g.ndata['v']))
                 s_k, s_q = s_kq.chunk(2, dim=1)
@@ -464,9 +516,17 @@ class GVPConv(nn.Module):
 
                 # softmax attention weights
                 att_weights = edge_softmax(g, g.edata['att_weights'])
-                g.edata['a_s'] = att_weights[:, :self.s_message_dim] # has shape (n_edges, s_message_dim)
-                g.edata['a_v'] = att_weights[:, self.s_message_dim:][:, :, None] # has shape (n_edges, v_message_dim, 1)
 
+                # split attention weights by scalar/vector features
+                a_s = att_weights[:, :self.n_heads] # n_edges, n_heads
+                a_v = att_weights[:, self.n_heads:] # n_edges, n_heads
+
+                # expand attention weights to scalar and vector features
+                a_s = a_s.repeat_interleave(self.s_feats_per_head, dim=1) # n_edges, s_message_dim
+                a_v = a_v.repeat_interleave(self.v_feats_per_head, dim=1) # n_edges, v_message_dim
+
+                g.edata['a_s'] = a_s # n_edges, s_message_dim
+                g.edata['a_v'] = a_v.unsqueeze(-1) # n_edges, v_message_dim, 1
 
             # compute messages on every edge
             g.apply_edges(self.message)
@@ -490,14 +550,14 @@ class GVPConv(nn.Module):
             vec_msg = g.ndata["vec_msg"] / z
 
             # apply projection (expansion) to aggregated messages
-            scalar_msg, vec_msg = self.message_projection((scalar_msg, vec_msg))
+            scalar_msg, vec_msg = self.message_expansion((scalar_msg, vec_msg))
 
             # dropout scalar and vector messages
             scalar_msg, vec_msg = self.dropout(scalar_msg, vec_msg)
 
             # update scalar and vector features, apply layernorm
-            scalar_feat = g.ndata['s'] + scalar_msg
-            vec_feat = g.ndata['v'] + vec_msg
+            scalar_feat = scalar_feats + scalar_msg
+            vec_feat = vec_feats + vec_msg
             scalar_feat, vec_feat = self.message_layer_norm(scalar_feat, vec_feat)
 
             # apply node update function, apply dropout to residuals, apply layernorm

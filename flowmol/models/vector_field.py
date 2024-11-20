@@ -41,11 +41,13 @@ class EndpointVectorField(nn.Module):
                     c_token_dim: int = 0,
                     e_token_dim: int = 0,
                     attention: bool = False,
+                    n_heads: int = 1,
                     s_kq_dim: int = 32,
                     v_kq_dim: int = 32,
                     s_message_dim: int = None,
                     v_message_dim: int = None,
-                    has_mask: bool = False # if we are using CTMC, input categorical features will have mask tokens,
+                    dropout: float = 0.0,
+                    has_mask: bool = False, # if we are using CTMC, input categorical features will have mask tokens,
                     # this means their one-hot representations will have an extra dimension,
                     # and the neural network instantiated by this method need to account for this
                     # it is definitely anti-pattern to have a parameter in parent class that is only needed for one sub-class (CTMCVectorField)
@@ -144,10 +146,12 @@ class EndpointVectorField(nn.Module):
                 rbf_dmax=rbf_dmax,
                 rbf_dim=rbf_dim,
                 attention=attention,
+                n_heads=n_heads,
                 s_kq_dim=s_kq_dim,
                 v_kq_dim=v_kq_dim,
                 s_message_dim=s_message_dim,
                 v_message_dim=v_message_dim,
+                dropout=dropout
             )
             )
         self.conv_layers = nn.ModuleList(self.conv_layers)
