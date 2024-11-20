@@ -594,11 +594,11 @@ class GVPConv(nn.Module):
     def compute_attention_weights(self, edges):
 
         # dot prduct all v_k and v_q along the last dimension
-        v_kq = torch.einsum('ijk,ijk->ij', edges.src['v_k'], edges.dst['v_q']) # /(self.v_kq_dim)**0.5
+        v_kq = torch.einsum('ijk,ijk->ij', edges.src['v_k'], edges.dst['v_q']) / self.v_kq_dim**0.5
 
         att_weight_input = [
             edges.src['s_k'],
-            edges.src['s_q'],
+            edges.dst['s_q'],
             v_kq,
             edges.data['ef'],
             edges.data['d']
