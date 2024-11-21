@@ -423,16 +423,14 @@ class GVPConv(nn.Module):
                 nn.Linear(inp_dim*2, inp_dim*2),
                 nn.SiLU(),
                 nn.Linear(inp_dim*2, self.n_heads*2),
-                # nn.SiLU(),
-                nn.LayerNorm(self.n_att_head),
             )
 
             # compute number of features per attention head
-            if s_message_dim % n_heads != 0 or v_message_dim % n_heads != 0:
+            if self.s_message_dim % n_heads != 0 or self.v_message_dim % n_heads != 0:
                 raise ValueError("Number of attention heads must divide the message size.")
 
-            self.s_feats_per_head = s_message_dim // n_heads
-            self.v_feats_per_head = v_message_dim // n_heads
+            self.s_feats_per_head = self.s_message_dim // n_heads
+            self.v_feats_per_head = self.v_message_dim // n_heads
 
             # self.n_heads = self.s_message_dim + self.v_message_dim
 
