@@ -423,6 +423,7 @@ class GVPConv(nn.Module):
                 nn.Linear(inp_dim*2, inp_dim*2),
                 nn.SiLU(),
                 nn.Linear(inp_dim*2, self.n_heads*2),
+                nn.LayerNorm(self.n_heads*2),
             )
 
             # compute number of features per attention head
