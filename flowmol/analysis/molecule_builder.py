@@ -54,8 +54,8 @@ class SampledMolecule:
         # compute valencies on every atom
         self.valencies = self.compute_valencies()
 
+        # build trajectory molecules
         self.traj_frames = traj_frames
-
         if traj_frames is not None:
 
             if build_xt_traj:
