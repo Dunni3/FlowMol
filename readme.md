@@ -8,7 +8,7 @@ This is the offical implementation of the paper [Mixed Continuous and Categorica
 
 # Environment Setup
 
-Assuming you have mamba installed, run the script `build_env.sh`. This creates an environment named `flowmol`. It also pip-install this directory as a package in editable.
+Assuming you have mamba installed, run the script `build_env.sh`. This creates an environment named `flowmol`. It also pip installs this directory as a package in editable mode.
 
 # Download Trained Models
 
@@ -18,7 +18,7 @@ Run the following command to download trained models:
 wget -r -np -nH --cut-dirs=2 --reject 'index.html*' -P flowmol/trained_models/ https://bits.csb.pitt.edu/files/FlowMol/trained_models/
 ```
 
-Trained models are now stored in the  `flowmool/trained_models/` directory. Checkout the [trained models readme](trained_models/readme.md) for a description of the models available. 
+Trained models are now stored in the  `flowmol/trained_models/` directory. Checkout the [trained models readme](trained_models/readme.md) for a description of the models available. 
 
 # Using FlowMol
 
@@ -26,20 +26,19 @@ The easiest way to start using trained models is like so:
 
 ```python
 import flowmol
-model = flowmol.load_model('geom_ctmc').cuda().eval()
-sampled_molecules = model.sample(n_mols=10, n_timesteps=250)
+from flowmol.analysis.metrics import SampleAnalyzer
+model = flowmol.load_model('geom_ctmc').cuda().eval() # load model
+sampled_molecules = model.sample(n_mols=10, n_timesteps=250) # sample molecules
+metrics = SampleAnalyzer().analyze(sampled_molecules) # compute metrics on sampled molecules
 ```
-
-This will load FlowMol trained with CTMC flows for categorical modalities on the GEOM-Drugs dataset, and then samples 10 molecules using 250 Euler integration steps. The sampled molecules are a list of `SampledMolecule` objects.
 
 # How we define a model (config files)
 
 Specifications of the model and the data that the model is trained on are all packaged into one config file. The config files are just yaml files. Once you setup your config file, you pass it as input to the data processing scripts in addition to the training scripts. An example config file is provided at `configs/dev.yml`. This example config file also has some helpful comments in it describing what the different parameters mean.
 
-Actual config files used to train models presented in the paper are available in the `trained_models/` directory.
+Actual config files used to train models presented in the paper are available in the `flowmol/trained_models/` directory.
 
 Note, you don't have to reprocess the dataset for every model you train, as long as the models you are training contain the same parameters under the `dataset` section of the config file. 
-
 
 
 # Sampling
@@ -98,5 +97,5 @@ Note that these commands assumed you have downloaded our trained models as descr
 Run the `train.py` script. You can either pass a config file, or you can pass a trained model checkpoint for resuming. Note in the latter case, the script assumes the checkpoint is inside of a directory that contains a config file. To see the expected file structure of a model directory, refer to the [trained models readme](flowmol/trained_models/readme.md). Here's an example command to train a model:
 
 ```console
-python train.py --config=trained_models/qm9_gaussian/config.yaml
+python train.py --config=flowmol/trained_models/qm9_gaussian/config.yaml
 ```
