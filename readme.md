@@ -8,7 +8,9 @@ This is the offical implementation of the paper [Mixed Continuous and Categorica
 
 # Environment Setup
 
-Assuming you have mamba installed, run the script `build_env.sh`. This creates an environment named `flowmol`. It also pip installs this directory as a package in editable mode.
+1. Create a mamba environment with python 3.10: `mamba create -n flowmol python=3.10`
+2. Activate the environment: `mamba activate flowmol`
+3. Run the script `build_env.sh`. This installs dependencies and pip installs this directory as a package in editable mode.
 
 # Download Trained Models
 

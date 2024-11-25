@@ -1,12 +1,6 @@
 #!/bin/bash
 set -e # this will stop the script on first error
 
-# create new environment
-mamba create -n flowmol python=3.10
-
-# activate the conda environemnt
-mamba activate flowmol
-
 # get the name of the current conda environment
 ENV_NAME=$(basename "$CONDA_PREFIX")
 
