@@ -3,27 +3,46 @@ from rdkit import Chem, RDLogger
 from rdkit.Geometry import Point3D
 import dgl
 from typing import List, Dict
-from data_processing.priors import rigid_alignment
+from flowmol.data_processing.priors import rigid_alignment
+from flowmol.data_processing.utils import get_upper_edge_mask
 from torch.nn.functional import one_hot
 
 bond_type_map = [None, Chem.rdchem.BondType.SINGLE, Chem.rdchem.BondType.DOUBLE, Chem.rdchem.BondType.TRIPLE,
-             Chem.rdchem.BondType.AROMATIC]
+             Chem.rdchem.BondType.AROMATIC, None] # last bond type is for masked bonds
 
 bond_type_to_idx = { bond_type:idx for idx, bond_type in enumerate(bond_type_map)}
+bond_type_to_idx[None] = 0
 
 
 class SampledMolecule:
 
-    def __init__(self, g: dgl.DGLGraph, atom_type_map: List[str], traj_frames: Dict[str, torch.Tensor] = None, exclude_charges: bool = False, align_traj: bool = True):
+    def __init__(self, g: dgl.DGLGraph, 
+        atom_type_map: List[str], 
+        traj_frames: Dict[str, torch.Tensor] = None,
+        ctmc_mol: bool = False, # whether the molecule was sampled from a CTMC model. Important because one-hot encodings will contain a mask token. 
+        exclude_charges: bool = False, 
+        align_traj: bool = True,
+        build_xt_traj=True,
+        build_ep_traj=True,):
         """Represents a molecule sampled from a model. Converts the DGL graph to an rdkit molecule and keeps all associated information."""
+
+        atom_type_map = list(atom_type_map) # create a shallow copy of the atom type map so that we don't modify the original
 
         self.exclude_charges = exclude_charges
         self.align_traj = align_traj
+        self.ctmc_mol = ctmc_mol
+
+        if ctmc_mol:
+            atom_type_map.append('Se') # masked molecules will show up as selenium
         
         # save the graph
         self.g = g
 
-        self.positions, self.atom_types, self.atom_charges, self.bond_types, self.bond_src_idxs, self.bond_dst_idxs = extract_moldata_from_graph(g, atom_type_map, exclude_charges=exclude_charges)
+        self.positions, self.atom_types, self.atom_charges, self.bond_types, self.bond_src_idxs, self.bond_dst_idxs = extract_moldata_from_graph(
+            g, 
+            atom_type_map, 
+            exclude_charges=exclude_charges,
+            ctmc_mol=self.ctmc_mol)
 
         self.atom_type_map = atom_type_map
         self.num_atoms = g.num_nodes()
@@ -35,10 +54,16 @@ class SampledMolecule:
         # compute valencies on every atom
         self.valencies = self.compute_valencies()
 
+        # build trajectory molecules
         self.traj_frames = traj_frames
-
         if traj_frames is not None:
-            self.traj_mols = self.process_traj_frames(traj_frames) # convert frames into a list of rdkit molecules
+
+            if build_xt_traj:
+                self.traj_mols = self.process_traj_frames(traj_frames) # convert frames into a list of rdkit molecules
+
+            # construct molecules for endpoint trajectory
+            if 'x_1_pred' in traj_frames and build_ep_traj:
+                self.ep_traj_mols = self.process_traj_frames(traj_frames, ep_traj=True)
 
     @classmethod
     def from_rdkit_mol(cls, mol: Chem.Mol, atom_type_map: List[str] = None):
@@ -100,27 +125,44 @@ class SampledMolecule:
         valencies = torch.sum(adj, dim=-1).long()
         return valencies
     
-    def process_traj_frames(self, traj_frames: Dict[str, torch.Tensor]):
+    def process_traj_frames(self, traj_frames: Dict[str, torch.Tensor], ep_traj: bool = False):
         """Converts the trajectory frames to a list of rdkit molecules."""
         # convert the frames to a list of rdkit molecules
         g_dummy = copy_graph(self.g)
 
-        n_frames = traj_frames['x'].shape[0]
-
-        x_final = traj_frames['x'][-1] # has shape (n_atoms, 3)
+        if ep_traj:
+            n_frames = traj_frames['x_1_pred'].shape[0]
+            x_final = traj_frames['x_1_pred'][-1]
+        else:
+            n_frames = traj_frames['x'].shape[0]
+            x_final = traj_frames['x'][-1] # has shape (n_atoms, 3)
 
         traj_mols = []
         for frame_idx in range(n_frames):
 
             # put current frame data into graph
             for feat in traj_frames.keys():
+
+                if '1_pred' in feat:
+                    continue
+
                 if feat == 'e':
-                    g_dummy.edata['e_1'] = traj_frames[feat][frame_idx].clone()
+                    data_src = g_dummy.edata
                 else:
-                    g_dummy.ndata[f'{feat}_1'] = traj_frames[feat][frame_idx].clone()
+                    data_src = g_dummy.ndata
+
+                if ep_traj:
+                    traj_key = f'{feat}_1_pred'
+                else:
+                    traj_key = feat
+
+                data_src[f'{feat}_1'] = traj_frames[traj_key][frame_idx].clone()
 
             # extract mol data from graph
-            positions, atom_types, atom_charges, bond_types, bond_src_idxs, bond_dst_idxs = extract_moldata_from_graph(g_dummy, self.atom_type_map)
+            positions, atom_types, atom_charges, bond_types, bond_src_idxs, bond_dst_idxs = extract_moldata_from_graph(
+                g_dummy, 
+                self.atom_type_map,
+                ctmc_mol=self.ctmc_mol)
 
             # align positions to final frame
             if self.align_traj:
@@ -140,7 +182,7 @@ class SampledMolecule:
         return traj_mols
     
 
-def extract_moldata_from_graph(g: dgl.DGLGraph, atom_type_map: List[str], exclude_charges: bool = False):
+def extract_moldata_from_graph(g: dgl.DGLGraph, atom_type_map: List[str], exclude_charges: bool = False, ctmc_mol: bool = False):
 
     # extract node-level features
     positions = g.ndata['x_1']
@@ -154,10 +196,13 @@ def extract_moldata_from_graph(g: dgl.DGLGraph, atom_type_map: List[str], exclud
         atom_charges = None
     else:
         atom_charges = g.ndata['c_1'].argmax(dim=1) - 2 # implicit assumption that index 0 charge is -2
+        if ctmc_mol:
+            atom_charges[atom_charges == 4] = 0 # convert masked atoms to 0 charge
 
 
     # get bond types and atom indicies for every edge, convert types from simplex to integer
     bond_types = g.edata['e_1'].argmax(dim=1)
+    bond_types[bond_types == 5] = 0 # set masked bonds to 0
     bond_src_idxs, bond_dst_idxs = g.edges()
 
     # get just the upper triangle of the adjacency matrix
@@ -228,3 +273,17 @@ def copy_graph(g: dgl.DGLGraph) -> dgl.DGLGraph:
 
 
     return g_copy
+
+def dataset_mol_to_sampled_mol(g, atom_type_map) -> SampledMolecule:
+    for feat in 'xace':
+        if feat == 'e':
+            data_src = g.edata
+        else:
+            data_src = g.ndata
+        data_src[f'{feat}_1'] = data_src[f'{feat}_1_true']
+
+    g.edata['ue_mask'] = get_upper_edge_mask(g)
+    return SampledMolecule(g, atom_type_map)
+
+def dataset_mol_to_rdmol(g, atom_type_map):
+    dataset_mol_to_sampled_mol(g, atom_type_map).rdkit_mol

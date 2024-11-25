@@ -4,7 +4,7 @@ import yaml
 import torch
 from multiprocessing import Pool
 
-from data_processing.dataset import MoleculeDataset
+from flowmol.data_processing.dataset import MoleculeDataset
 
 # I created this script because I was planning on doing pre-alignment. That is, for every molecule in the dataset, 
 # this script would sample the prior and compute the OT-alignment between the prior and the molecule.

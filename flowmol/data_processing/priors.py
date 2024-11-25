@@ -3,7 +3,7 @@ from scipy.optimize import linear_sum_assignment
 import torch
 from torch.nn.functional import softmax, one_hot
 import dgl
-from utils.dirflow import simplex_proj
+from flowmol.utils.dirflow import simplex_proj
 
 def gaussian(n: int, d: int, std: float = 1.0, simplex_center: bool = False):
     """
@@ -76,7 +76,7 @@ def sample_marginal(n: int, d: int, p: torch.Tensor, blur: float = None):
 
     if blur is not None:
         prior_one_hot = prior_one_hot + torch.randn_like(prior_one_hot) * blur
-        prior_one_hot = softmax(prior_one_hot, dim=1)
+        prior_one_hot = softmax(prior_one_hot/(1/d), dim=1)
 
     return prior_one_hot
 
@@ -94,9 +94,17 @@ def sample_p_c_given_a(n: int, d: int, atom_types: torch.Tensor, p_c_given_a: to
 
     if blur is not None:
         charge_simplex = charge_simplex + torch.randn_like(charge_simplex) * blur
-        charge_simplex = softmax(charge_simplex, dim=1)
+        charge_simplex = softmax(charge_simplex/(1/d), dim=1)
 
     return charge_simplex
+
+def ctmc_masked_prior(n: int, d: int):
+    """
+    Sample from a CTMC masked prior. All samples are assigned the mask token at t=0.
+    """
+    p = torch.full((n,), fill_value=d)
+    p = one_hot(p, num_classes=d+1).float()
+    return p
 
 def align_prior(prior_feat: torch.Tensor, dst_feat: torch.Tensor, permutation=False, rigid_body=False, n_alignments: int = 1):
     """
@@ -240,7 +248,8 @@ train_prior_register = {
     'marginal': sample_marginal,
     'c-given-a': sample_p_c_given_a,
     'gaussian': gaussian,
-    'barycenter': barycenter_prior
+    'barycenter': barycenter_prior,
+    'ctmc': ctmc_masked_prior
 }
 
 inference_prior_register = {
@@ -250,7 +259,8 @@ inference_prior_register = {
     'marginal': sample_marginal,
     'c-given-a': sample_p_c_given_a,
     'gaussian': gaussian,
-    'barycenter': barycenter_prior
+    'barycenter': barycenter_prior,
+    'ctmc': ctmc_masked_prior
 }
 
 @torch.no_grad()
@@ -298,7 +308,7 @@ def edge_prior(upper_edge_mask: torch.Tensor, edge_prior_config: dict):
     prior_fn = train_prior_register[edge_prior_config['type']]
     upper_edge_prior = prior_fn(n_upper_edges, 5, **edge_prior_config['kwargs'])
 
-    edge_prior = torch.zeros(upper_edge_mask.shape[0], 5)
+    edge_prior = torch.zeros(upper_edge_mask.shape[0], upper_edge_prior.shape[1])
     edge_prior[upper_edge_mask] = upper_edge_prior
     edge_prior[~upper_edge_mask] = upper_edge_prior
     return edge_prior

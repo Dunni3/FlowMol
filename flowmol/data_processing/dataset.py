@@ -2,7 +2,7 @@ import torch
 from pathlib import Path
 import dgl
 from torch.nn.functional import one_hot
-from data_processing.priors import coupled_node_prior, edge_prior
+from flowmol.data_processing.priors import coupled_node_prior, edge_prior
 
 # create a function named collate that takes a list of samples from the dataset and combines them into a batch
 # this might not be necessary. I think we can pass the argument collate_fn=dgl.batch to the DataLoader
@@ -20,6 +20,16 @@ class MoleculeDataset(torch.utils.data.Dataset):
 
         # get the processed data directory
         processed_data_dir: Path = Path(dataset_config['processed_data_dir'])
+
+        # if the processed data directory does not exist, check it relative to the root of flowmol repository
+        if not processed_data_dir.exists():
+            processed_data_dir = Path(__file__).parent.parent.parent / processed_data_dir
+            if processed_data_dir.exists():
+                dataset_config['processed_data_dir'] = str(processed_data_dir)
+            else:
+                raise FileNotFoundError(f"processed data directory {dataset_config['processed_data_dir']} not found.")
+            
+        self.processed_data_dir = processed_data_dir
 
         # load the marginal distributions of atom types and the conditional distribution of charges given atom type
         marginal_dists_file = processed_data_dir / 'train_data_marginal_dists.pt'

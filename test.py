@@ -3,12 +3,12 @@ import torch
 from pathlib import Path
 import pytorch_lightning as pl
 from pytorch_lightning import seed_everything
-from models.flowmol import FlowMol
-from analysis.molecule_builder import SampledMolecule
-from analysis.metrics import SampleAnalyzer
+from flowmol.models.flowmol import FlowMol
+from flowmol.analysis.molecule_builder import SampledMolecule
+from flowmol.analysis.metrics import SampleAnalyzer
 from typing import List
 from rdkit import Chem
-from model_utils.load import read_config_file
+from flowmol.model_utils.load import read_config_file
 import pickle
 import math
 import time
@@ -22,11 +22,17 @@ def parse_args():
     p.add_argument('--n_mols', type=int, default=100, help='The number of molecules to generate.')
     p.add_argument('--n_atoms_per_mol', type=int, default=None, help="The number of atoms in every molecule. If None, the number of atoms will be sampled independently for each molecule from the training data distribution.")
     p.add_argument('--n_timesteps', type=int, default=20, help="Number of timesteps for integration via Euler's method")
-    p.add_argument('--visualize', action='store_true', help='Visualize the sampled trajectories')
+    # p.add_argument('--visualize', action='store_true', help='Visualize the sampled trajectories')
+    p.add_argument('--xt_traj', action='store_true', help='Save the x-t trajectory of the sampled molecules')
+    p.add_argument('--ep_traj', action='store_true', help='Save the endpoint trajectory of the sampled molecules')
     p.add_argument('--metrics', action='store_true', help='Compute metrics on the sampled molecules')
     p.add_argument('--max_batch_size', type=int, default=128, help='Maximum batch size for sampling molecules')
     p.add_argument('--baseline_comparison', action='store_true', help='Whether these samples are for comparison to the baseline. If true, output format will be different.')
+    # p.add_argument('--temp', type=float, default=1.0, help='Temperature for sampling categorical features')
 
+    p.add_argument('--stochasticity', type=float, default=None, help='Stochasticity for sampling molecules, only applies to models using CTMC')
+    p.add_argument('--hc_thresh', type=float, default=None, help='High confidence threshold for purity sampling, only applies to models using CTMC')
+    
     p.add_argument('--seed', type=int, default=None)
 
     args = p.parse_args()
@@ -37,6 +43,10 @@ def parse_args():
     if args.model_dir is None and args.checkpoint is None:
         raise ValueError('must specify model_dir or checkpoint')
 
+    if args.hc_thresh is not None:
+        if args.hc_thresh < 0 or args.hc_thresh > 1:
+            raise ValueError('hc_thresh must be on the interval [0, 1]')
+
     return args
 
 
@@ -44,6 +54,12 @@ if __name__ == "__main__":
 
     # parse arguments
     args = parse_args()
+
+    # if trajectories are requested in either format, set visualize to True
+    if args.xt_traj or args.ep_traj:
+        visualize = True
+    else:
+        visualize = False
 
     # set seed
     if args.seed is not None:
@@ -86,10 +102,26 @@ if __name__ == "__main__":
         batch_size = min(n_mols_needed, args.max_batch_size)
 
         if args.n_atoms_per_mol is None:
-            batch_molecules: List[SampledMolecule]  = model.sample_random_sizes(batch_size, device=device, n_timesteps=args.n_timesteps, visualize=args.visualize)
+            batch_molecules: List[SampledMolecule]  = model.sample_random_sizes(
+                batch_size, 
+                device=device, 
+                n_timesteps=args.n_timesteps, 
+                xt_traj=args.xt_traj,
+                ep_traj=args.ep_traj,
+                stochasticity=args.stochasticity,
+                high_confidence_threshold=args.hc_thresh,
+            )
         else:
             n_atoms = torch.full((batch_size,), args.n_atoms_per_mol, dtype=torch.long, device=device)
-            batch_molecules: List[SampledMolecule] = model.sample(n_atoms, device=device, n_timesteps=args.n_timesteps, visualize=args.visualize)
+            batch_molecules: List[SampledMolecule] = model.sample(
+                n_atoms, 
+                device=device, 
+                n_timesteps=args.n_timesteps, 
+                xt_traj=args.xt_traj,
+                ep_traj=args.ep_traj,
+                stochasticity=args.stochasticity,
+                high_confidence_threshold=args.hc_thresh,
+                )
 
         molecules.extend(batch_molecules)
     end = time.time()
@@ -137,7 +169,7 @@ if __name__ == "__main__":
     if output_file.suffix != '.sdf':
         raise ValueError('output file must be an sdf file')
     
-    if not args.visualize:
+    if not visualize:
         # print the output_file
         print(f'Writing molecules to {output_file}')
         
@@ -150,17 +182,41 @@ if __name__ == "__main__":
                 sdf_writer.write(rdkit_mol)
         sdf_writer.close()
     else:
-        print('visualize flag set to True, writing a seprate output file for each molecule trajectory')
+        print('Trajectories requested, writing a seprate output file for each molecule trajectory')
         for mol_idx, mol in enumerate(molecules):
-            mol_output_file = output_file.parent / f'{output_file.stem}_{mol_idx}{output_file.suffix}'
-            print(f'Writing molecule {mol_idx} to {mol_output_file}')
 
-            sdf_writer = Chem.SDWriter(str(mol_output_file))
-            sdf_writer.SetKekulize(False)
-            for traj_mol in mol.traj_mols:
-                sdf_writer.write(traj_mol)
-            sdf_writer.close()
+            # write x-t trajectory if requested
+            if args.xt_traj:
+                mol_output_file = output_file.parent / f'{output_file.stem}_{mol_idx}_xt{output_file.suffix}'
+                # print(f'Writing molecule {mol_idx} to {mol_output_file}')
 
+                sdf_writer = Chem.SDWriter(str(mol_output_file))
+                sdf_writer.SetKekulize(False)
+                for traj_mol in mol.traj_mols:
+                    try:
+                        sdf_writer.write(traj_mol)
+                    except Exception as e:
+                        print(e)
+                        continue
+                sdf_writer.close()
+            
+
+            # write endpoint trajectory if requested
+            if args.ep_traj:
+                mol_output_file = output_file.parent / f'{output_file.stem}_{mol_idx}_ep{output_file.suffix}'
+                # print(f'Writing molecule {mol_idx} to {mol_output_file}')
+
+                sdf_writer = Chem.SDWriter(str(mol_output_file))
+                sdf_writer.SetKekulize(False)
+                for traj_mol in mol.ep_traj_mols:
+                    try:
+                        sdf_writer.write(traj_mol)
+                    except Exception as e:
+                        print(e)
+                        continue
+                sdf_writer.close()
+
+        print(f'All molecules written to {output_file.parent}')
     
 
     

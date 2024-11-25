@@ -3,8 +3,8 @@ from torch.utils.data import DataLoader
 import torch
 import dgl
 
-from data_processing.dataset import MoleculeDataset
-from data_processing.samplers import SameSizeMoleculeSampler, SameSizeDistributedMoleculeSampler
+from flowmol.data_processing.dataset import MoleculeDataset
+from flowmol.data_processing.samplers import SameSizeMoleculeSampler, SameSizeDistributedMoleculeSampler
 
 class MoleculeDataModule(pl.LightningDataModule):
 
@@ -21,8 +21,11 @@ class MoleculeDataModule(pl.LightningDataModule):
     def setup(self, stage: str):
 
         if stage == 'fit':
-            self.train_dataset = MoleculeDataset('train', self.dataset_config, prior_config=self.prior_config)
-            self.val_dataset = MoleculeDataset('val', self.dataset_config, prior_config=self.prior_config)
+            self.train_dataset = self.load_dataset('train')
+            self.val_dataset = self.load_dataset('val')
+
+    def load_dataset(self, dataset_name: str):
+        return MoleculeDataset(dataset_name, self.dataset_config, prior_config=self.prior_config)
 
     def train_dataloader(self):
         dataloader = DataLoader(self.train_dataset, 

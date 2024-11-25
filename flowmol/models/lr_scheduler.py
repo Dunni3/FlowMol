@@ -6,7 +6,7 @@ from pathlib import Path
 
 from typing import TYPE_CHECKING
 if TYPE_CHECKING:
-    from models.flowmol import FlowMol
+    from flowmol.models.flowmol import FlowMol
 
 # TODO: refacotr scheduler to have a minimium learning rate when doing restarts
 

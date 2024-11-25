@@ -6,16 +6,18 @@ import pytorch_lightning as pl
 import dgl
 import torch.nn.functional as fn
 from torch.distributions import Exponential
+from pathlib import Path
 
-from .lr_scheduler import LRScheduler
-from .interpolant_scheduler import InterpolantScheduler
-from .vector_field import EndpointVectorField, VectorField, DirichletVectorField
+from flowmol.models.lr_scheduler import LRScheduler
+from flowmol.models.interpolant_scheduler import InterpolantScheduler
+from flowmol.models.vector_field import EndpointVectorField, VectorField, DirichletVectorField
+from flowmol.models.ctmc_vector_field import CTMCVectorField
 
-from data_processing.utils import build_edge_idxs, get_upper_edge_mask, get_batch_idxs
-from data_processing.priors import uniform_simplex_prior, biased_simplex_prior, batched_rigid_alignment, rigid_alignment
-from data_processing.priors import inference_prior_register, edge_prior
-from analysis.molecule_builder import SampledMolecule
-from analysis.metrics import SampleAnalyzer
+from flowmol.data_processing.utils import build_edge_idxs, get_upper_edge_mask, get_batch_idxs
+from flowmol.data_processing.priors import uniform_simplex_prior, biased_simplex_prior, batched_rigid_alignment, rigid_alignment
+from flowmol.data_processing.priors import inference_prior_register, edge_prior
+from flowmol.analysis.molecule_builder import SampledMolecule
+from flowmol.analysis.metrics import SampleAnalyzer
 from einops import rearrange
 
 class FlowMol(pl.LightningModule):
@@ -58,6 +60,14 @@ class FlowMol(pl.LightningModule):
         self.parameterization = parameterization
         self.weight_ae = weight_ae
         self.target_blur = target_blur
+        self.n_atoms_hist_file = n_atoms_hist_file
+
+        # TODO: delete this block of code, it is only here so I can sample from a molecule that was checkpoitned with a bug in it
+        if len(atom_type_map) > 20:
+            atom_type_map = [ v for v in atom_type_map if v != "Se" ]
+            self.atom_type_map = atom_type_map
+            n_atom_types = len(atom_type_map)
+            self.n_atom_types = len(atom_type_map)
 
         if self.weight_ae and parameterization == 'vector-field':
             raise NotImplementedError('weighting the atom and edge losses is not yet implemented for the vector-field parameterization')
@@ -67,6 +77,13 @@ class FlowMol(pl.LightningModule):
         
         if self.target_blur < 0.0:
             raise ValueError('target_blur must be non-negative')
+        
+        # if provided filepath to data dir does not exist, assume it is relative to the repo root
+        processed_data_dir = Path(self.marginal_dists_file).parent
+        if not processed_data_dir.exists():
+            repo_root = Path(__file__).parent.parent.parent
+            self.marginal_dists_file = repo_root / self.marginal_dists_file
+            self.n_atoms_hist_file = repo_root / self.n_atoms_hist_file
 
         # do some boring stuff regarding the prior distribution
         self.configure_prior()
@@ -93,16 +110,15 @@ class FlowMol(pl.LightningModule):
         self.exp_dist = Exponential(1.0)
         
         # construct histogram of number of atoms in each ligand
-        self.n_atoms_hist_file = n_atoms_hist_file
-        self.build_n_atoms_dist(n_atoms_hist_file=n_atoms_hist_file)
+        self.build_n_atoms_dist(n_atoms_hist_file=self.n_atoms_hist_file)
 
         # create interpolant scheduler and vector field
         self.interpolant_scheduler = InterpolantScheduler(canonical_feat_order=self.canonical_feat_order, 
                                                           **interpolant_scheduler_config)
         
         # check that a valid parameterization was specified
-        if self.parameterization not in ['endpoint', 'vector-field', 'dirichlet']:
-            raise ValueError(f'parameterization must be one of "endpoint", "vector-field", or "dirichlet", got {self.parameterization}')
+        if self.parameterization not in ['endpoint', 'vector-field', 'dirichlet', 'ctmc']:
+            raise ValueError(f'parameterization must be one of "endpoint", "vector-field", or "dirichlet", "ctmc", got {self.parameterization}')
 
         if self.parameterization == 'endpoint':
             vector_field_class = EndpointVectorField
@@ -110,6 +126,8 @@ class FlowMol(pl.LightningModule):
             vector_field_class = VectorField
         elif self.parameterization == 'dirichlet':
             vector_field_class = DirichletVectorField
+        elif self.parameterization == 'ctmc':
+            vector_field_class = CTMCVectorField
 
         self.vector_field = vector_field_class(n_atom_types=self.n_atom_types,
                                            canonical_feat_order=self.canonical_feat_order,
@@ -158,6 +176,11 @@ class FlowMol(pl.LightningModule):
             for feat in ['a', 'c', 'e']:
                 if self.prior_config[feat]['type'] != 'uniform-simplex':
                     raise ValueError('dirichlet parameterization requires that all categorical priors be uniform-simplex')
+
+        if self.parameterization == 'ctmc':
+            for feat in ['a', 'c', 'e']:
+                if self.prior_config[feat]['type'] != 'ctmc':
+                    raise ValueError('ctmc parameterization requires that all categorical priors be ctmc')
                 
     def configure_loss_fns(self, device):    
         # instantiate loss functions
@@ -166,7 +189,7 @@ class FlowMol(pl.LightningModule):
         else:
             reduction = 'mean'
 
-        if self.parameterization in  ['endpoint', 'dirichlet']:
+        if self.parameterization in  ['endpoint', 'dirichlet', 'ctmc']:
             categorical_loss_fn = nn.CrossEntropyLoss
         elif self.parameterization == 'vector-field':
             categorical_loss_fn = nn.MSELoss
@@ -179,11 +202,16 @@ class FlowMol(pl.LightningModule):
             a_kwargs = {}
             e_kwargs = {}
 
+        if self.parameterization == 'ctmc':
+            cat_kwargs = {'ignore_index': -100}
+        else:
+            cat_kwargs = {}
+
         self.loss_fn_dict = {
             'x': nn.MSELoss(reduction=reduction),
-            'a': categorical_loss_fn(reduction=reduction, **a_kwargs),
-            'c': categorical_loss_fn(reduction=reduction),
-            'e': categorical_loss_fn(reduction=reduction, **e_kwargs),
+            'a': categorical_loss_fn(reduction=reduction, **a_kwargs, **cat_kwargs),
+            'c': categorical_loss_fn(reduction=reduction, **cat_kwargs),
+            'e': categorical_loss_fn(reduction=reduction, **e_kwargs, **cat_kwargs),
         }
 
     def training_step(self, g: dgl.DGLGraph, batch_idx: int):
@@ -300,7 +328,7 @@ class FlowMol(pl.LightningModule):
                 data_src = g.ndata
 
             # compute the target for endpoint parameterization
-            if self.parameterization in ['endpoint', 'dirichlet']:
+            if self.parameterization in ['endpoint', 'dirichlet', 'ctmc']:
                 target = data_src[f'{feat}_1_true']
                 if feat == "e":
                     target = target[upper_edge_mask]
@@ -323,9 +351,16 @@ class FlowMol(pl.LightningModule):
                 else:
                     alpha_t_prime_i = alpha_t_prime_i[node_batch_idx].unsqueeze(-1)
 
-
-
                 target = alpha_t_prime_i*(x_1 - x_0)
+
+            # for CTMC parameterization, we do not apply loss on already unmasked features
+            if self.parameterization == 'ctmc' and feat in ['a', 'c', 'e']:
+                if feat == 'e':
+                    xt_idxs = data_src[f'{feat}_t'][upper_edge_mask].argmax(-1)
+                else:
+                    xt_idxs = data_src[f'{feat}_t'].argmax(-1)
+                # note that we use the default ignore_index of the CrossEntropyLoss class here
+                target[ xt_idxs != self.n_cat_dict[feat] ] = -100 # set the target to ignore_index when the feature is already unmasked in xt
 
             targets[feat] = target
 
@@ -407,27 +442,42 @@ class FlowMol(pl.LightningModule):
         self.n_atoms_dist = torch.distributions.Categorical(probs=n_atoms_prob)
         self.n_atoms_map = n_atoms
 
-    def sample_n_atoms(self, n_molecules: int):
+    def sample_n_atoms(self, n_molecules: int, **kwargs):
         """Draw samples from the distribution of the number of atoms in a ligand."""
-        n_atoms = self.n_atoms_dist.sample((n_molecules,))
+        n_atoms = self.n_atoms_dist.sample((n_molecules,), **kwargs)
         return self.n_atoms_map[n_atoms]
 
-    def sample_random_sizes(self, n_molecules: int, device="cuda:0", n_timesteps: int = 20, visualize=False):
+    def sample_random_sizes(self, n_molecules: int, device="cuda:0", n_timesteps: int = 20,
+    stochasticity=None, high_confidence_threshold=None, 
+    xt_traj=False, ep_traj=False, **kwargs):
         """Sample n_moceules with the number of atoms sampled from the distribution of the training set."""
 
         # get the number of atoms that will be in each molecules
         atoms_per_molecule = self.sample_n_atoms(n_molecules).to(device)
 
-        return self.sample(atoms_per_molecule, n_timesteps=n_timesteps, device=device, visualize=visualize)
+        return self.sample(atoms_per_molecule, 
+            n_timesteps=n_timesteps, 
+            device=device,  
+            stochasticity=stochasticity, 
+            high_confidence_threshold=high_confidence_threshold,
+            xt_traj=xt_traj,
+            ep_traj=ep_traj, **kwargs)
     
 
     @torch.no_grad()
-    def sample(self, n_atoms: torch.Tensor, n_timesteps: int = 20, device="cuda:0", visualize=False):
+    def sample(self, n_atoms: torch.Tensor, n_timesteps: int = 20, device="cuda:0",
+        stochasticity=None, high_confidence_threshold=None, xt_traj=False, ep_traj=False, **kwargs):
         """Sample molecules with the given number of atoms.
         
         Args:
             n_atoms (torch.Tensor): Tensor of shape (batch_size,) containing the number of atoms in each molecule.
         """
+
+        if xt_traj or ep_traj:
+            visualize = True
+        else:
+            visualize = False
+
         batch_size = n_atoms.shape[0]
 
         # get the edge indicies for each unique number of atoms
@@ -456,7 +506,16 @@ class FlowMol(pl.LightningModule):
         g = self.sample_prior(g, node_batch_idx, upper_edge_mask)
 
         # integrate trajectories
-        itg_result = self.vector_field.integrate(g, node_batch_idx, upper_edge_mask=upper_edge_mask, n_timesteps=n_timesteps, visualize=visualize)
+        integrate_kwargs = {
+            'upper_edge_mask': upper_edge_mask,
+            'n_timesteps': n_timesteps,
+            'visualize': visualize
+        }
+        if self.parameterization == 'ctmc':
+            integrate_kwargs['stochasticity'] = stochasticity
+            integrate_kwargs['high_confidence_threshold'] = high_confidence_threshold
+
+        itg_result = self.vector_field.integrate(g, node_batch_idx, **integrate_kwargs, **kwargs)
 
         if visualize:
             g, traj_frames = itg_result
@@ -466,6 +525,11 @@ class FlowMol(pl.LightningModule):
         g.edata['ue_mask'] = upper_edge_mask
         g = g.to('cpu')
 
+        if self.parameterization == 'ctmc':
+            ctmc_mol = True
+        else:
+            ctmc_mol = False
+
 
         molecules = []
         for mol_idx, g_i in enumerate(dgl.unbatch(g)):
@@ -474,6 +538,10 @@ class FlowMol(pl.LightningModule):
             if visualize:
                 args.append(traj_frames[mol_idx])
 
-            molecules.append(SampledMolecule(*args, exclude_charges=self.exclude_charges))
+            molecules.append(SampledMolecule(*args, 
+                ctmc_mol=ctmc_mol, 
+                build_xt_traj=xt_traj,
+                build_ep_traj=ep_traj,
+                exclude_charges=self.exclude_charges))
 
         return molecules

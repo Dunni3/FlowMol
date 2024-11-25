@@ -1,7 +1,7 @@
-from models.flowmol import FlowMol
+from flowmol.models.flowmol import FlowMol
 from pathlib import Path
 import yaml
-from data_processing.data_module import MoleculeDataModule
+from flowmol.data_processing.data_module import MoleculeDataModule
 
 def read_config_file(config_file: Path) -> dict:
     # process config file into dictionary
