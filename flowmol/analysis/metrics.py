@@ -7,7 +7,7 @@ import wandb
 from flowmol.utils.divergences import DivergenceCalculator
 from flowmol.analysis.ff_energy import compute_mmff_energy
 from flowmol.analysis.reos import REOS
-from flowmol.analysis.ring_systems import RingSystemCounter
+from flowmol.analysis.ring_systems import RingSystemCounter, ring_counts_to_df
 
 allowed_bonds = {'H': {0: 1, 1: 0, -1: 0},
                  'C': {0: [3, 4], 1: 3, -1: 3},
@@ -65,6 +65,12 @@ class SampleAnalyzer():
             'avg_frag_frac': avg_frag_frac,
             'avg_num_components': avg_num_components
         }
+        # TODO: i think the return_counts functionality was so that we could
+        # compute metrics on the  entire dataset by chunking it and combining the counts at the end
+        # this functionality is not supported yet for reos and rings`
+        # before we compute dataset-level metrics, we need to implement the functionality to combine counts
+        # of reos/rings outputs. 
+        metrics_dict.update(self.reos_and_rings(sampled_molecules, return_raw=False))
 
         if return_counts:
             counts_dict = {}
@@ -155,7 +161,7 @@ class SampleAnalyzer():
 
         return js_div
 
-    def reos_and_rings(self, samples: List[SampledMolecule]):
+    def reos_and_rings(self, samples: List[SampledMolecule], return_raw=False):
         """ samples: list of SampledMolecule objects. """
         rd_mols = [sample.rdkit_mol for sample in samples]
         sanitized_mols = []
@@ -176,7 +182,19 @@ class SampleAnalyzer():
                     'reos_flag_header': reos.flag_arr_header,
                     'ring_counts': ring_counts
                 }
-        return result
+        if return_raw:
+            return result
+        
+        n_flags = reos_flags.sum()
+        n_mols = reos_flags.shape[0]
+        flag_rate = n_flags / n_mols
+
+        sample_counts, chembl_counts, n_mols = ring_counts
+        df_ring = ring_counts_to_df(sample_counts, chembl_counts, n_mols)
+        ood_ring_count = df_ring[df_ring['chembl_count'] == 0]['sample_count'].sum()
+        ood_rate = ood_ring_count / n_mols
+        
+        return dict(flag_rate=flag_rate, ood_rate=ood_rate)
 
 def check_stability(molecule: SampledMolecule):
     """ molecule: Molecule object. """
