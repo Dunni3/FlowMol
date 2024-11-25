@@ -26,7 +26,7 @@ The easiest way to start using trained models is like so:
 
 ```python
 import flowmol
-model = flowmol.load_from_name('geom_ctmc').cuda().eval()
+model = flowmol.load_model('geom_ctmc').cuda().eval()
 sampled_molecules = model.sample(n_mols=10, n_timesteps=250)
 ```
 
