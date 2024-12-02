@@ -61,7 +61,7 @@ def download_remote_model_dir(local_model_dir: Path):
 
     # get location of remote model dir
     model_name = local_model_dir.name
-    remote_model_dir = f"'https://bits.csb.pitt.edu/files/FlowMol/trained_models/{model_name}/"
+    remote_model_dir = f"https://bits.csb.pitt.edu/files/FlowMol/trained_models/{model_name}/"
 
     # download the model
     wget_cmd = f"wget -r -np -nH --cut-dirs=2 --reject 'index.html*' -P {local_model_dir} {remote_model_dir}"
