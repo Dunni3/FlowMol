@@ -12,7 +12,6 @@ pretrained_model_names = [
     'qm9_simplexflow',
     'qm9_dirichlet'
 ]
-pretrained_models_remote_url = 'https://bits.csb.pitt.edu/files/FlowMol/trained_models/'
 
 def load_pretrained(model_name: str) -> FlowMol:
     """Load one of the pre-trained models by name.
