@@ -22,7 +22,7 @@ The easiest way to start using trained models is like so:
 ```python
 import flowmol
 model = flowmol.load_pretrained('geom_ctmc').cuda().eval() # load model
-sampled_molecules = model.sample(n_mols=10, n_timesteps=250) # sample molecules
+sampled_molecules = model.sample_random_sizes(n_mols=10, n_timesteps=250) # sample molecules
 ```
 
 The pretrained models that are available for use are described in the [trained models readme](flowmol/trained_models/readme.md) and can also be listed with `help(flowmol.load_pretrained)`. `flowmol.load_pretrained` will download trained models at runtime if they are not already present in the `flowmol/trained_models/` directory. You can manually download all available trained models following the instructions in the [trained models readme](flowmol/trained_models/readme.md).
