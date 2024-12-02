@@ -15,27 +15,18 @@ This is the offical implementation of FlowMol, a flow matching model for uncondi
 2. Activate the environment: `mamba activate flowmol`
 3. Run the script `build_env.sh`. This installs dependencies and pip installs this directory as a package in editable mode.
 
-# Download Trained Models
-
-Run the following command to download trained models:
-
-```console
-wget -r -np -nH --cut-dirs=2 --reject 'index.html*' -P flowmol/trained_models/ https://bits.csb.pitt.edu/files/FlowMol/trained_models/
-```
-
-Trained models are now stored in the  `flowmol/trained_models/` directory. Checkout the [trained models readme](trained_models/readme.md) for a description of the models available. 
-
 # Using FlowMol
 
 The easiest way to start using trained models is like so:
 
 ```python
 import flowmol
-from flowmol.analysis.metrics import SampleAnalyzer
-model = flowmol.load_model('geom_ctmc').cuda().eval() # load model
+model = flowmol.load_pretrained('geom_ctmc').cuda().eval() # load model
 sampled_molecules = model.sample(n_mols=10, n_timesteps=250) # sample molecules
-metrics = SampleAnalyzer().analyze(sampled_molecules) # compute metrics on sampled molecules
 ```
+
+The pretrained models that are available for use are described in the [trained models readme](flowmol/trained_models/readme.md) and can also be listed with `help(flowmol.load_pretrained)`. `flowmol.load_pretrained` will download trained models at runtime if they are not already present in the `flowmol/trained_models/` directory. You can manually download all available trained models following the instructions in the [trained models readme](flowmol/trained_models/readme.md).
+
 
 # How we define a model (config files)
 
@@ -44,7 +35,6 @@ Specifications of the model and the data that the model is trained on are all pa
 Actual config files used to train models presented in the paper are available in the `flowmol/trained_models/` directory.
 
 Note, you don't have to reprocess the dataset for every model you train, as long as the models you are training contain the same parameters under the `dataset` section of the config file. 
-
 
 # Sampling
 In addition to the sampling example provdid in the "Using FlowMol" section, you can also sample from a trained model using the `test.py` script which has some extra features built into it like returning sampling trajectories and computing metrics on the generated molecules. To sample from a trained model, using `test.py`, pass a trained model directory or a checkpoint with the `--model_dir` or `--checkpoint` arguments, respectively. Here's an example command to sample from a trained model:
