@@ -3,7 +3,7 @@
 [![arXiv](https://img.shields.io/badge/arXiv-1234.56789-b31b1b.svg?style=flat)](https://arxiv.org/abs/2411.16644)
 [![arXiv](https://img.shields.io/badge/arXiv-1234.56789-b31b1b.svg?style=flat)](https://arxiv.org/abs/2404.19739)
 
-![Image](figures/ga.png)
+![Image](images/ga.png)
 
 This is the offical implementation of FlowMol, a flow matching model for unconditional 3D de novo molecule generation. The development of this model/code-base is described in the following papers:
 1. Dunn, I. & Koes, D. R. Exploring Discrete Flow Matching for 3D De Novo Molecule Generation. Preprint at https://doi.org/10.48550/arXiv.2411.16644 (2024).

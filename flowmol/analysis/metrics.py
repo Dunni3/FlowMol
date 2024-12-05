@@ -164,11 +164,13 @@ class SampleAnalyzer():
     def reos_and_rings(self, samples: List[SampledMolecule], return_raw=False):
         """ samples: list of SampledMolecule objects. """
         rd_mols = [sample.rdkit_mol for sample in samples]
+        valid_idxs = []
         sanitized_mols = []
-        for mol in rd_mols:
+        for i, mol in enumerate(rd_mols):
             try:
                 Chem.SanitizeMol(mol)
                 sanitized_mols.append(mol)
+                valid_idxs.append(i)
             except:
                 continue
         reos = REOS(active_rules=["Glaxo", "Dundee"])
@@ -177,12 +179,14 @@ class SampleAnalyzer():
         reos_flags = reos.mols_to_flag_arr(sanitized_mols)
         ring_counts = ring_system_counter.count_ring_systems(sanitized_mols)
 
-        result = {
-                    'reos_flag_arr': reos_flags,
-                    'reos_flag_header': reos.flag_arr_header,
-                    'ring_counts': ring_counts
-                }
         if return_raw:
+            result = {
+                        'reos_flag_arr': reos_flags,
+                        'reos_flag_header': reos.flag_arr_header,
+                        'smarts_arr': reos.smarts_arr,
+                        'ring_counts': ring_counts,
+                        'valid_idxs': valid_idxs
+                    }
             return result
         
         n_flags = reos_flags.sum()

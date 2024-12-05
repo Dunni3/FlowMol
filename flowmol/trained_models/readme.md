@@ -23,7 +23,7 @@ model_directory:
 Run the following command **from the root of this repository**:
 
 ```console
-wget -r -np -nH --cut-dirs=2 --reject 'index.html*' -P flowmol/trained_models/ https://bits.csb.pitt.edu/files/FlowMol/trained_models/
+wget -r -np -nH --cut-dirs=2 --reject 'index.html*' -P flowmol/trained_models/ https://bits.csb.pitt.edu/files/FlowMol/trained_models_v02/
 ```
 
 Trained models are now stored in the  `flowmol/trained_models/` directory. 
