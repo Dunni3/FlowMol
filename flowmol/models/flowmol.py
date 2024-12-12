@@ -447,7 +447,7 @@ class FlowMol(pl.LightningModule):
         n_atoms = self.n_atoms_dist.sample((n_molecules,), **kwargs)
         return self.n_atoms_map[n_atoms]
 
-    def sample_random_sizes(self, n_molecules: int, device="cuda:0", n_timesteps: int = 20,
+    def sample_random_sizes(self, n_molecules: int, device="cuda:0", n_timesteps: int = 250,
     stochasticity=None, high_confidence_threshold=None, 
     xt_traj=False, ep_traj=False, **kwargs):
         """Sample n_moceules with the number of atoms sampled from the distribution of the training set."""
@@ -465,7 +465,7 @@ class FlowMol(pl.LightningModule):
     
 
     @torch.no_grad()
-    def sample(self, n_atoms: torch.Tensor, n_timesteps: int = 20, device="cuda:0",
+    def sample(self, n_atoms: torch.Tensor, n_timesteps: int = 250, device="cuda:0",
         stochasticity=None, high_confidence_threshold=None, xt_traj=False, ep_traj=False, **kwargs):
         """Sample molecules with the given number of atoms.
         
