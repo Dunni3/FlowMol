@@ -1,5 +1,6 @@
 from typing import List
 from .molecule_builder import SampledMolecule
+from pathlib import Path
 import torch
 from rdkit import Chem
 from collections import Counter
@@ -25,12 +26,15 @@ bond_dict = [None, Chem.rdchem.BondType.SINGLE, Chem.rdchem.BondType.DOUBLE, Che
 
 class SampleAnalyzer():
 
-    def __init__(self, processed_data_dir: str = None):
+    def __init__(self, processed_data_dir: str = None, dataset='geom'):
 
         self.processed_data_dir = processed_data_dir
-        if self.processed_data_dir is not None:
-            energy_dist_file = self.processed_data_dir / 'energy_dist.npz'
-            self.energy_div_calculator = DivergenceCalculator(energy_dist_file)
+
+        if self.processed_data_dir is None:
+            self.processed_data_dir = Path(__file__).parent.parent.parent / 'data' / dataset
+
+        energy_dist_file = self.processed_data_dir / 'energy_dist.npz'
+        self.energy_div_calculator = DivergenceCalculator(energy_dist_file)
             
 
     def analyze(self, sampled_molecules: List[SampledMolecule], return_counts: bool = False):
@@ -84,6 +88,9 @@ class SampleAnalyzer():
             counts_dict['sum_num_components'] = sum_num_components
             counts_dict['n_num_components'] = n_num_components
             return counts_dict
+        
+        if self.processed_data_dir is not None and Path(self.processed_data_dir).exists():
+            metrics_dict['energy_js_div'] = self.compute_energy_divergence(sampled_molecules)
 
 
         return metrics_dict
