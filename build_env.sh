@@ -13,5 +13,5 @@ mamba install -c dglteam/label/cu121 dgl=2.0.0.cu121=py310_0 -y
 mamba install -c conda-forge pytorch-lightning=2.1.3=pyhd8ed1ab_0 -y
 mamba install -c conda-forge rdkit=2023.09.4=py310hb79e901_0 pystow einops -y
 
-pip install wandb useful_rdkit_utils --no-input
+pip install wandb useful_rdkit_utils py3Dmol --no-input
 pip install -e ./
