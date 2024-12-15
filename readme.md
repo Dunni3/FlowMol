@@ -1,13 +1,17 @@
 # FlowMol: Mixed Continuous and Categorical Flow Matching for 3D De Novo Molecule Generation
 
+[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/Dunni3/FlowMol/blob/main/examples/flowmol_demo.ipynb)
 [![arXiv](https://img.shields.io/badge/arXiv-1234.56789-b31b1b.svg?style=flat)](https://arxiv.org/abs/2411.16644)
-[![arXiv](https://img.shields.io/badge/arXiv-1234.56789-b31b1b.svg?style=flat)](https://arxiv.org/abs/2404.19739)
 
 ![Image](images/ga.png)
 
 This is the offical implementation of FlowMol, a flow matching model for unconditional 3D de novo molecule generation. The development of this model/code-base is described in the following papers:
 1. Dunn, I. & Koes, D. R. Exploring Discrete Flow Matching for 3D De Novo Molecule Generation. Preprint at https://doi.org/10.48550/arXiv.2411.16644 (2024).
 2. Dunn, I. & Koes, D. R. Mixed Continuous and Categorical Flow Matching for 3D De Novo Molecule Generation. Preprint at https://doi.org/10.48550/arXiv.2404.19739 (2024).
+
+# Try it in Colab
+
+Try out FlowMol in a Google Colab notebook by clicking the "Open in Colab" badge at the top of this readme, or just [click here](https://colab.research.google.com/github/Dunni3/FlowMol/blob/main/examples/flowmol_demo.ipynb). This notebook demonstrates how to load a pretrained model, sample molecules from it, and run evaluations from the paper.
 
 # Environment Setup
 
