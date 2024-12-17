@@ -8,7 +8,9 @@ from flowmol.data_processing.samplers import SameSizeMoleculeSampler, SameSizeDi
 
 class MoleculeDataModule(pl.LightningDataModule):
 
-    def __init__(self, dataset_config: dict, dm_prior_config: dict, batch_size: int, num_workers: int = 0, distributed: bool = False, max_num_edges: int = 40000):
+    def __init__(self, dataset_config: dict, dm_prior_config: dict, batch_size: int, 
+                 num_workers: int = 0, distributed: bool = False, 
+                 max_num_edges: int = 40000):
         super().__init__()
         self.distributed = distributed
         self.dataset_config = dataset_config

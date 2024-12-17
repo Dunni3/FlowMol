@@ -45,6 +45,7 @@ class FlowMol(pl.LightningModule):
                  vector_field_config: dict = {},
                  prior_config: dict = {},
                  ema_weight: float = 0.999,
+                 fake_atom_p: float = 0.0,
                  ):
         super().__init__()
 
@@ -62,6 +63,8 @@ class FlowMol(pl.LightningModule):
         self.weight_ae = weight_ae
         self.target_blur = target_blur
         self.n_atoms_hist_file = n_atoms_hist_file
+        self.fake_atom_p = fake_atom_p
+        self.fake_atoms = fake_atom_p > 0
 
         # TODO: delete this block of code, it is only here so I can sample from a molecule that was checkpoitned with a bug in it
         if len(atom_type_map) > 20:
@@ -136,6 +139,7 @@ class FlowMol(pl.LightningModule):
                                            n_charges=n_atom_charges, 
                                            n_bond_types=n_bond_types,
                                            exclude_charges=self.exclude_charges,
+                                           fake_atoms=self.fake_atoms,
                                            **vector_field_config)
 
         # remove charge loss function if necessary

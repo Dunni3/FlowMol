@@ -2,9 +2,9 @@ import torch
 from pathlib import Path
 import dgl
 from torch.nn.functional import one_hot
+import math
 from flowmol.data_processing.priors import coupled_node_prior, edge_prior
 
-# create a function named collate that takes a list of samples from the dataset and combines them into a batch
 # this might not be necessary. I think we can pass the argument collate_fn=dgl.batch to the DataLoader
 def collate(graphs):
     return dgl.batch(graphs)
@@ -17,6 +17,8 @@ class MoleculeDataset(torch.utils.data.Dataset):
         # unpack some configs regarding the prior
         self.prior_config = prior_config
         self.dataset_config = dataset_config
+        self.fake_atom_p = dataset_config['fake_atom_p']
+        self.use_fake_atoms = self.fake_atom_p > 0
 
         # get the processed data directory
         processed_data_dir: Path = Path(dataset_config['processed_data_dir'])
@@ -77,6 +79,25 @@ class MoleculeDataset(torch.utils.data.Dataset):
         positions = self.positions[node_start_idx:node_end_idx]
         atom_types = self.atom_types[node_start_idx:node_end_idx].float()
         atom_charges = self.atom_charges[node_start_idx:node_end_idx].long()
+
+        # add fake atoms if necessary
+        if self.use_fake_atoms:
+            n_real_atoms, _ = positions.shape
+            max_num_fake_atoms = math.ceil(n_real_atoms*self.fake_atom_p)
+            num_fake_atoms = torch.randint(low=0, high=max_num_fake_atoms, size=(1,))
+    
+            anchor_atom_idxs = torch.randnint(low=0, high=n_real_atoms, size=(num_fake_atoms,))
+            fake_atom_positions = positions[anchor_atom_idxs]
+            # TODO: think about how to decide fake atom positions
+            # currently: gaussians around anchor atom 
+            # possibilities: collapse on nearest atom, random placement in molecule interior,
+            # fixed distance from acnhor atom
+            fake_atom_positions = fake_atom_positions + torch.randn_like(fake_atom_positions) 
+            fake_atom_charges = torch.zeros_like(atom_charges[anchor_atom_idxs])
+            fake_atom_types = torch.zeros_like(atom_types[anchor_atom_idxs])
+
+            # combine fake atoms with real atoms
+            
 
         # remove COM from positions
         positions = positions - positions.mean(dim=0, keepdim=True)
