@@ -47,6 +47,7 @@ mol_fm:
   target_blur: 0.0
   time_scaled_loss: True
   exclude_charges: False
+  fake_atom_p: 0.2
   total_loss_weights:
     x: 1.0
     a: 1.0

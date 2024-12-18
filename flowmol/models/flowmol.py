@@ -63,8 +63,12 @@ class FlowMol(pl.LightningModule):
         self.weight_ae = weight_ae
         self.target_blur = target_blur
         self.n_atoms_hist_file = n_atoms_hist_file
+
+        # fake atoms settings
         self.fake_atom_p = fake_atom_p
         self.fake_atoms = fake_atom_p > 0
+        if self.fake_atoms:
+            self.n_atom_types += 1
 
         # TODO: delete this block of code, it is only here so I can sample from a molecule that was checkpoitned with a bug in it
         if len(atom_type_map) > 20:

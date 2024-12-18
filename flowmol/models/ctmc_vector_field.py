@@ -63,8 +63,8 @@ class CTMCVectorField(EndpointVectorField):
             raise ValueError(f"Invalid dfm_type: {self.dfm_type}")
 
         self.mask_idxs = { # for each categorical feature, the index of the mask token
-            'a': self.n_atom_types + int(fake_atoms),
-            'c': self.n_charges + int(fake_atoms),
+            'a': self.n_atom_types,
+            'c': self.n_charges,
             'e': self.n_bond_types,
         }
 

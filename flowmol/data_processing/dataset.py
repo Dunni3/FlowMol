@@ -86,7 +86,7 @@ class MoleculeDataset(torch.utils.data.Dataset):
             max_num_fake_atoms = math.ceil(n_real_atoms*self.fake_atom_p)
             num_fake_atoms = torch.randint(low=0, high=max_num_fake_atoms, size=(1,))
     
-            anchor_atom_idxs = torch.randnint(low=0, high=n_real_atoms, size=(num_fake_atoms,))
+            anchor_atom_idxs = torch.randint(low=0, high=n_real_atoms, size=(num_fake_atoms,))
             fake_atom_positions = positions[anchor_atom_idxs]
             # TODO: think about how to decide fake atom positions
             # currently: gaussians around anchor atom 
@@ -97,7 +97,13 @@ class MoleculeDataset(torch.utils.data.Dataset):
             fake_atom_types = torch.zeros_like(atom_types[anchor_atom_idxs])
 
             # combine fake atoms with real atoms
-            
+            positions = torch.cat((positions, fake_atom_positions), dim=0)
+            atom_types = torch.cat((atom_types, fake_atom_types), dim=0)
+            atom_charges = torch.cat((atom_charges, fake_atom_charges), dim=0)
+
+            # add an extra column on to atom_types to account for fake atoms
+            atom_types = torch.cat((atom_types, torch.zeros_like(atom_types[:,0:1])), dim=1)
+            atom_types[-num_fake_atoms:, -1] = 1
 
         # remove COM from positions
         positions = positions - positions.mean(dim=0, keepdim=True)
