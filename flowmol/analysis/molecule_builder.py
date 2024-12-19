@@ -196,8 +196,6 @@ def extract_moldata_from_graph(g: dgl.DGLGraph, atom_type_map: List[str], exclud
         atom_charges = None
     else:
         atom_charges = g.ndata['c_1'].argmax(dim=1) - 2 # implicit assumption that index 0 charge is -2
-        if ctmc_mol:
-            atom_charges[atom_charges == 4] = 0 # convert masked atoms to 0 charge
 
 
     # get bond types and atom indicies for every edge, convert types from simplex to integer
