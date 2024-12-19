@@ -210,8 +210,8 @@ class SampleAnalyzer():
             ood_ring_count = df_ring[df_ring['chembl_count'] == 0]['sample_count'].sum()
             ood_rate = ood_ring_count / n_mols
         else:
-            flag_rate = None
-            ood_rate = None
+            flag_rate = -1
+            ood_rate = -1
         
         return dict(flag_rate=flag_rate, ood_rate=ood_rate)
 
