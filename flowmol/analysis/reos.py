@@ -13,11 +13,15 @@ class REOS:
 
         # collect all rule sets into an ordered list of rule names
         self.flag_arr_header = []
-        for desc, rule_set_name in self.reos.active_rule_df[['description', 'rule_set_name']].values:
+        self.smarts_arr = []
+        for desc, rule_set_name, smarts in self.reos.active_rule_df[['description', 'rule_set_name', 'smarts']].values:
             self.flag_arr_header.append(f"{rule_set_name}::{desc}")
+            self.smarts_arr.append(smarts)
 
-        # sort flag_arr_header alphabetically
-        self.flag_arr_header = sorted(self.flag_arr_header)
+        # argsort flag_arr_header and reorder flag_arr_header and smarts_arr
+        argsort_indices = np.argsort(self.flag_arr_header)
+        self.flag_arr_header = [self.flag_arr_header[i] for i in argsort_indices]
+        self.smarts_arr = [self.smarts_arr[i] for i in argsort_indices]
 
     def mol_to_flags(self, mol):
         """Match a molecule against the active rule set
