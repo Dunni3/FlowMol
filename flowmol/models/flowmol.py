@@ -468,7 +468,7 @@ class FlowMol(pl.LightningModule):
 
     @torch.no_grad()
     def sample(self, n_atoms: torch.Tensor, n_timesteps: int = 250, device="cuda:0",
-        stochasticity=None, high_confidence_threshold=None, xt_traj=False, ep_traj=False, show_fake_atoms=False, **kwargs):
+        stochasticity=None, high_confidence_threshold=None, xt_traj=False, ep_traj=False, **kwargs):
         """Sample molecules with the given number of atoms.
         
         Args:
@@ -543,7 +543,6 @@ class FlowMol(pl.LightningModule):
             molecules.append(SampledMolecule(*args, 
                 ctmc_mol=ctmc_mol, 
                 fake_atoms=self.fake_atoms,
-                show_fake_atoms=show_fake_atoms,
                 build_xt_traj=xt_traj,
                 build_ep_traj=ep_traj,
                 exclude_charges=self.exclude_charges))
