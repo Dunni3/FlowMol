@@ -183,8 +183,12 @@ class SampleAnalyzer():
         reos = REOS(active_rules=["Glaxo", "Dundee"])
         ring_system_counter = RingSystemCounter()
 
-        reos_flags = reos.mols_to_flag_arr(sanitized_mols)
-        ring_counts = ring_system_counter.count_ring_systems(sanitized_mols)
+        if len(sanitized_mols) == 0:
+            reos_flags = reos.mols_to_flag_arr(sanitized_mols)
+            ring_counts = ring_system_counter.count_ring_systems(sanitized_mols)
+        else:
+            reos_flags = None
+            ring_counts = None
 
         if return_raw:
             result = {
@@ -196,14 +200,18 @@ class SampleAnalyzer():
                     }
             return result
         
-        n_flags = reos_flags.sum()
-        n_mols = reos_flags.shape[0]
-        flag_rate = n_flags / n_mols
+        if reos_flags is not None:
+            n_flags = reos_flags.sum()
+            n_mols = reos_flags.shape[0]
+            flag_rate = n_flags / n_mols
 
-        sample_counts, chembl_counts, n_mols = ring_counts
-        df_ring = ring_counts_to_df(sample_counts, chembl_counts, n_mols)
-        ood_ring_count = df_ring[df_ring['chembl_count'] == 0]['sample_count'].sum()
-        ood_rate = ood_ring_count / n_mols
+            sample_counts, chembl_counts, n_mols = ring_counts
+            df_ring = ring_counts_to_df(sample_counts, chembl_counts, n_mols)
+            ood_ring_count = df_ring[df_ring['chembl_count'] == 0]['sample_count'].sum()
+            ood_rate = ood_ring_count / n_mols
+        else:
+            flag_rate = None
+            ood_rate = None
         
         return dict(flag_rate=flag_rate, ood_rate=ood_rate)
 
