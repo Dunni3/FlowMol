@@ -20,6 +20,8 @@ class SampledMolecule:
         atom_type_map: List[str], 
         traj_frames: Dict[str, torch.Tensor] = None,
         ctmc_mol: bool = False, # whether the molecule was sampled from a CTMC model. Important because one-hot encodings will contain a mask token. 
+        fake_atoms: bool = False, # whether the molecule contains fake atoms,
+        show_fake_atoms: bool = False, # whether to include fake atoms in the rdkit molecule
         exclude_charges: bool = False, 
         align_traj: bool = True,
         build_xt_traj=True,
@@ -31,18 +33,26 @@ class SampledMolecule:
         self.exclude_charges = exclude_charges
         self.align_traj = align_traj
         self.ctmc_mol = ctmc_mol
+        self.fake_atoms = fake_atoms
+        self.show_fake_atoms = show_fake_atoms
+
+        if fake_atoms and show_fake_atoms:
+            atom_type_map.append('As') # fake atoms will show up as arsenic
 
         if ctmc_mol:
             atom_type_map.append('Se') # masked molecules will show up as selenium
+        
         
         # save the graph
         self.g = g
 
         self.positions, self.atom_types, self.atom_charges, self.bond_types, self.bond_src_idxs, self.bond_dst_idxs = extract_moldata_from_graph(
-            g, 
+            copy_graph(g), 
             atom_type_map, 
             exclude_charges=exclude_charges,
-            ctmc_mol=self.ctmc_mol)
+            ctmc_mol=self.ctmc_mol,
+            fake_atoms=self.fake_atoms,
+            show_fake_atoms=self.show_fake_atoms,)
 
         self.atom_type_map = atom_type_map
         self.num_atoms = g.num_nodes()
@@ -162,7 +172,8 @@ class SampledMolecule:
             positions, atom_types, atom_charges, bond_types, bond_src_idxs, bond_dst_idxs = extract_moldata_from_graph(
                 g_dummy, 
                 self.atom_type_map,
-                ctmc_mol=self.ctmc_mol)
+                ctmc_mol=self.ctmc_mol,
+                fake_atoms=self.fake_atoms,)
 
             # align positions to final frame
             if self.align_traj:
@@ -182,7 +193,14 @@ class SampledMolecule:
         return traj_mols
     
 
-def extract_moldata_from_graph(g: dgl.DGLGraph, atom_type_map: List[str], exclude_charges: bool = False, ctmc_mol: bool = False):
+def extract_moldata_from_graph(g: dgl.DGLGraph, atom_type_map: List[str], exclude_charges: bool = False, ctmc_mol: bool = False, fake_atoms: bool = False, show_fake_atoms: bool = False):
+
+    # if fake atoms are present, identify them
+    if fake_atoms and not show_fake_atoms:
+        fake_atom_token_idx  = len(atom_type_map) - 1 - int(ctmc_mol)
+        fake_atom_mask = g.ndata['a_1'].argmax(dim=1) == fake_atom_token_idx
+        fake_atom_idxs = torch.where(fake_atom_mask)[0]
+        g.remove_nodes(fake_atom_idxs)
 
     # extract node-level features
     positions = g.ndata['x_1']
@@ -198,7 +216,6 @@ def extract_moldata_from_graph(g: dgl.DGLGraph, atom_type_map: List[str], exclud
         atom_charges = g.ndata['c_1'].argmax(dim=1) - 2 # implicit assumption that index 0 charge is -2
         if ctmc_mol:
             atom_charges[atom_charges == 4] = 0 # convert masked atoms to 0 charge
-
 
     # get bond types and atom indicies for every edge, convert types from simplex to integer
     bond_types = g.edata['e_1'].argmax(dim=1)
