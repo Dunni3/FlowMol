@@ -1,3 +1,12 @@
+[project]
+name = "flowmol"
+version = "0.1"
+requires-python = ">=3.10,<3.11"
+description = "Flow matching for 3D de novo molecule generation"
+authors = [
+    { name = "Ian Dunn", email = "ian.dunn@pitt.edu" }
+]
+
 [build-system]
 requires = ["setuptools>=45", "wheel"]
 build-backend = "setuptools.build_meta"
