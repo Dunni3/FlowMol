@@ -7,6 +7,7 @@ import scipy
 
 from flowmol.models.gvp import GVPConv, GVP, _rbf, _norm_no_nan
 from flowmol.models.interpolant_scheduler import InterpolantScheduler
+from flowmol.models.self_conditioning import SelfConditioningResidualLayer
 from flowmol.utils.dirflow import DirichletConditionalFlow, simplex_proj
 from flowmol.utils.embedding import get_time_embedding
 
@@ -47,7 +48,9 @@ class EndpointVectorField(nn.Module):
                     s_message_dim: int = None,
                     v_message_dim: int = None,
                     dropout: float = 0.0,
-                    has_mask: bool = False, # if we are using CTMC, input categorical features will have mask tokens,
+                    has_mask: bool = False,
+                    self_conditioning: bool = False,
+                    # if we are using CTMC, input categorical features will have mask tokens,
                     # this means their one-hot representations will have an extra dimension,
                     # and the neural network instantiated by this method need to account for this
                     # it is definitely anti-pattern to have a parameter in parent class that is only needed for one sub-class (CTMCVectorField)
@@ -68,6 +71,7 @@ class EndpointVectorField(nn.Module):
         self.interpolant_scheduler = interpolant_scheduler
         self.canonical_feat_order = canonical_feat_order
         self.time_embedding_dim = time_embedding_dim
+        self.self_conditioning = self_conditioning
 
         if self.exclude_charges:
             raise ValueError("exclude_charges is deprecated")
@@ -180,6 +184,9 @@ class EndpointVectorField(nn.Module):
             nn.Linear(n_hidden_edge_feats, n_bond_types)
         )
 
+        if self.self_conditioning:
+            self.self_conditioning_residual_layer = SelfConditioningResidualLayer()
+
     def build_continuous_inv_temp_func(self, schedule, max_inv_temp=None):
 
         if schedule is None:
@@ -193,9 +200,15 @@ class EndpointVectorField(nn.Module):
         return inv_temp_func
         
 
-    def forward(self, g: dgl.DGLGraph, t: torch.Tensor, 
-                 node_batch_idx: torch.Tensor, upper_edge_mask: torch.Tensor, apply_softmax=False, remove_com=False):
-        """Predict x_1 (trajectory destination) given x_t"""
+    def forward(self, 
+                g: dgl.DGLGraph, 
+                t: torch.Tensor, 
+                node_batch_idx: torch.Tensor, 
+                upper_edge_mask: torch.Tensor, 
+                apply_softmax=False, 
+                remove_com=False,
+                prev_dst_dict=None):
+        """Predict x_1 (trajectory destination) given x_t, and, optionally, previous destination features."""
         device = g.device
 
         with g.local_scope():
@@ -238,51 +251,85 @@ class EndpointVectorField(nn.Module):
                 edge_features = self.token_embeddings['e'](g.edata['e_t'].argmax(dim=-1))
             edge_features = self.edge_embedding(edge_features)
 
-            x_diff, d = self.precompute_distances(g)
-            for recycle_idx in range(self.n_recycles):
-                for conv_idx, conv in enumerate(self.conv_layers):
+        # if we are using self-conditoning, and prev_dist_dict is None, then
+        # we must be in training mode, and need to enter the following logic branch:
+        # with p = 0.5, we do a gradient-stopped pass through denoise_graph to get predicted endpoint, 
+        # then set prev_dst_dict to this predicted endpoint
+        # for the other 0.5 of the time, we do nothing!
+        # this logic is all covered by the following if statement
+        if self.self_conditioning and prev_dst_dict is None and (torch.rand(1) > 0.5).item():
+            with torch.no_grad():
+                prev_dst_dict = self.denoise_graph(
+                    g, 
+                    node_scalar_features, node_vec_features, node_positions, edge_features,
+                    node_batch_idx, upper_edge_mask, apply_softmax=True, remove_com=False)
 
-                    # perform a single convolution which updates node scalar and vector features (but not positions)
-                    node_scalar_features, node_vec_features = conv(g, 
-                            scalar_feats=node_scalar_features, 
-                            coord_feats=node_positions,
-                            vec_feats=node_vec_features,
-                            edge_feats=edge_features,
-                            x_diff=x_diff,
-                            d=d
-                    )
+        if prev_dst_dict is not None:
+            # if prev_dst_dict is not none, we need to pass through the self-conditioning residual block
+            node_scalar_features, node_vec_features, node_positions, edge_features = self.self_conditioning_residual_layer(
+                g, node_scalar_features, node_vec_features, node_positions, edge_features, prev_dst_dict
+            )
 
-                    # every convs_per_update convolutions, update the node positions and edge features
-                    if conv_idx != 0 and (conv_idx + 1) % self.convs_per_update == 0:
+        # now, pass through denoising graph
+        dst_dict = self.denoise_graph(g, node_scalar_features, node_vec_features, node_positions, edge_features, node_batch_idx, upper_edge_mask, apply_softmax, remove_com)
+        return dst_dict
 
-                        if self.separate_mol_updaters:
-                            updater_idx = conv_idx // self.convs_per_update
-                        else:
-                            updater_idx = 0
 
-                        node_positions = self.node_position_updaters[updater_idx](node_scalar_features, node_positions, node_vec_features)
+    def denoise_graph(self, g: dgl.DGLGraph,
+                      node_scalar_features: torch.Tensor,
+                      node_vec_features: torch.Tensor,
+                      node_positions: torch.Tensor,
+                      edge_features: torch.Tensor, 
+                      node_batch_idx: torch.Tensor, 
+                      upper_edge_mask: torch.Tensor,
+                      apply_softmax: bool = False,
+                      remove_com: bool = False):
 
-                        x_diff, d = self.precompute_distances(g, node_positions)
+        x_diff, d = self.precompute_distances(g)
+        for recycle_idx in range(self.n_recycles):
+            for conv_idx, conv in enumerate(self.conv_layers):
 
-                        edge_features = self.edge_updaters[updater_idx](g, node_scalar_features, edge_features, d=d)
+                # perform a single convolution which updates node scalar and vector features (but not positions)
+                node_scalar_features, node_vec_features = conv(g, 
+                        scalar_feats=node_scalar_features, 
+                        coord_feats=node_positions,
+                        vec_feats=node_vec_features,
+                        edge_feats=edge_features,
+                        x_diff=x_diff,
+                        d=d
+                )
+
+                # every convs_per_update convolutions, update the node positions and edge features
+                if conv_idx != 0 and (conv_idx + 1) % self.convs_per_update == 0:
+
+                    if self.separate_mol_updaters:
+                        updater_idx = conv_idx // self.convs_per_update
+                    else:
+                        updater_idx = 0
+
+                    node_positions = self.node_position_updaters[updater_idx](node_scalar_features, node_positions, node_vec_features)
+
+                    x_diff, d = self.precompute_distances(g, node_positions)
+
+                    edge_features = self.edge_updaters[updater_idx](g, node_scalar_features, edge_features, d=d)
 
             
-            # predict final charges and atom type logits
-            node_scalar_features = self.node_output_head(node_scalar_features)
-            atom_type_logits = node_scalar_features[:, :self.n_atom_types]
-            if not self.exclude_charges:
-                atom_charge_logits = node_scalar_features[:, self.n_atom_types:]
+        # predict final charges and atom type logits
+        node_scalar_features = self.node_output_head(node_scalar_features)
+        atom_type_logits = node_scalar_features[:, :self.n_atom_types]
+        if not self.exclude_charges:
+            atom_charge_logits = node_scalar_features[:, self.n_atom_types:]
 
-            # predict the final edge logits
-            ue_feats = edge_features[upper_edge_mask]
-            le_feats = edge_features[~upper_edge_mask]
-            edge_logits = self.to_edge_logits(ue_feats + le_feats)
+        # predict the final edge logits
+        ue_feats = edge_features[upper_edge_mask]
+        le_feats = edge_features[~upper_edge_mask]
+        edge_logits = self.to_edge_logits(ue_feats + le_feats)
 
-            # project node positions back into zero-COM subspace
-            if remove_com:
-                g.ndata['x_1_pred'] = node_positions
-                g.ndata['x_1_pred'] = g.ndata['x_1_pred'] - dgl.readout_nodes(g, feat='x_1_pred', op='mean')[node_batch_idx]
-                node_positions = g.ndata['x_1_pred']
+        # project node positions back into zero-COM subspace
+        if remove_com:
+            g.ndata['x_1_pred'] = node_positions
+            g.ndata['x_1_pred'] = g.ndata['x_1_pred'] - dgl.readout_nodes(g, feat='x_1_pred', op='mean')[node_batch_idx]
+            node_positions = g.ndata['x_1_pred']
 
         # build a dictionary of predicted features
         dst_dict = {
