@@ -5,11 +5,11 @@ import dgl.function as fn
 from typing import Union, Callable
 import scipy
 
-from flowmol.models.gvp import GVPConv, GVP, _rbf, _norm_no_nan
+from flowmol.models.gvp import GVPConv, GVP, _norm_no_nan
 from flowmol.models.interpolant_scheduler import InterpolantScheduler
 from flowmol.models.self_conditioning import SelfConditioningResidualLayer
 from flowmol.utils.dirflow import DirichletConditionalFlow, simplex_proj
-from flowmol.utils.embedding import get_time_embedding
+from flowmol.utils.embedding import get_time_embedding, _rbf
 
 class EndpointVectorField(nn.Module):
 
@@ -72,6 +72,7 @@ class EndpointVectorField(nn.Module):
         self.canonical_feat_order = canonical_feat_order
         self.time_embedding_dim = time_embedding_dim
         self.self_conditioning = self_conditioning
+        self.has_mask = has_mask
 
         if self.exclude_charges:
             raise ValueError("exclude_charges is deprecated")
@@ -185,7 +186,15 @@ class EndpointVectorField(nn.Module):
         )
 
         if self.self_conditioning:
-            self.self_conditioning_residual_layer = SelfConditioningResidualLayer()
+            self.self_conditioning_residual_layer = SelfConditioningResidualLayer(
+                n_atom_types=n_atom_types + int(self.has_mask),
+                n_charges=n_charges,
+                n_bond_types=n_bond_types,
+                node_embedding_dim=n_hidden_scalars,
+                edge_embedding_dim=n_hidden_edge_feats,
+                rbf_dim=rbf_dim,
+                rbf_dmax=rbf_dmax
+            )
 
     def build_continuous_inv_temp_func(self, schedule, max_inv_temp=None):
 
@@ -252,7 +261,7 @@ class EndpointVectorField(nn.Module):
             edge_features = self.edge_embedding(edge_features)
 
         # if we are using self-conditoning, and prev_dist_dict is None, then
-        # we must be in training mode, and need to enter the following logic branch:
+        # we must be in the process of training a self-conditioning model, and need to enter the following logic branch:
         # with p = 0.5, we do a gradient-stopped pass through denoise_graph to get predicted endpoint, 
         # then set prev_dst_dict to this predicted endpoint
         # for the other 0.5 of the time, we do nothing!
@@ -261,7 +270,10 @@ class EndpointVectorField(nn.Module):
             with torch.no_grad():
                 prev_dst_dict = self.denoise_graph(
                     g, 
-                    node_scalar_features, node_vec_features, node_positions, edge_features,
+                    node_scalar_features.clone(), 
+                    node_vec_features.clone(), 
+                    node_positions.clone(), 
+                    edge_features.clone(),
                     node_batch_idx, upper_edge_mask, apply_softmax=True, remove_com=False)
 
         if prev_dst_dict is not None:
