@@ -1,0 +1,106 @@
+checkpointing:
+  every_n_epochs: 1
+  monitor: val_total_loss
+  save_last: true
+  save_top_k: 3
+dataset:
+  atom_map:
+  - C
+  - H
+  - N
+  - O
+  - F
+  - P
+  - S
+  - Cl
+  - Br
+  - I
+  dataset_name: geom
+  dataset_size: null
+  processed_data_dir: data/geom/
+  raw_data_dir: data/geom_raw/
+interpolant_scheduler:
+  cosine_params:
+    a: 2
+    c: 2
+    e: 2
+    x: 1
+  schedule_type:
+    a: linear
+    c: linear
+    e: linear
+    x: linear
+lr_scheduler:
+  base_lr: 0.0001
+  restart_interval: 0
+  restart_type: linear
+  warmup_length: 0.0
+  weight_decay: 1.0e-12
+mol_fm:
+  parameterization: ctmc
+  prior_config:
+    a:
+      align: false
+      kwargs: {}
+      type: ctmc
+    c:
+      align: false
+      kwargs: {}
+      type: ctmc
+    e:
+      align: false
+      kwargs: {}
+      type: ctmc
+    x:
+      align: true
+      kwargs:
+        std: 1.0
+      type: centered-normal
+  time_scaled_loss: true
+  total_loss_weights:
+    a: 0.4
+    c: 1.0
+    e: 2.0
+    x: 3.0
+resume:
+  run_id: jcbq0qz5
+training:
+  batch_size: 16
+  evaluation:
+    mols_to_sample: 64
+    sample_interval: 0.012
+    val_loss_interval: 0.012
+  num_workers: 4
+  output_dir: runs_ctmc/
+  trainer_args:
+    accelerator: gpu
+    accumulate_grad_batches: 1
+    devices: 4
+    limit_val_batches: 0.002
+    max_epochs: 20
+    num_nodes: 1
+    strategy: ddp_find_unused_parameters_true
+vector_field:
+  convs_per_update: 1
+  high_confidence_threshold: 0.0
+  message_norm: 100
+  n_cp_feats: 4
+  n_hidden_edge_feats: 128
+  n_hidden_scalars: 256
+  n_message_gvps: 3
+  n_molecule_updates: 5
+  n_recycles: 1
+  n_update_gvps: 3
+  n_vec_channels: 16
+  rbf_dim: 32
+  rbf_dmax: 12
+  separate_mol_updaters: true
+  stochasticity: 10.0
+  update_edge_w_distance: true
+wandb:
+  group: null
+  id: jcbq0qz5
+  mode: online
+  name: geom-ctmc
+  project: mol-fm
+  save_dir: runs_ctmc

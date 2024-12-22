@@ -11,7 +11,7 @@ This is the offical implementation of FlowMol, a flow matching model for uncondi
 
 # Try it in Colab
 
-Try out FlowMol in a Google Colab notebook by clicking the "Open in Colab" badge at the top of this readme, or just [click here](https://colab.research.google.com/github/Dunni3/FlowMol/blob/main/examples/flowmol_demo.ipynb). This notebook demonstrates how to load a pretrained model, sample molecules from it, and run evaluations from the paper.
+Try out FlowMol in a Google Colab notebook by clicking the "Open in Colab" badge at the top of this readme, or just [click here](https://colab.research.google.com/github/Dunni3/FlowMol/blob/main/examples/flowmol_demo.ipynb). This notebook demonstrates how to load a pretrained model, sample molecules from it, and run evaluations from the paper. This notebook is also available in the `examples/` directory of this repository, so you can run it locally, too.
 
 # Environment Setup
 
@@ -69,7 +69,7 @@ unzip qm9.zip
 
 You can run this command to process the qm9 dataset:
 ```console
-python process_qm9.py --config=trained_models/qm9_gauss_ep/config.yml
+python process_qm9.py --config=configs/qm9_ctmc.yaml
 ```
 
 ## GEOM-Drugs
@@ -84,9 +84,9 @@ Then, from the root of this repository, run these commands to process the geom d
 
 
 ```console
-python process_geom.py data/geom_raw/train_data.pickle --config=trained_models/geom_gauss_ep/config.yml
-python process_geom.py data/geom_raw/test_data.pickle --config=trained_models/geom_gauss_ep/config.yml
-python process_geom.py data/geom_raw/val_data.pickle --config=trained_models/geom_gauss_ep/config.yml
+python process_geom.py data/geom_raw/train_data.pickle --config=configs/geom_ctmc.yml
+python process_geom.py data/geom_raw/test_data.pickle --config=configs/geom_ctmc.yml
+python process_geom.py data/geom_raw/val_data.pickle --config=configs/geom_ctmc.yml
 ```
 
 Note that these commands assumed you have downloaded our trained models as described above.
@@ -96,5 +96,5 @@ Note that these commands assumed you have downloaded our trained models as descr
 Run the `train.py` script. You can either pass a config file, or you can pass a trained model checkpoint for resuming. Note in the latter case, the script assumes the checkpoint is inside of a directory that contains a config file. To see the expected file structure of a model directory, refer to the [trained models readme](flowmol/trained_models/readme.md). Here's an example command to train a model:
 
 ```console
-python train.py --config=flowmol/trained_models/qm9_gaussian/config.yaml
+python train.py --config=configs/qm9_ctmc.yaml
 ```
