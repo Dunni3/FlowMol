@@ -60,8 +60,6 @@ class GVP(nn.Module):
             self.Wcp = torch.zeros(dim_vectors_in, n_cp_feats*2, dtype=torch.float32).uniform_(-wcp_k, wcp_k)
             self.Wcp = nn.Parameter(self.Wcp)
 
-        
-
         # create Wu matrix
         if n_cp_feats > 0: # the number of vector features going into Wu is increased by n_cp_feats if we are using cross-product features
             wu_in_dim = dim_h + n_cp_feats
@@ -175,7 +173,8 @@ class GVPLayerNorm(nn.Module):
         self.eps = eps
         self.feat_norm = nn.LayerNorm(feats_h_size)
 
-    def forward(self, feats, vectors):
+    def forward(self, data):
+        feats, vectors = data
 
         normed_feats = self.feat_norm(feats)
 
@@ -543,14 +542,14 @@ class GVPConv(nn.Module):
             # update scalar and vector features, apply layernorm
             scalar_feat = scalar_feats + scalar_msg
             vec_feat = vec_feats + vec_msg
-            scalar_feat, vec_feat = self.message_layer_norm(scalar_feat, vec_feat)
+            scalar_feat, vec_feat = self.message_layer_norm((scalar_feat, vec_feat))
 
             # apply node update function, apply dropout to residuals, apply layernorm
             scalar_residual, vec_residual = self.node_update((scalar_feat, vec_feat))
             scalar_residual, vec_residual = self.dropout(scalar_residual, vec_residual)
             scalar_feat = scalar_feat + scalar_residual
             vec_feat = vec_feat + vec_residual
-            scalar_feat, vec_feat = self.update_layer_norm(scalar_feat, vec_feat)
+            scalar_feat, vec_feat = self.update_layer_norm((scalar_feat, vec_feat))
 
         return scalar_feat, vec_feat
 
