@@ -72,6 +72,7 @@ mol_fm:
 
 vector_field:
   # w_max: 8
+  self_conditioning: True
   stochasticity: 20.0
   high_confidence_threshold: 0.9
   update_edge_w_distance: True

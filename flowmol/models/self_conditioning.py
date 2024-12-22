@@ -34,7 +34,8 @@ class SelfConditioningResidualLayer(nn.Module):
             nn.SiLU(),
         )
 
-    def forward(self, g: torch.Tensor, 
+    def forward(self, 
+                g: torch.Tensor, 
                 s_t: torch.Tensor,
                 x_t: torch.Tensor,
                 v_t: torch.Tensor,
@@ -46,7 +47,7 @@ class SelfConditioningResidualLayer(nn.Module):
 
         # get distances between each node in current timestep and the same node at t=1
         d_node = _norm_no_nan(x_t - dst_dict['x']) # has shape n_nodes x 1 (hopefully)
-        assert d_node.shape == (g.num_nodes(), 1), d_node.shape
+        d_node = _rbf(d_node, D_max=self.rbf_dmax, D_count=self.rbf_dim)
 
         node_residual_inputs = [
             s_t,
@@ -81,7 +82,7 @@ class SelfConditioningResidualLayer(nn.Module):
         edge_feats_out[~upper_edge_mask] = one_triangle_output
         
 
-        return node_feats_out, positions_out, edge_feats_out, vectors_out
+        return node_feats_out, positions_out, vectors_out, edge_feats_out
 
 
     def edge_distances(self, g: dgl.DGLGraph, node_positions=None):

@@ -187,7 +187,7 @@ class EndpointVectorField(nn.Module):
 
         if self.self_conditioning:
             self.self_conditioning_residual_layer = SelfConditioningResidualLayer(
-                n_atom_types=n_atom_types + int(self.has_mask),
+                n_atom_types=n_atom_types,
                 n_charges=n_charges,
                 n_bond_types=n_bond_types,
                 node_embedding_dim=n_hidden_scalars,
@@ -265,21 +265,27 @@ class EndpointVectorField(nn.Module):
         # with p = 0.5, we do a gradient-stopped pass through denoise_graph to get predicted endpoint, 
         # then set prev_dst_dict to this predicted endpoint
         # for the other 0.5 of the time, we do nothing!
-        # this logic is all covered by the following if statement
-        if self.self_conditioning and prev_dst_dict is None and (torch.rand(1) > 0.5).item():
-            with torch.no_grad():
-                prev_dst_dict = self.denoise_graph(
-                    g, 
-                    node_scalar_features.clone(), 
-                    node_vec_features.clone(), 
-                    node_positions.clone(), 
-                    edge_features.clone(),
-                    node_batch_idx, upper_edge_mask, apply_softmax=True, remove_com=False)
+        # also if we are in the first timestep of inference, we need to do generate the first predicted endpoint
+        if self.self_conditioning and prev_dst_dict is None:
 
-        if prev_dst_dict is not None:
+            train_self_condition = self.training and (torch.rand(1) > 0.5).item()
+            inference_first_step = not self.training and (t == 0).all().item()
+
+            if train_self_condition or inference_first_step:
+                with torch.no_grad():
+                    prev_dst_dict = self.denoise_graph(
+                        g, 
+                        node_scalar_features.clone(), 
+                        node_vec_features.clone(), 
+                        node_positions.clone(), 
+                        edge_features.clone(),
+                        node_batch_idx, upper_edge_mask, apply_softmax=True, remove_com=False)
+
+        if self.self_conditioning and prev_dst_dict is not None:
             # if prev_dst_dict is not none, we need to pass through the self-conditioning residual block
-            node_scalar_features, node_vec_features, node_positions, edge_features = self.self_conditioning_residual_layer(
-                g, node_scalar_features, node_vec_features, node_positions, edge_features, prev_dst_dict
+            node_scalar_features, node_positions, node_vec_features, edge_features = self.self_conditioning_residual_layer(
+                g, node_scalar_features, node_positions, node_vec_features, edge_features, 
+                prev_dst_dict, node_batch_idx, upper_edge_mask
             )
 
         # now, pass through denoising graph
@@ -419,6 +425,7 @@ class EndpointVectorField(nn.Module):
                 traj_frames[feat] = [ init_frame ]
                 traj_frames[f'{feat}_1_pred'] = []
     
+        dst_dict = None
         for s_idx in range(1,t.shape[0]):
 
             # get the next timepoint (s) and the current timepoint (t)
@@ -429,7 +436,9 @@ class EndpointVectorField(nn.Module):
             alpha_t_prime_i = alpha_t_prime[s_idx - 1]
 
             # compute next step and set x_t = x_s
-            g = self.step(g, s_i, t_i, alpha_t_i, alpha_s_i, alpha_t_prime_i, node_batch_idx, upper_edge_mask, **kwargs)
+            g, dst_dict = self.step(g, 
+                s_i, t_i, alpha_t_i, alpha_s_i, alpha_t_prime_i, 
+                node_batch_idx, upper_edge_mask, prev_dst_dict=dst_dict, **kwargs)
 
             if visualize:
                 for feat in self.canonical_feat_order:
@@ -491,9 +500,8 @@ class EndpointVectorField(nn.Module):
     
     def step(self, g: dgl.DGLGraph, s_i: torch.Tensor, t_i: torch.Tensor,
              alpha_t_i: torch.Tensor, alpha_s_i: torch.Tensor, alpha_t_prime_i: torch.Tensor,
-             node_batch_idx: torch.Tensor, upper_edge_mask: torch.Tensor,
-             inv_temp_func=None,
-            **kwargs):
+             node_batch_idx: torch.Tensor, upper_edge_mask: torch.Tensor, 
+             prev_dst_dict: dict, inv_temp_func=None, **kwargs):
         
         if inv_temp_func is None:
             inv_temp_func = self.continuous_inv_temp_func
@@ -506,6 +514,7 @@ class EndpointVectorField(nn.Module):
             upper_edge_mask=upper_edge_mask,
             apply_softmax=True,
             remove_com=True,
+            prev_dst_dict=prev_dst_dict
         )
 
         # compute x_s for each feature and set x_t = x_s
@@ -552,7 +561,7 @@ class EndpointVectorField(nn.Module):
             # record updated feature in the graph
             data_src[f'{feat}_t'] = x_s
 
-        return g
+        return g, dst_dict
 
 
     def vector_field(self, x_t, x_1, alpha_t, alpha_t_prime):
@@ -582,6 +591,11 @@ class EndpointVectorField(nn.Module):
 
 
 class VectorField(EndpointVectorField):
+
+    def __init__(self, *args, **kwargs):
+        if 'self_conditioning' in kwargs and kwargs['self_conditioning']:
+            raise ValueError("self_conditioning is not supported for vector field parameterization")
+        super().__init__(*args, **kwargs)
 
     def forward(self, g: dgl.DGLGraph, t: torch.Tensor, 
                  node_batch_idx: torch.Tensor, upper_edge_mask: torch.Tensor, apply_softmax=False, remove_com=False):
@@ -685,7 +699,7 @@ class DirichletVectorField(EndpointVectorField):
     
     def step(self, g: dgl.DGLGraph, s_i: torch.Tensor, t_i: torch.Tensor,
              alpha_t_i: torch.Tensor, alpha_s_i: torch.Tensor, alpha_t_prime_i: torch.Tensor,
-             node_batch_idx: torch.Tensor, upper_edge_mask: torch.Tensor):
+             node_batch_idx: torch.Tensor, upper_edge_mask: torch.Tensor, prev_dst_dict: dict):
         
         # alpha_t_i has shape (n_feats,)
         
@@ -696,7 +710,8 @@ class DirichletVectorField(EndpointVectorField):
             node_batch_idx=node_batch_idx,
             upper_edge_mask=upper_edge_mask,
             apply_softmax=True,
-            remove_com=True
+            remove_com=True,
+            prev_dst_dict=prev_dst_dict
         )
 
         # take integration step for positions
@@ -785,7 +800,7 @@ class DirichletVectorField(EndpointVectorField):
         e_1_pred[~upper_edge_mask] = dst_dict['e']
         g.edata['e_1_pred'] = e_1_pred
         
-        return g
+        return g, dst_dict
     
     def project_simplex(self, x_s: torch.Tensor):
         n, c = x_s.shape
