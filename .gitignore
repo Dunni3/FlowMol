@@ -18,6 +18,9 @@ runs_*/
 eval_data/
 functional_validity_pipeline/
 baseline_comparison*
+flowmol/trained_models/qm9*
+flowmol/trained_models/geom*
+figures/
 
 
 # Byte-compiled / optimized / DLL files

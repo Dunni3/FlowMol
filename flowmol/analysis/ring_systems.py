@@ -1,5 +1,7 @@
 from useful_rdkit_utils.ring_systems import RingSystemLookup
 from collections import defaultdict
+import numpy as np
+import pandas as pd
 
 from typing import Union, List, Dict, Tuple
 
@@ -44,3 +46,19 @@ class RingSystemCounter:
                 combined_chembl_counts[ring_system_smi] = count
         return combined_sample_counts, combined_chembl_counts, n_mols_combined
     
+def ring_counts_to_df(sample_counts, chembl_counts, n_mols) -> pd.DataFrame:
+
+    # create df of ring rates
+    ring_smi = list(sample_counts.keys())
+    ring_counts = np.array([sample_counts[smi] for smi in ring_smi])
+    chembl_counts = np.array([chembl_counts[smi] for smi in ring_smi])
+    sample_rate = ring_counts / n_mols
+
+    df_rings = pd.DataFrame({
+        'ring_smi': ring_smi,
+        'sample_rate': sample_rate,
+        'sample_count': ring_counts,
+        'n_mols': n_mols,
+        'chembl_count': chembl_counts
+    })
+    return df_rings

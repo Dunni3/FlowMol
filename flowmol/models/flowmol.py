@@ -63,13 +63,6 @@ class FlowMol(pl.LightningModule):
         self.target_blur = target_blur
         self.n_atoms_hist_file = n_atoms_hist_file
 
-        # TODO: delete this block of code, it is only here so I can sample from a molecule that was checkpoitned with a bug in it
-        if len(atom_type_map) > 20:
-            atom_type_map = [ v for v in atom_type_map if v != "Se" ]
-            self.atom_type_map = atom_type_map
-            n_atom_types = len(atom_type_map)
-            self.n_atom_types = len(atom_type_map)
-
         if self.weight_ae and parameterization == 'vector-field':
             raise NotImplementedError('weighting the atom and edge losses is not yet implemented for the vector-field parameterization')
         
@@ -448,7 +441,7 @@ class FlowMol(pl.LightningModule):
         n_atoms = self.n_atoms_dist.sample((n_molecules,), **kwargs)
         return self.n_atoms_map[n_atoms]
 
-    def sample_random_sizes(self, n_molecules: int, device="cuda:0", n_timesteps: int = 20,
+    def sample_random_sizes(self, n_molecules: int, device="cuda:0", n_timesteps: int = 250,
     stochasticity=None, high_confidence_threshold=None, 
     xt_traj=False, ep_traj=False, **kwargs):
         """Sample n_moceules with the number of atoms sampled from the distribution of the training set."""
@@ -466,7 +459,7 @@ class FlowMol(pl.LightningModule):
     
 
     @torch.no_grad()
-    def sample(self, n_atoms: torch.Tensor, n_timesteps: int = 20, device="cuda:0",
+    def sample(self, n_atoms: torch.Tensor, n_timesteps: int = 250, device="cuda:0",
         stochasticity=None, high_confidence_threshold=None, xt_traj=False, ep_traj=False, **kwargs):
         """Sample molecules with the given number of atoms.
         
