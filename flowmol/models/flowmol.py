@@ -228,7 +228,7 @@ class FlowMol(pl.LightningModule):
             with torch.no_grad():
                 sampled_molecules = self.sample_random_sizes(n_molecules=self.n_mols_to_sample, device=g.device, n_timesteps=100)
             self.train()
-            sampled_mols_metrics = self.sample_analyzer.analyze(sampled_molecules)
+            sampled_mols_metrics = self.sample_analyzer.analyze(sampled_molecules, energy_div=False)
             self.log_dict(sampled_mols_metrics)
 
         # compute losses
