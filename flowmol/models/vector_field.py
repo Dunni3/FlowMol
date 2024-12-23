@@ -47,6 +47,8 @@ class EndpointVectorField(nn.Module):
                     dropout: float = 0.0,
                     has_mask: bool = False,
                     self_conditioning: bool = False,
+                    use_dst_feats: bool = False,
+                    dst_feat_msg_reduction_factor: float = 4,
                     # if we are using CTMC, input categorical features will have mask tokens,
                     # this means their one-hot representations will have an extra dimension,
                     # and the neural network instantiated by this method need to account for this
@@ -150,7 +152,9 @@ class EndpointVectorField(nn.Module):
                 n_heads=n_heads,
                 s_message_dim=s_message_dim,
                 v_message_dim=v_message_dim,
-                dropout=dropout
+                dropout=dropout,
+                use_dst_feats=use_dst_feats,
+                dst_feat_msg_reduction_factor=dst_feat_msg_reduction_factor
             )
             )
         self.conv_layers = nn.ModuleList(self.conv_layers)

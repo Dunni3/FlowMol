@@ -328,8 +328,8 @@ class GVPConv(nn.Module):
 
             # on the first layer, there is an extra edge vector for the displacement vector between the two node positions
             if i == 0:
-                dim_vectors_in += 1 + v_dst_feats_for_messages
-                dim_feats_in += rbf_dim + edge_feat_size + s_dst_feats_for_messages
+                dim_vectors_in += 1 
+                dim_feats_in += rbf_dim + edge_feat_size
             else:
                 # if not first layer, input size is the output size of the previous layer
                 dim_feats_in = dim_feats_out
@@ -337,8 +337,8 @@ class GVPConv(nn.Module):
                 
             # if this is the first layer and we are using destination node features to compute messages, add them to the input dimensions
             if use_dst_feats and i == 0:
-                dim_vectors_in += vector_size
-                dim_feats_in += scalar_size
+                dim_vectors_in += v_dst_feats_for_messages
+                dim_feats_in += s_dst_feats_for_messages
 
             # determine number of scalars output from this layer
             # if message size is smaller than scalar size, do linear interpolation on layer sizes through the gvps

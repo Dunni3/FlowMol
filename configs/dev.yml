@@ -82,11 +82,10 @@ vector_field:
   s_message_dim: 32
   v_message_dim: 8
   n_expansion_gvps: 2
+  use_dst_feats: True 
+  dst_feat_msg_reduction_factor: 4
   attention: True
   n_heads: 4
-  n_kq_gvps: 2
-  s_kq_dim: 16
-  v_kq_dim: 8
   n_recycles: 1
   n_molecule_updates: 3
   separate_mol_updaters: True
