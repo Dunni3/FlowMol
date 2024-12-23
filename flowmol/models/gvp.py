@@ -197,10 +197,7 @@ class GVPConv(nn.Module):
                   vector_activation=nn.Sigmoid,
                   n_message_gvps: int = 1, 
                   n_update_gvps: int = 1,
-                  n_kq_gvps: int = 1,
                   attention: bool = False,
-                  s_kq_dim: int = 32,
-                  v_kq_dim: int = 32,
                   s_message_dim: int = None,
                   v_message_dim: int = None,
                   n_heads: int = 1,
@@ -285,10 +282,24 @@ class GVPConv(nn.Module):
         else:
             self.node_compression = nn.Identity()
 
+        if attention:            
+            # compute number of features per attention head
+            if self.s_message_dim % n_heads != 0 or self.v_message_dim % n_heads != 0:
+                raise ValueError("Number of attention heads must divide the message size.")
+
+            self.s_feats_per_head = self.s_message_dim // n_heads
+            self.v_feats_per_head = self.v_message_dim // n_heads
+            extra_scalar_feats = n_heads*2
+
+            self.att_weight_projection = nn.Linear(extra_scalar_feats, extra_scalar_feats, bias=False)
+
+        else:
+            extra_scalar_feats = 0
+
 
         # create message passing function
         message_gvps = []
-        s_slope = (self.s_message_dim - scalar_size) / n_message_gvps
+        s_slope = (self.s_message_dim + extra_scalar_feats - scalar_size) / n_message_gvps
         v_slope = (self.v_message_dim - vector_size) / n_message_gvps
         for i in range(n_message_gvps):
 
@@ -315,9 +326,9 @@ class GVPConv(nn.Module):
             if self.s_message_dim < scalar_size:
                 dim_feats_out = int(s_slope*i + scalar_size)
                 if i == n_message_gvps - 1:
-                    dim_feats_out = self.s_message_dim
+                    dim_feats_out = self.s_message_dim + extra_scalar_feats
             else:
-                dim_feats_out = self.s_message_dim
+                dim_feats_out = self.s_message_dim + extra_scalar_feats
 
             # same logic applied to the number of vectors output from this layer
             if self.v_message_dim < vector_size:
@@ -370,55 +381,6 @@ class GVPConv(nn.Module):
         else:
             self.agg_func = fn.sum
 
-
-        if attention:            
-            # create key and query generating gvp function
-            kq_gvps = []
-            for i in range(n_kq_gvps):
-
-                dim_feats_out = 2*s_kq_dim
-                dim_vectors_out = 2*v_kq_dim
-
-                if i == 0:
-                    dim_feats_in = self.s_message_dim
-                    dim_vectors_in = self.v_message_dim
-                else:
-                    dim_feats_in = 2*s_kq_dim
-                    dim_vectors_in = 2*v_kq_dim
-
-                kq_gvps.append(GVP(
-                    dim_feats_in=dim_feats_in,
-                    dim_feats_out=dim_feats_out,
-                    dim_vectors_in=dim_vectors_in,
-                    dim_vectors_out=dim_vectors_out,
-                    n_cp_feats=n_cp_feats,
-                    feats_activation=scalar_activation(), 
-                    vectors_activation=vector_activation(), 
-                    vector_gating=True)
-                )
-            self.kq_gvp = nn.Sequential(*kq_gvps)
-
-
-            # create MLP that will compute (unnormalized) attention weights
-            inp_dim = 2*s_kq_dim + v_kq_dim + edge_feat_size + rbf_dim
-            self.att_mlp = nn.Sequential(
-                # nn.LayerNorm(inp_dim),
-                nn.Linear(inp_dim, inp_dim*2),
-                nn.SiLU(),
-                nn.Linear(inp_dim*2, inp_dim*2),
-                nn.SiLU(),
-                nn.Linear(inp_dim*2, self.n_heads*2),
-                nn.LayerNorm(self.n_heads*2),
-            )
-
-            # compute number of features per attention head
-            if self.s_message_dim % n_heads != 0 or self.v_message_dim % n_heads != 0:
-                raise ValueError("Number of attention heads must divide the message size.")
-
-            self.s_feats_per_head = self.s_message_dim // n_heads
-            self.v_feats_per_head = self.v_message_dim // n_heads
-
-            # self.n_heads = self.s_message_dim + self.v_message_dim
 
         # if message size is smaller than node embedding size, we need to project aggregated messages back to the node embedding size
         if self.compressed_messaging:
@@ -485,40 +447,20 @@ class GVPConv(nn.Module):
             # apply node compression
             g.ndata['s'], g.ndata['v'] = self.node_compression((g.ndata['s'], g.ndata['v']))
 
-            if self.attention:
-                s_kq, v_kq = self.kq_gvp((g.ndata['s'], g.ndata['v']))
-                s_k, s_q = s_kq.chunk(2, dim=1)
-                v_k, v_q = v_kq.chunk(2, dim=1)
-
-                g.ndata['s_k'] = s_k # has shape (n_atoms, s_kq_dim)
-                g.ndata['s_q'] = s_q
-                g.ndata['v_k'] = v_k # has shape (n_atoms, v_kq_dim, 3)
-                g.ndata['v_q'] = v_q
-
-                # compute attention weights
-                g.apply_edges(self.compute_attention_weights)
-
-                # softmax attention weights
-                att_weights = edge_softmax(g, g.edata['att_weights'])
-
-                # split attention weights by scalar/vector features
-                a_s = att_weights[:, :self.n_heads] # n_edges, n_heads
-                a_v = att_weights[:, self.n_heads:] # n_edges, n_heads
-
-                # expand attention weights to scalar and vector features
-                a_s = a_s.repeat_interleave(self.s_feats_per_head, dim=1) # n_edges, s_message_dim
-                a_v = a_v.repeat_interleave(self.v_feats_per_head, dim=1) # n_edges, v_message_dim
-
-                g.edata['a_s'] = a_s # n_edges, s_message_dim
-                g.edata['a_v'] = a_v.unsqueeze(-1) # n_edges, v_message_dim, 1
-
             # compute messages on every edge
             g.apply_edges(self.message)
 
             # if self.attenion, multiple messages by attention weights
             if self.attention:
-                g.edata['scalar_msg'] = g.edata['scalar_msg'] * g.edata['a_s']
-                g.edata['vec_msg'] = g.edata['vec_msg'] * g.edata['a_v']
+                scalar_msg, att_logits = g.edata['scalar_msg'][:, :self.s_message_dim], g.edata['scalar_msg'][:, self.s_message_dim:]
+                att_logits = self.att_weight_projection(att_logits)
+                att_weights = edge_softmax(g, att_logits)
+                s_att_weights = att_weights[:, :self.n_heads]
+                v_att_weights = att_weights[:, self.n_heads:]
+                s_att_weights = s_att_weights.repeat_interleave(self.s_feats_per_head, dim=1)
+                v_att_weights = v_att_weights.repeat_interleave(self.v_feats_per_head, dim=1)
+                g.edata['scalar_msg'] = scalar_msg * s_att_weights
+                g.edata['vec_msg'] = g.edata['vec_msg'] * v_att_weights.unsqueeze(-1)
 
             # aggregate messages from every edge
             g.update_all(fn.copy_e("scalar_msg", "m"), self.agg_func("m", "scalar_msg"))
