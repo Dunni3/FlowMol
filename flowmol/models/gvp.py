@@ -300,9 +300,9 @@ class GVPConv(nn.Module):
                 s_dst_feats_for_messages = int(self.s_message_dim/dst_feat_msg_reduction_factor)
                 v_dst_feats_for_messages = int(self.v_message_dim/dst_feat_msg_reduction_factor)
                 self.dst_feat_msg_projection = GVP(
-                    dim_vectors_in=v_message_dim,
+                    dim_vectors_in=self.v_message_dim,
                     dim_vectors_out=v_dst_feats_for_messages,
-                    dim_feats_in=s_message_dim,
+                    dim_feats_in=self.s_message_dim,
                     dim_feats_out=s_dst_feats_for_messages,
                     n_cp_feats=0,
                     feats_activation=scalar_activation(),
