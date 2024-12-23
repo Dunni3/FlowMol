@@ -203,6 +203,7 @@ class GVPConv(nn.Module):
                   n_heads: int = 1,
                   n_expansion_gvps: int = 1,
                   use_dst_feats: bool = False, 
+                  dst_feat_msg_reduction_factor: float = 4,
                   rbf_dmax: float = 20, 
                   rbf_dim: int = 16,
                   edge_feat_size: int = 0, 
@@ -232,8 +233,6 @@ class GVPConv(nn.Module):
         # dims for message reduction and also attention
         self.s_message_dim = s_message_dim
         self.v_message_dim = v_message_dim
-        self.s_kq_dim = s_kq_dim
-        self.v_kq_dim = s_kq_dim
         self.attention = attention
         self.n_heads = n_heads
 
@@ -296,6 +295,27 @@ class GVPConv(nn.Module):
         else:
             extra_scalar_feats = 0
 
+        if use_dst_feats:
+            if dst_feat_msg_reduction_factor != 1:
+                s_dst_feats_for_messages = int(self.s_message_dim/dst_feat_msg_reduction_factor)
+                v_dst_feats_for_messages = int(self.v_message_dim/dst_feat_msg_reduction_factor)
+                self.dst_feat_msg_projection = GVP(
+                    dim_vectors_in=v_message_dim,
+                    dim_vectors_out=v_dst_feats_for_messages,
+                    dim_feats_in=s_message_dim,
+                    dim_feats_out=s_dst_feats_for_messages,
+                    n_cp_feats=0,
+                    feats_activation=scalar_activation(),
+                    vectors_activation=vector_activation(),
+                )
+            else:
+                s_dst_feats_for_messages = self.s_message_dim
+                v_dst_feats_for_messages = self.v_message_dim
+                self.dst_feat_msg_projection = nn.Identity()
+        else:
+            s_dst_feats_for_messages = 0
+            v_dst_feats_for_messages = 0
+
 
         # create message passing function
         message_gvps = []
@@ -308,8 +328,8 @@ class GVPConv(nn.Module):
 
             # on the first layer, there is an extra edge vector for the displacement vector between the two node positions
             if i == 0:
-                dim_vectors_in += 1
-                dim_feats_in += rbf_dim + edge_feat_size
+                dim_vectors_in += 1 + v_dst_feats_for_messages
+                dim_feats_in += rbf_dim + edge_feat_size + s_dst_feats_for_messages
             else:
                 # if not first layer, input size is the output size of the previous layer
                 dim_feats_in = dim_feats_out
@@ -447,6 +467,9 @@ class GVPConv(nn.Module):
             # apply node compression
             g.ndata['s'], g.ndata['v'] = self.node_compression((g.ndata['s'], g.ndata['v']))
 
+            if self.use_dst_feats:
+                g.ndata['s_dst_msg'] , g.ndata['v_dst_msg'] = self.dst_feat_msg_projection((g.ndata['s'], g.ndata['v']))
+
             # compute messages on every edge
             g.apply_edges(self.message)
 
@@ -500,7 +523,7 @@ class GVPConv(nn.Module):
         # concatenate x_diff and v on every edge to produce vector features
         vec_feats = [ edges.data["x_diff"].unsqueeze(1), edges.src["v"] ]
         if self.use_dst_feats:
-            vec_feats.append(edges.dst["v"])
+            vec_feats.append(edges.dst["v_dst_msg"])
         vec_feats = torch.cat(vec_feats, dim=1)
 
         # create scalar features
@@ -509,27 +532,10 @@ class GVPConv(nn.Module):
             scalar_feats.append(edges.data['ef'])
 
         if self.use_dst_feats:
-            scalar_feats.append(edges.dst['s'])
+            scalar_feats.append(edges.dst['s_dst_msg'])
 
         scalar_feats = torch.cat(scalar_feats, dim=1)
 
         scalar_message, vector_message = self.edge_message((scalar_feats, vec_feats))
 
         return {"scalar_msg": scalar_message, "vec_msg": vector_message}
-    
-    def compute_attention_weights(self, edges):
-
-        # dot prduct all v_k and v_q along the last dimension
-        v_kq = torch.einsum('ijk,ijk->ij', edges.src['v_k'], edges.dst['v_q']) / self.v_kq_dim**0.5
-
-        att_weight_input = [
-            edges.src['s_k'],
-            edges.dst['s_q'],
-            v_kq,
-            edges.data['ef'],
-            edges.data['d']
-        ]
-
-        att_weights = self.att_mlp(torch.cat(att_weight_input, dim=1))
-
-        return {'att_weights': att_weights}
