@@ -290,7 +290,9 @@ class GVPConv(nn.Module):
             self.v_feats_per_head = self.v_message_dim // n_heads
             extra_scalar_feats = n_heads*2
 
-            self.att_weight_projection = nn.Linear(extra_scalar_feats, extra_scalar_feats, bias=False)
+            self.att_weight_projection = nn.Sequential(
+                nn.Linear(extra_scalar_feats, extra_scalar_feats, bias=False),
+                nn.LayerNorm(extra_scalar_feats))
 
         else:
             extra_scalar_feats = 0
