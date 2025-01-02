@@ -80,12 +80,12 @@ vector_field:
   n_vec_channels: 16
   n_hidden_scalars: 64
   n_hidden_edge_feats: 64
-  s_message_dim: 32
-  v_message_dim: 8
+  s_message_dim: 
+  v_message_dim: 
   n_expansion_gvps: 2
   use_dst_feats: True 
   dst_feat_msg_reduction_factor: 4
-  attention: True
+  attention: False
   n_heads: 4
   n_recycles: 1
   n_molecule_updates: 3
