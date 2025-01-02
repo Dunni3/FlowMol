@@ -37,7 +37,7 @@ class SampleAnalyzer():
         self.energy_div_calculator = DivergenceCalculator(energy_dist_file)
             
 
-    def analyze(self, sampled_molecules: List[SampledMolecule], return_counts: bool = False):
+    def analyze(self, sampled_molecules: List[SampledMolecule], return_counts: bool = False, energy_div: bool = False, functional_validity: bool = False):
 
         # compute the atom-level stabiltiy of a molecule. this is the number of atoms that have valid valencies.
         # note that since is computed at the atom level, even if the entire molecule is unstable, we can still get an idea
@@ -74,7 +74,8 @@ class SampleAnalyzer():
         # this functionality is not supported yet for reos and rings`
         # before we compute dataset-level metrics, we need to implement the functionality to combine counts
         # of reos/rings outputs. 
-        metrics_dict.update(self.reos_and_rings(sampled_molecules, return_raw=False))
+        if functional_validity:
+            metrics_dict.update(self.reos_and_rings(sampled_molecules, return_raw=False))
 
         if return_counts:
             counts_dict = {}
@@ -89,7 +90,7 @@ class SampleAnalyzer():
             counts_dict['n_num_components'] = n_num_components
             return counts_dict
         
-        if self.processed_data_dir is not None and Path(self.processed_data_dir).exists():
+        if self.processed_data_dir is not None and Path(self.processed_data_dir).exists() and energy_div:
             metrics_dict['energy_js_div'] = self.compute_energy_divergence(sampled_molecules)
 
 
@@ -183,7 +184,7 @@ class SampleAnalyzer():
         reos = REOS(active_rules=["Glaxo", "Dundee"])
         ring_system_counter = RingSystemCounter()
 
-        if len(sanitized_mols) == 0:
+        if len(sanitized_mols) != 0:
             reos_flags = reos.mols_to_flag_arr(sanitized_mols)
             ring_counts = ring_system_counter.count_ring_systems(sanitized_mols)
         else:

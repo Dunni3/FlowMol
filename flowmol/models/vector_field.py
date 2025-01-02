@@ -5,10 +5,11 @@ import dgl.function as fn
 from typing import Union, Callable
 import scipy
 
-from flowmol.models.gvp import GVPConv, GVP, _rbf, _norm_no_nan
+from flowmol.models.gvp import GVPConv, GVP, _norm_no_nan
 from flowmol.models.interpolant_scheduler import InterpolantScheduler
+from flowmol.models.self_conditioning import SelfConditioningResidualLayer
 from flowmol.utils.dirflow import DirichletConditionalFlow, simplex_proj
-from flowmol.utils.embedding import get_time_embedding
+from flowmol.utils.embedding import get_time_embedding, _rbf
 
 class EndpointVectorField(nn.Module):
 
@@ -27,7 +28,6 @@ class EndpointVectorField(nn.Module):
                     n_message_gvps: int = 3, 
                     n_update_gvps: int = 3,
                     n_expansion_gvps: int = 3,
-                    n_kq_gvps: int = 3,
                     separate_mol_updaters: bool = False,
                     message_norm: Union[float, str] = 100,
                     update_edge_w_distance: bool = False,
@@ -42,12 +42,14 @@ class EndpointVectorField(nn.Module):
                     e_token_dim: int = 0,
                     attention: bool = False,
                     n_heads: int = 1,
-                    s_kq_dim: int = 32,
-                    v_kq_dim: int = 32,
                     s_message_dim: int = None,
                     v_message_dim: int = None,
                     dropout: float = 0.0,
-                    has_mask: bool = False, # if we are using CTMC, input categorical features will have mask tokens,
+                    has_mask: bool = False,
+                    self_conditioning: bool = False,
+                    use_dst_feats: bool = False,
+                    dst_feat_msg_reduction_factor: float = 4,
+                    # if we are using CTMC, input categorical features will have mask tokens,
                     # this means their one-hot representations will have an extra dimension,
                     # and the neural network instantiated by this method need to account for this
                     # it is definitely anti-pattern to have a parameter in parent class that is only needed for one sub-class (CTMCVectorField)
@@ -68,6 +70,8 @@ class EndpointVectorField(nn.Module):
         self.interpolant_scheduler = interpolant_scheduler
         self.canonical_feat_order = canonical_feat_order
         self.time_embedding_dim = time_embedding_dim
+        self.self_conditioning = self_conditioning
+        self.has_mask = has_mask
 
         if self.exclude_charges:
             raise ValueError("exclude_charges is deprecated")
@@ -140,18 +144,17 @@ class EndpointVectorField(nn.Module):
                 edge_feat_size=n_hidden_edge_feats,
                 n_message_gvps=n_message_gvps,
                 n_update_gvps=n_update_gvps,
-                n_kq_gvps=n_kq_gvps,
                 n_expansion_gvps=n_expansion_gvps,
                 message_norm=message_norm,
                 rbf_dmax=rbf_dmax,
                 rbf_dim=rbf_dim,
                 attention=attention,
                 n_heads=n_heads,
-                s_kq_dim=s_kq_dim,
-                v_kq_dim=v_kq_dim,
                 s_message_dim=s_message_dim,
                 v_message_dim=v_message_dim,
-                dropout=dropout
+                dropout=dropout,
+                use_dst_feats=use_dst_feats,
+                dst_feat_msg_reduction_factor=dst_feat_msg_reduction_factor
             )
             )
         self.conv_layers = nn.ModuleList(self.conv_layers)
@@ -180,6 +183,17 @@ class EndpointVectorField(nn.Module):
             nn.Linear(n_hidden_edge_feats, n_bond_types)
         )
 
+        if self.self_conditioning:
+            self.self_conditioning_residual_layer = SelfConditioningResidualLayer(
+                n_atom_types=n_atom_types,
+                n_charges=n_charges,
+                n_bond_types=n_bond_types,
+                node_embedding_dim=n_hidden_scalars,
+                edge_embedding_dim=n_hidden_edge_feats,
+                rbf_dim=rbf_dim,
+                rbf_dmax=rbf_dmax
+            )
+
     def build_continuous_inv_temp_func(self, schedule, max_inv_temp=None):
 
         if schedule is None:
@@ -193,9 +207,15 @@ class EndpointVectorField(nn.Module):
         return inv_temp_func
         
 
-    def forward(self, g: dgl.DGLGraph, t: torch.Tensor, 
-                 node_batch_idx: torch.Tensor, upper_edge_mask: torch.Tensor, apply_softmax=False, remove_com=False):
-        """Predict x_1 (trajectory destination) given x_t"""
+    def forward(self, 
+                g: dgl.DGLGraph, 
+                t: torch.Tensor, 
+                node_batch_idx: torch.Tensor, 
+                upper_edge_mask: torch.Tensor, 
+                apply_softmax=False, 
+                remove_com=False,
+                prev_dst_dict=None):
+        """Predict x_1 (trajectory destination) given x_t, and, optionally, previous destination features."""
         device = g.device
 
         with g.local_scope():
@@ -238,51 +258,94 @@ class EndpointVectorField(nn.Module):
                 edge_features = self.token_embeddings['e'](g.edata['e_t'].argmax(dim=-1))
             edge_features = self.edge_embedding(edge_features)
 
-            x_diff, d = self.precompute_distances(g)
-            for recycle_idx in range(self.n_recycles):
-                for conv_idx, conv in enumerate(self.conv_layers):
+        # if we are using self-conditoning, and prev_dist_dict is None, then
+        # we must be in the process of training a self-conditioning model, and need to enter the following logic branch:
+        # with p = 0.5, we do a gradient-stopped pass through denoise_graph to get predicted endpoint, 
+        # then set prev_dst_dict to this predicted endpoint
+        # for the other 0.5 of the time, we do nothing!
+        # also if we are in the first timestep of inference, we need to do generate the first predicted endpoint
+        if self.self_conditioning and prev_dst_dict is None:
 
-                    # perform a single convolution which updates node scalar and vector features (but not positions)
-                    node_scalar_features, node_vec_features = conv(g, 
-                            scalar_feats=node_scalar_features, 
-                            coord_feats=node_positions,
-                            vec_feats=node_vec_features,
-                            edge_feats=edge_features,
-                            x_diff=x_diff,
-                            d=d
-                    )
+            train_self_condition = self.training and (torch.rand(1) > 0.5).item()
+            inference_first_step = not self.training and (t == 0).all().item()
 
-                    # every convs_per_update convolutions, update the node positions and edge features
-                    if conv_idx != 0 and (conv_idx + 1) % self.convs_per_update == 0:
+            if train_self_condition or inference_first_step:
+                with torch.no_grad():
+                    prev_dst_dict = self.denoise_graph(
+                        g, 
+                        node_scalar_features.clone(), 
+                        node_vec_features.clone(), 
+                        node_positions.clone(), 
+                        edge_features.clone(),
+                        node_batch_idx, upper_edge_mask, apply_softmax=True, remove_com=False)
 
-                        if self.separate_mol_updaters:
-                            updater_idx = conv_idx // self.convs_per_update
-                        else:
-                            updater_idx = 0
+        if self.self_conditioning and prev_dst_dict is not None:
+            # if prev_dst_dict is not none, we need to pass through the self-conditioning residual block
+            node_scalar_features, node_positions, node_vec_features, edge_features = self.self_conditioning_residual_layer(
+                g, node_scalar_features, node_positions, node_vec_features, edge_features, 
+                prev_dst_dict, node_batch_idx, upper_edge_mask
+            )
 
-                        node_positions = self.node_position_updaters[updater_idx](node_scalar_features, node_positions, node_vec_features)
+        # now, pass through denoising graph
+        dst_dict = self.denoise_graph(g, node_scalar_features, node_vec_features, node_positions, edge_features, node_batch_idx, upper_edge_mask, apply_softmax, remove_com)
+        return dst_dict
 
-                        x_diff, d = self.precompute_distances(g, node_positions)
 
-                        edge_features = self.edge_updaters[updater_idx](g, node_scalar_features, edge_features, d=d)
+    def denoise_graph(self, g: dgl.DGLGraph,
+                      node_scalar_features: torch.Tensor,
+                      node_vec_features: torch.Tensor,
+                      node_positions: torch.Tensor,
+                      edge_features: torch.Tensor, 
+                      node_batch_idx: torch.Tensor, 
+                      upper_edge_mask: torch.Tensor,
+                      apply_softmax: bool = False,
+                      remove_com: bool = False):
+
+        x_diff, d = self.precompute_distances(g)
+        for recycle_idx in range(self.n_recycles):
+            for conv_idx, conv in enumerate(self.conv_layers):
+
+                # perform a single convolution which updates node scalar and vector features (but not positions)
+                node_scalar_features, node_vec_features = conv(g, 
+                        scalar_feats=node_scalar_features, 
+                        coord_feats=node_positions,
+                        vec_feats=node_vec_features,
+                        edge_feats=edge_features,
+                        x_diff=x_diff,
+                        d=d
+                )
+
+                # every convs_per_update convolutions, update the node positions and edge features
+                if conv_idx != 0 and (conv_idx + 1) % self.convs_per_update == 0:
+
+                    if self.separate_mol_updaters:
+                        updater_idx = conv_idx // self.convs_per_update
+                    else:
+                        updater_idx = 0
+
+                    node_positions = self.node_position_updaters[updater_idx](node_scalar_features, node_positions, node_vec_features)
+
+                    x_diff, d = self.precompute_distances(g, node_positions)
+
+                    edge_features = self.edge_updaters[updater_idx](g, node_scalar_features, edge_features, d=d)
 
             
-            # predict final charges and atom type logits
-            node_scalar_features = self.node_output_head(node_scalar_features)
-            atom_type_logits = node_scalar_features[:, :self.n_atom_types]
-            if not self.exclude_charges:
-                atom_charge_logits = node_scalar_features[:, self.n_atom_types:]
+        # predict final charges and atom type logits
+        node_scalar_features = self.node_output_head(node_scalar_features)
+        atom_type_logits = node_scalar_features[:, :self.n_atom_types]
+        if not self.exclude_charges:
+            atom_charge_logits = node_scalar_features[:, self.n_atom_types:]
 
-            # predict the final edge logits
-            ue_feats = edge_features[upper_edge_mask]
-            le_feats = edge_features[~upper_edge_mask]
-            edge_logits = self.to_edge_logits(ue_feats + le_feats)
+        # predict the final edge logits
+        ue_feats = edge_features[upper_edge_mask]
+        le_feats = edge_features[~upper_edge_mask]
+        edge_logits = self.to_edge_logits(ue_feats + le_feats)
 
-            # project node positions back into zero-COM subspace
-            if remove_com:
-                g.ndata['x_1_pred'] = node_positions
-                g.ndata['x_1_pred'] = g.ndata['x_1_pred'] - dgl.readout_nodes(g, feat='x_1_pred', op='mean')[node_batch_idx]
-                node_positions = g.ndata['x_1_pred']
+        # project node positions back into zero-COM subspace
+        if remove_com:
+            g.ndata['x_1_pred'] = node_positions
+            g.ndata['x_1_pred'] = g.ndata['x_1_pred'] - dgl.readout_nodes(g, feat='x_1_pred', op='mean')[node_batch_idx]
+            node_positions = g.ndata['x_1_pred']
 
         # build a dictionary of predicted features
         dst_dict = {
@@ -360,6 +423,7 @@ class EndpointVectorField(nn.Module):
                 traj_frames[feat] = [ init_frame ]
                 traj_frames[f'{feat}_1_pred'] = []
     
+        dst_dict = None
         for s_idx in range(1,t.shape[0]):
 
             # get the next timepoint (s) and the current timepoint (t)
@@ -370,7 +434,9 @@ class EndpointVectorField(nn.Module):
             alpha_t_prime_i = alpha_t_prime[s_idx - 1]
 
             # compute next step and set x_t = x_s
-            g = self.step(g, s_i, t_i, alpha_t_i, alpha_s_i, alpha_t_prime_i, node_batch_idx, upper_edge_mask, **kwargs)
+            g, dst_dict = self.step(g, 
+                s_i, t_i, alpha_t_i, alpha_s_i, alpha_t_prime_i, 
+                node_batch_idx, upper_edge_mask, prev_dst_dict=dst_dict, **kwargs)
 
             if visualize:
                 for feat in self.canonical_feat_order:
@@ -432,9 +498,8 @@ class EndpointVectorField(nn.Module):
     
     def step(self, g: dgl.DGLGraph, s_i: torch.Tensor, t_i: torch.Tensor,
              alpha_t_i: torch.Tensor, alpha_s_i: torch.Tensor, alpha_t_prime_i: torch.Tensor,
-             node_batch_idx: torch.Tensor, upper_edge_mask: torch.Tensor,
-             inv_temp_func=None,
-            **kwargs):
+             node_batch_idx: torch.Tensor, upper_edge_mask: torch.Tensor, 
+             prev_dst_dict: dict, inv_temp_func=None, **kwargs):
         
         if inv_temp_func is None:
             inv_temp_func = self.continuous_inv_temp_func
@@ -447,6 +512,7 @@ class EndpointVectorField(nn.Module):
             upper_edge_mask=upper_edge_mask,
             apply_softmax=True,
             remove_com=True,
+            prev_dst_dict=prev_dst_dict
         )
 
         # compute x_s for each feature and set x_t = x_s
@@ -493,7 +559,7 @@ class EndpointVectorField(nn.Module):
             # record updated feature in the graph
             data_src[f'{feat}_t'] = x_s
 
-        return g
+        return g, dst_dict
 
 
     def vector_field(self, x_t, x_1, alpha_t, alpha_t_prime):
@@ -523,6 +589,11 @@ class EndpointVectorField(nn.Module):
 
 
 class VectorField(EndpointVectorField):
+
+    def __init__(self, *args, **kwargs):
+        if 'self_conditioning' in kwargs and kwargs['self_conditioning']:
+            raise ValueError("self_conditioning is not supported for vector field parameterization")
+        super().__init__(*args, **kwargs)
 
     def forward(self, g: dgl.DGLGraph, t: torch.Tensor, 
                  node_batch_idx: torch.Tensor, upper_edge_mask: torch.Tensor, apply_softmax=False, remove_com=False):
@@ -626,7 +697,7 @@ class DirichletVectorField(EndpointVectorField):
     
     def step(self, g: dgl.DGLGraph, s_i: torch.Tensor, t_i: torch.Tensor,
              alpha_t_i: torch.Tensor, alpha_s_i: torch.Tensor, alpha_t_prime_i: torch.Tensor,
-             node_batch_idx: torch.Tensor, upper_edge_mask: torch.Tensor):
+             node_batch_idx: torch.Tensor, upper_edge_mask: torch.Tensor, prev_dst_dict: dict):
         
         # alpha_t_i has shape (n_feats,)
         
@@ -637,7 +708,8 @@ class DirichletVectorField(EndpointVectorField):
             node_batch_idx=node_batch_idx,
             upper_edge_mask=upper_edge_mask,
             apply_softmax=True,
-            remove_com=True
+            remove_com=True,
+            prev_dst_dict=prev_dst_dict
         )
 
         # take integration step for positions
@@ -726,7 +798,7 @@ class DirichletVectorField(EndpointVectorField):
         e_1_pred[~upper_edge_mask] = dst_dict['e']
         g.edata['e_1_pred'] = e_1_pred
         
-        return g
+        return g, dst_dict
     
     def project_simplex(self, x_s: torch.Tensor):
         n, c = x_s.shape

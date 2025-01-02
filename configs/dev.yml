@@ -73,6 +73,7 @@ mol_fm:
 
 vector_field:
   # w_max: 8
+  self_conditioning: True
   stochasticity: 20.0
   high_confidence_threshold: 0.9
   update_edge_w_distance: True
@@ -82,11 +83,10 @@ vector_field:
   s_message_dim: 32
   v_message_dim: 8
   n_expansion_gvps: 2
+  use_dst_feats: True 
+  dst_feat_msg_reduction_factor: 4
   attention: True
   n_heads: 4
-  n_kq_gvps: 2
-  s_kq_dim: 16
-  v_kq_dim: 8
   n_recycles: 1
   n_molecule_updates: 3
   separate_mol_updaters: True
@@ -101,7 +101,7 @@ vector_field:
   a_token_dim: 64 # warning - cant have this be non-zero  if using non-CTMC parameterization, only due to implementation details
   c_token_dim: 64
   e_token_dim: 64
-  dropout: 0.2
+  dropout: 0.0
 
 interpolant_scheduler:
   schedule_type: # can be 'cosine', 'linear' or a dictionary with keys 'x', 'a', 'c', 'e'
