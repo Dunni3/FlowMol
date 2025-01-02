@@ -184,7 +184,7 @@ class SampleAnalyzer():
         reos = REOS(active_rules=["Glaxo", "Dundee"])
         ring_system_counter = RingSystemCounter()
 
-        if len(sanitized_mols) == 0:
+        if len(sanitized_mols) != 0:
             reos_flags = reos.mols_to_flag_arr(sanitized_mols)
             ring_counts = ring_system_counter.count_ring_systems(sanitized_mols)
         else:
