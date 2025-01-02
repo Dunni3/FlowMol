@@ -44,6 +44,7 @@ class FlowMol(pl.LightningModule):
                  interpolant_scheduler_config: dict = {},
                  vector_field_config: dict = {},
                  prior_config: dict = {},
+                 default_n_timesteps: int = 250,
                  ema_weight: float = 0.999,
                  ):
         super().__init__()
@@ -62,6 +63,7 @@ class FlowMol(pl.LightningModule):
         self.weight_ae = weight_ae
         self.target_blur = target_blur
         self.n_atoms_hist_file = n_atoms_hist_file
+        self.default_n_timesteps = default_n_timesteps
 
         if self.weight_ae and parameterization == 'vector-field':
             raise NotImplementedError('weighting the atom and edge losses is not yet implemented for the vector-field parameterization')
@@ -226,7 +228,7 @@ class FlowMol(pl.LightningModule):
             self.last_sample_marker = epoch_exact
             self.eval()
             with torch.no_grad():
-                sampled_molecules = self.sample_random_sizes(n_molecules=self.n_mols_to_sample, device=g.device, n_timesteps=100)
+                sampled_molecules = self.sample_random_sizes(n_molecules=self.n_mols_to_sample, device=g.device)
             self.train()
             sampled_mols_metrics = self.sample_analyzer.analyze(sampled_molecules, energy_div=False)
             self.log_dict(sampled_mols_metrics)
@@ -441,7 +443,7 @@ class FlowMol(pl.LightningModule):
         n_atoms = self.n_atoms_dist.sample((n_molecules,), **kwargs)
         return self.n_atoms_map[n_atoms]
 
-    def sample_random_sizes(self, n_molecules: int, device="cuda:0", n_timesteps: int = 250,
+    def sample_random_sizes(self, n_molecules: int, device="cuda:0",
     stochasticity=None, high_confidence_threshold=None, 
     xt_traj=False, ep_traj=False, **kwargs):
         """Sample n_moceules with the number of atoms sampled from the distribution of the training set."""
@@ -450,7 +452,6 @@ class FlowMol(pl.LightningModule):
         atoms_per_molecule = self.sample_n_atoms(n_molecules).to(device)
 
         return self.sample(atoms_per_molecule, 
-            n_timesteps=n_timesteps, 
             device=device,  
             stochasticity=stochasticity, 
             high_confidence_threshold=high_confidence_threshold,
@@ -459,13 +460,15 @@ class FlowMol(pl.LightningModule):
     
 
     @torch.no_grad()
-    def sample(self, n_atoms: torch.Tensor, n_timesteps: int = 250, device="cuda:0",
+    def sample(self, n_atoms: torch.Tensor, n_timesteps: int = None, device="cuda:0",
         stochasticity=None, high_confidence_threshold=None, xt_traj=False, ep_traj=False, **kwargs):
         """Sample molecules with the given number of atoms.
         
         Args:
             n_atoms (torch.Tensor): Tensor of shape (batch_size,) containing the number of atoms in each molecule.
         """
+        if n_timesteps is None:
+            n_timesteps = self.default_n_timesteps
 
         if xt_traj or ep_traj:
             visualize = True
