@@ -35,7 +35,7 @@ class SampledMolecule:
         self.fake_atoms = fake_atoms
 
         if fake_atoms:
-            atom_type_map.append('As') # fake atoms will show up as arsenic, only in trajectories
+            atom_type_map.append('Sn') # fake atoms will show up as tin, only in trajectories
 
         if ctmc_mol:
             atom_type_map.append('Se') # masked molecules will show up as selenium
@@ -53,8 +53,14 @@ class SampledMolecule:
             show_fake_atoms=False)
 
         self.atom_type_map = atom_type_map
-        self.num_atoms = g.num_nodes()
         self.num_atom_types = len(atom_type_map)
+
+        self.num_atoms = g.num_nodes()
+        if self.fake_atoms:
+            fake_atom_token_idx  = len(atom_type_map) - 2 
+            fake_atom_mask = g.ndata['a_1'].argmax(dim=1) == fake_atom_token_idx
+            n_fake_atoms = fake_atom_mask.sum().item()
+            self.num_atoms -= n_fake_atoms
 
         # build rdkit molecule
         self.rdkit_mol = self.build_molecule()
@@ -197,7 +203,7 @@ def extract_moldata_from_graph(g: dgl.DGLGraph, atom_type_map: List[str], exclud
 
     # if fake atoms are present, identify them
     if fake_atoms and not show_fake_atoms:
-        fake_atom_token_idx  = len(atom_type_map) - 1 
+        fake_atom_token_idx  = len(atom_type_map) - 2 
         fake_atom_mask = g.ndata['a_1'].argmax(dim=1) == fake_atom_token_idx
         fake_atom_idxs = torch.where(fake_atom_mask)[0]
         g.remove_nodes(fake_atom_idxs)
