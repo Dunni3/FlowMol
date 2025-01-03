@@ -63,8 +63,11 @@ def process_split(split_df, split_name, args, dataset_config):
     # read all the molecules from the sdf file
     all_molecules = []
     all_smiles = []
-    mol_reader = Chem.SDMolSupplier(str(sdf_file), removeHs=False, sanitize=False)
+    mol_reader = Chem.SDMolSupplier(str(sdf_file), removeHs=False, sanitize=True)
     for mol_idx, mol in enumerate(mol_reader):
+
+        if mol is None:
+            continue
 
         # skip molecules that are in the bad_mols_file or not in this split
         if mol_idx in ids_to_skip or mol_idx not in mol_idxs_in_split:
