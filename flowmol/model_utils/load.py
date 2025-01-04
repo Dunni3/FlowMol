@@ -54,7 +54,7 @@ def data_module_from_config(config: dict) -> MoleculeDataModule:
 
     try:
         fake_atom_p = config['mol_fm']['fake_atom_p']
-    except IndexError:
+    except KeyError:
         fake_atom_p = 0.0
 
     # determine if we are doing distributed training
