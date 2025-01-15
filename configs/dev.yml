@@ -32,7 +32,7 @@ dataset:
   processed_data_dir: data/geom_dev
   # in order to disbale explicit hydrogens, just remove 'H' from atom_map
   atom_map: ['C', 'H', 'N', 'O', 'F', 'P', 'S', 'Cl', 'Br', 'I']
-  dataset_name: qm9 # must be qm9 or geom
+  dataset_name: geom # must be qm9 or geom
   dataset_size: 500
 
 checkpointing:
