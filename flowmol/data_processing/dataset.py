@@ -103,7 +103,7 @@ class MoleculeDataset(torch.utils.data.Dataset):
         edge_labels = torch.cat((upper_edge_labels, upper_edge_labels))
 
         # one-hot encode edge labels and atom charges
-        edge_labels = one_hot(edge_labels.to(torch.int64), num_classes=5).float() # hard-coded assumption of 5 bond types
+        edge_labels = one_hot(edge_labels.to(torch.int64), num_classes=4).float() # hard-coded assumption of 4 bond types
         try:
             atom_charges = one_hot(atom_charges + 2, num_classes=6).float() # hard-coded assumption that charges are in range [-2, 3]
         except Exception as e:
