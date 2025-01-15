@@ -15,7 +15,7 @@ class EndpointVectorField(nn.Module):
                     canonical_feat_order: list,
                     interpolant_scheduler: InterpolantScheduler,
                     n_charges: int = 6,
-                    n_bond_types: int = 5, 
+                    n_bond_types: int = 4, 
                     n_vec_channels: int = 16,
                     n_cp_feats: int = 0, 
                     n_hidden_scalars: int = 64,

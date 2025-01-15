@@ -74,6 +74,13 @@ class MoleculeFeaturizer():
 
 def featurize_molecule(molecule: Chem.rdchem.Mol, atom_map_dict: Dict[str, int], explicit_hydrogens=True):
 
+    # kekulize the molecule
+    try:
+        Chem.Kekulize(molecule)
+    except Chem.KekulizeException as e:
+        print(f"Kekulization failed for molecule {molecule.GetProp('_Name')}", flush=True)
+        return None, None, None, None, None, None
+
     # if explicit_hydrogens is False, remove all hydrogens from the molecule
     if not explicit_hydrogens:
         molecule = Chem.RemoveHs(molecule)
