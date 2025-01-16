@@ -111,7 +111,7 @@ class SampleAnalyzer():
                     num_components.append(len(mol_frags))
                     if len(mol_frags) > 1:
                         error_message[4] += 1
-                    largest_mol = max(mol_frags, default=mol, key=lambda m: m.GetNumAtoms())
+                    largest_mol = max(mol_frags, default=rdmol, key=lambda m: m.GetNumAtoms())
                     largest_mol_n_atoms = largest_mol.GetNumAtoms()
                     largest_frag_frac = largest_mol_n_atoms / mol.num_atoms
                     frag_fracs.append(largest_frag_frac)
