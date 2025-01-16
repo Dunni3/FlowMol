@@ -2,6 +2,7 @@ from flowmol.models.flowmol import FlowMol
 from pathlib import Path
 import yaml
 from flowmol.data_processing.data_module import MoleculeDataModule
+from copy import deepcopy
 
 def read_config_file(config_file: Path) -> dict:
     # process config file into dictionary
@@ -51,13 +52,22 @@ def data_module_from_config(config: dict) -> MoleculeDataModule:
     batch_size = config['training']['batch_size']
     num_workers = config['training']['num_workers']
 
+    try:
+        fake_atom_p = config['mol_fm']['fake_atom_p']
+    except KeyError:
+        fake_atom_p = 0.0
+
     # determine if we are doing distributed training
     if config['training']['trainer_args']['devices'] > 1:
         distributed = True
     else:
         distributed = False
 
-    data_module = MoleculeDataModule(dataset_config=config['dataset'],
+    dataset_config = config['dataset']
+    dataset_config = deepcopy(dataset_config)
+    dataset_config['fake_atom_p'] = fake_atom_p
+
+    data_module = MoleculeDataModule(dataset_config=dataset_config,
                                      dm_prior_config=config['mol_fm']['prior_config'],
                                      batch_size=batch_size, 
                                      num_workers=num_workers, 

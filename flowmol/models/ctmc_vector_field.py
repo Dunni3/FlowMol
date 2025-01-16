@@ -29,6 +29,7 @@ class CTMCVectorField(EndpointVectorField):
                  cat_temp_decay_a: float = 2,
                  forward_weight_schedule: Union[str, Callable, float] = 'beta',
                  fw_beta_a: float = 0.25, fw_beta_b: float = 0.25, fw_beta_max: float = 10.0,
+                 fake_atoms: bool = False,
                  **kwargs):
         super().__init__(*args, has_mask=True, **kwargs) # initialize endpoint vector field
 
@@ -36,6 +37,7 @@ class CTMCVectorField(EndpointVectorField):
         self.eta = stochasticity # default stochasticity parameter, 0 means no stochasticity
         self.hc_thresh = high_confidence_threshold # the threshold for for calling a prediction high-confidence, 0 means no purity sampling
         self.dfm_type = dfm_type
+        self.fake_atoms = fake_atoms
 
         # configure temperature schedule for categorical features
         self.cat_temperature_schedule = cat_temperature_schedule

@@ -46,6 +46,7 @@ class FlowMol(pl.LightningModule):
                  prior_config: dict = {},
                  default_n_timesteps: int = 250,
                  ema_weight: float = 0.999,
+                 fake_atom_p: float = 0.0,
                  ):
         super().__init__()
 
@@ -64,6 +65,12 @@ class FlowMol(pl.LightningModule):
         self.target_blur = target_blur
         self.n_atoms_hist_file = n_atoms_hist_file
         self.default_n_timesteps = default_n_timesteps
+
+        # fake atoms settings
+        self.fake_atom_p = fake_atom_p
+        self.fake_atoms = fake_atom_p > 0
+        if self.fake_atoms:
+            self.n_atom_types += 1
 
         if self.weight_ae and parameterization == 'vector-field':
             raise NotImplementedError('weighting the atom and edge losses is not yet implemented for the vector-field parameterization')
@@ -131,6 +138,7 @@ class FlowMol(pl.LightningModule):
                                            n_charges=n_atom_charges, 
                                            n_bond_types=n_bond_types,
                                            exclude_charges=self.exclude_charges,
+                                           fake_atoms=self.fake_atoms,
                                            **vector_field_config)
 
         # remove charge loss function if necessary
@@ -537,6 +545,7 @@ class FlowMol(pl.LightningModule):
 
             molecules.append(SampledMolecule(*args, 
                 ctmc_mol=ctmc_mol, 
+                fake_atoms=self.fake_atoms,
                 build_xt_traj=xt_traj,
                 build_ep_traj=ep_traj,
                 exclude_charges=self.exclude_charges))
