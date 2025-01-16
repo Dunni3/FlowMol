@@ -31,7 +31,7 @@ class FlowMol(pl.LightningModule):
                  n_atoms_hist_file: str,
                  marginal_dists_file: str,                 
                  n_atom_charges: int = 6,
-                 n_bond_types: int = 5,
+                 n_bond_types: int = 4,
                  sample_interval: float = 1.0, # how often to sample molecules from the model, measured in epochs
                  n_mols_to_sample: int = 64, # how many molecules to sample from the model during each sample/eval step during training
                  time_scaled_loss: bool = True,

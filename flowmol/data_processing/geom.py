@@ -26,7 +26,7 @@ class MoleculeFeaturizer():
 
 
         all_positions, all_atom_types, all_atom_charges, all_bond_types, all_bond_idxs = [], [], [], [], []
-        all_bond_order_counts = torch.zeros(5, dtype=torch.int64)
+        all_bond_order_counts = torch.zeros(4, dtype=torch.int64)
 
         if self.n_cpus == 1:
             for molecule in molecules:
@@ -73,6 +73,13 @@ class MoleculeFeaturizer():
 
 
 def featurize_molecule(molecule: Chem.rdchem.Mol, atom_map_dict: Dict[str, int], explicit_hydrogens=True):
+
+    # kekulize the molecule
+    try:
+        Chem.Kekulize(molecule)
+    except Chem.KekulizeException as e:
+        print(f"Kekulization failed for molecule {molecule.GetProp('_Name')}", flush=True)
+        return None, None, None, None, None, None
 
     # if explicit_hydrogens is False, remove all hydrogens from the molecule
     if not explicit_hydrogens:
@@ -125,7 +132,7 @@ def featurize_molecule(molecule: Chem.rdchem.Mol, atom_map_dict: Dict[str, int],
 
     # construct an array containing the counts of each bond type in the molecule
     bond_order_idxs, existing_bond_order_counts = torch.unique(edge_attr, return_counts=True)
-    bond_order_counts = torch.zeros(5, dtype=torch.int64)
+    bond_order_counts = torch.zeros(4, dtype=torch.int64)
     for bond_order_idx, count in zip(bond_order_idxs, existing_bond_order_counts):
         bond_order_counts[bond_order_idx] = count
 

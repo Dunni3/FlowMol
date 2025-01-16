@@ -29,11 +29,11 @@ lr_scheduler:
   restart_type: 'linear'
 
 dataset:
-  raw_data_dir: data/qm9_raw
-  processed_data_dir: data/qm9_dev
+  raw_data_dir: data/raw
+  processed_data_dir: data/geom_dev
   # in order to disbale explicit hydrogens, just remove 'H' from atom_map
-  atom_map: ['C', 'H', 'N', 'O', 'F',] 
-  dataset_name: qm9 # must be qm9 or geom
+  atom_map: ['C', 'H', 'N', 'O', 'F', 'P', 'S', 'Cl', 'Br', 'I']
+  dataset_name: geom # must be qm9 or geom
   dataset_size: 500
 
 checkpointing:
