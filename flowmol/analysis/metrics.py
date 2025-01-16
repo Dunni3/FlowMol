@@ -104,6 +104,9 @@ class SampleAnalyzer():
         frag_fracs = []
         error_message = Counter()
         for mol in sampled_molecules:
+            if mol.num_atoms == 0:
+                error_message[4] += 1
+                continue
             rdmol = mol.rdkit_mol
             if rdmol is not None:
                 try:
