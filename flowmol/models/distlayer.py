@@ -1,6 +1,11 @@
 import torch
 
 class DistLayer(torch.nn.Linear):
+
+    """
+    DistLayer for harmonic loss as proposed in https://arxiv.org/abs/2502.01628
+    """
+
     def __init__(self, in_features, out_features, n=1., eps=1e-4, bias=False):
         super(DistLayer, self).__init__(in_features, out_features, bias=bias)
         self.n = n

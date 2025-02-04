@@ -3,6 +3,14 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 class HarmonicLoss(nn.Module):
+
+    """
+    Harmonic loss for categorical data as proposed by https://arxiv.org/abs/2502.01628
+    
+    
+    Must be used in conjunction with flowmol.models.distlayer.DistLayer
+    """
+
     def __init__(self, reduction: str = 'mean', ignore_index=None):
         super(HarmonicLoss, self).__init__()
         self.reduction = reduction
