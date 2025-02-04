@@ -18,6 +18,7 @@ from flowmol.data_processing.priors import uniform_simplex_prior, biased_simplex
 from flowmol.data_processing.priors import inference_prior_register, edge_prior
 from flowmol.analysis.molecule_builder import SampledMolecule
 from flowmol.analysis.metrics import SampleAnalyzer
+from flowmol.models.harmonic_loss import HarmonicLoss
 from einops import rearrange
 
 class FlowMol(pl.LightningModule):
@@ -47,6 +48,7 @@ class FlowMol(pl.LightningModule):
                  default_n_timesteps: int = 250,
                  ema_weight: float = 0.999,
                  fake_atom_p: float = 0.0,
+                 harmonic_loss: bool = False,
                  ):
         super().__init__()
 
@@ -65,6 +67,7 @@ class FlowMol(pl.LightningModule):
         self.target_blur = target_blur
         self.n_atoms_hist_file = n_atoms_hist_file
         self.default_n_timesteps = default_n_timesteps
+        self.harmonic_loss
 
         # fake atoms settings
         self.fake_atom_p = fake_atom_p
@@ -139,6 +142,7 @@ class FlowMol(pl.LightningModule):
                                            n_bond_types=n_bond_types,
                                            exclude_charges=self.exclude_charges,
                                            fake_atoms=self.fake_atoms,
+                                           harmonic_loss=harmonic_loss,
                                            **vector_field_config)
 
         # remove charge loss function if necessary
@@ -194,7 +198,10 @@ class FlowMol(pl.LightningModule):
             reduction = 'mean'
 
         if self.parameterization in  ['endpoint', 'dirichlet', 'ctmc']:
-            categorical_loss_fn = nn.CrossEntropyLoss
+            if self.harmonic_loss:
+                categorical_loss_fn = HarmonicLoss
+            else:
+                categorical_loss_fn = nn.CrossEntropyLoss
         elif self.parameterization == 'vector-field':
             categorical_loss_fn = nn.MSELoss
 
