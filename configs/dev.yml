@@ -42,6 +42,7 @@ checkpointing:
   # every_n_epochs: 1
 
 mol_fm:
+  harmonic_loss: true
   parameterization: ctmc # can be "endpoint", "vector-field", "dirichlet", or "ctmc"
   weight_ae: False
   target_blur: 0.0

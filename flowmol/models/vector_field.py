@@ -180,7 +180,7 @@ class EndpointVectorField(nn.Module):
         ]
 
         if self.harmonic_loss:
-            node_output_head_components.append(DistLayer(n_hidden_scalars, n_atom_types+n_charges, n=1.0))
+            node_output_head_components.append(DistLayer(n_hidden_scalars, n_atom_types+n_charges, n=(n_hidden_scalars)**0.5))
         else:
             node_output_head_components.append(nn.Linear(n_hidden_scalars, n_atom_types + n_charges))
 
@@ -193,7 +193,7 @@ class EndpointVectorField(nn.Module):
         ]
 
         if self.harmonic_loss:
-            to_edge_logit_components.append(DistLayer(n_hidden_edge_feats, n_bond_types, n=1.0))
+            to_edge_logit_components.append(DistLayer(n_hidden_edge_feats, n_bond_types, n=(n_hidden_edge_feats)**0.5))
         else:
             to_edge_logit_components.append(nn.Linear(n_hidden_edge_feats, n_bond_types))
 

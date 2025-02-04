@@ -3,9 +3,10 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 class HarmonicLoss(nn.Module):
-    def __init__(self, reduction: str = 'mean'):
+    def __init__(self, reduction: str = 'mean', ignore_index=None):
         super(HarmonicLoss, self).__init__()
         self.reduction = reduction
+        self.ignore_index = ignore_index
 
         if self.reduction not in ['mean', 'sum', 'none']:
             raise ValueError(f"Invalid reduction: {self.reduction}")
@@ -22,7 +23,12 @@ class HarmonicLoss(nn.Module):
             torch.Tensor: Scalar loss value.
         """
         # Convert logits to probabilities if needed (optional, depends on loss design)
-        probs = logits/torch.sum(logits, dim=-11, keepdim=True)
+        probs = logits/torch.sum(logits, dim=-1, keepdim=True)
+
+        # create a mask of things that are the ignore index
+        if self.ignore_index is not None:
+            ignore_mask = target == self.ignore_index 
+            target[ignore_mask] = 0 # need to do this so we dont get index error in target_probs computation
 
         # Compute loss (Example: Negative Log-Likelihood)
         # Gather the probabilities corresponding to the target labels
@@ -30,6 +36,10 @@ class HarmonicLoss(nn.Module):
         
         # Compute loss (Example: Negative Log-Likelihood)
         loss = -1 * target_probs
+
+        if self.ignore_index is not None:
+            # Zero out the loss for the ignored index
+            loss[ignore_mask] = 0
 
         # apply reduction
         if self.reduction == 'mean':

@@ -67,7 +67,7 @@ class FlowMol(pl.LightningModule):
         self.target_blur = target_blur
         self.n_atoms_hist_file = n_atoms_hist_file
         self.default_n_timesteps = default_n_timesteps
-        self.harmonic_loss
+        self.harmonic_loss = harmonic_loss
 
         # fake atoms settings
         self.fake_atom_p = fake_atom_p
