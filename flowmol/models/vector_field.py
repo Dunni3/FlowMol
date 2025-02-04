@@ -8,8 +8,10 @@ import scipy
 from flowmol.models.gvp import GVPConv, GVP, _norm_no_nan
 from flowmol.models.interpolant_scheduler import InterpolantScheduler
 from flowmol.models.self_conditioning import SelfConditioningResidualLayer
+from flowmol.models.distlayer import DistLayer
 from flowmol.utils.dirflow import DirichletConditionalFlow, simplex_proj
 from flowmol.utils.embedding import get_time_embedding, _rbf
+
 
 class EndpointVectorField(nn.Module):
 
@@ -49,6 +51,7 @@ class EndpointVectorField(nn.Module):
                     self_conditioning: bool = False,
                     use_dst_feats: bool = False,
                     dst_feat_msg_reduction_factor: float = 4,
+                    harmonic_loss: bool = False,
                     # if we are using CTMC, input categorical features will have mask tokens,
                     # this means their one-hot representations will have an extra dimension,
                     # and the neural network instantiated by this method need to account for this
@@ -72,6 +75,7 @@ class EndpointVectorField(nn.Module):
         self.time_embedding_dim = time_embedding_dim
         self.self_conditioning = self_conditioning
         self.has_mask = has_mask
+        self.harmonic_loss = harmonic_loss
 
         if self.exclude_charges:
             raise ValueError("exclude_charges is deprecated")
@@ -170,18 +174,31 @@ class EndpointVectorField(nn.Module):
             self.node_position_updaters.append(NodePositionUpdate(n_hidden_scalars, n_vec_channels, n_gvps=3, n_cp_feats=n_cp_feats))
             self.edge_updaters.append(EdgeUpdate(n_hidden_scalars, n_hidden_edge_feats, update_edge_w_distance=update_edge_w_distance, rbf_dim=rbf_dim))
 
-
-        self.node_output_head = nn.Sequential(
+        node_output_head_components = [
             nn.Linear(n_hidden_scalars, n_hidden_scalars),
             nn.SiLU(),
-            nn.Linear(n_hidden_scalars, n_atom_types + n_charges)
-        )
+        ]
 
-        self.to_edge_logits = nn.Sequential(
+        if self.harmonic_loss:
+            node_output_head_components.append(DistLayer(n_hidden_scalars, n_atom_types+n_charges, n=1.0))
+        else:
+            node_output_head_components.append(nn.Linear(n_hidden_scalars, n_atom_types + n_charges))
+
+        self.node_output_head = nn.Sequential(*node_output_head_components)
+
+
+        to_edge_logit_components = [
             nn.Linear(n_hidden_edge_feats, n_hidden_edge_feats),
             nn.SiLU(),
-            nn.Linear(n_hidden_edge_feats, n_bond_types)
-        )
+        ]
+
+        if self.harmonic_loss:
+            to_edge_logit_components.append(DistLayer(n_hidden_edge_feats, n_bond_types, n=1.0))
+        else:
+            to_edge_logit_components.append(nn.Linear(n_hidden_edge_feats, n_bond_types))
+
+        self.to_edge_logits = nn.Sequential(*to_edge_logit_components)
+
 
         if self.self_conditioning:
             self.self_conditioning_residual_layer = SelfConditioningResidualLayer(
@@ -362,7 +379,12 @@ class EndpointVectorField(nn.Module):
         if apply_softmax:
             for feat in dst_dict.keys():
                 if feat in ['a', 'c', 'e']: # if this is a categorical feature
-                    dst_dict[feat] = torch.softmax(dst_dict[feat], dim=-1) # apply softmax to this feature
+                    if self.harmonic_loss:
+                        prob_unnorm = dst_dict[feat]
+                        prob = prob_unnorm/torch.sum(prob_unnorm, dim=1, keepdim=True)
+                        dst_dict[feat] = prob
+                    else:
+                        dst_dict[feat] = torch.softmax(dst_dict[feat], dim=-1) # apply softmax to this feature
 
         return dst_dict
     
