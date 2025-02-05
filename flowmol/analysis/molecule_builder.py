@@ -223,7 +223,7 @@ def extract_moldata_from_graph(g: dgl.DGLGraph, atom_type_map: List[str], exclud
 
     # get bond types and atom indicies for every edge, convert types from simplex to integer
     bond_types = g.edata['e_1'].argmax(dim=1)
-    bond_types[bond_types == 5] = 0 # set masked bonds to 0
+    bond_types[bond_types == 4] = 0 # set masked bonds to 0
     bond_src_idxs, bond_dst_idxs = g.edges()
 
     # get just the upper triangle of the adjacency matrix
