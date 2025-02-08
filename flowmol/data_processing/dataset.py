@@ -4,6 +4,7 @@ import dgl
 from torch.nn.functional import one_hot
 import math
 from flowmol.data_processing.priors import coupled_node_prior, edge_prior
+import functools
 
 # this might not be necessary. I think we can pass the argument collate_fn=dgl.batch to the DataLoader
 def collate(graphs):
@@ -65,6 +66,18 @@ class MoleculeDataset(torch.utils.data.Dataset):
         self.bond_idxs = data_dict['bond_idxs']
         self.node_idx_array = data_dict['node_idx_array']
         self.edge_idx_array = data_dict['edge_idx_array']
+
+    @functools.cached_property
+    def n_atoms_per_graph(self):
+        n_atoms = self.node_idx_array[:, 1] - self.node_idx_array[:, 0]
+        if self.use_fake_atoms:
+            n_atoms = n_atoms*(1+ self.fake_atom_p/2)
+            n_atoms = n_atoms.round().long()
+        return n_atoms
+    
+    @functools.cached_property
+    def n_edges_per_graph(self):
+        return self.n_atoms_per_graph.square()
 
     def __len__(self):
         return self.node_idx_array.shape[0]
