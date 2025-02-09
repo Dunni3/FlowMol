@@ -61,7 +61,6 @@ class AdaptiveEdgeSampler(Sampler):
         self.setup_queue()
         for _ in range(self.batches_per_epoch):
             next_batch = self.get_next_batch()
-            print('serving batch size of ', len(next_batch))
             yield next_batch
 
 
