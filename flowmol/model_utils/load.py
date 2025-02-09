@@ -53,6 +53,11 @@ def data_module_from_config(config: dict) -> MoleculeDataModule:
     num_workers = config['training']['num_workers']
 
     try:
+        max_num_edges = config['training']['max_num_edges']
+    except KeyError:
+        max_num_edges = None
+
+    try:
         fake_atom_p = config['mol_fm']['fake_atom_p']
     except KeyError:
         fake_atom_p = 0.0
@@ -69,6 +74,7 @@ def data_module_from_config(config: dict) -> MoleculeDataModule:
 
     data_module = MoleculeDataModule(dataset_config=dataset_config,
                                      dm_prior_config=config['mol_fm']['prior_config'],
+                                     max_num_edges=max_num_edges,
                                      batch_size=batch_size, 
                                      num_workers=num_workers, 
                                      distributed=distributed)

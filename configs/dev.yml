@@ -3,12 +3,13 @@ training:
   batch_size: 32
   num_workers: 0
   ema_decay: 0.999
+  max_num_edges: 5000
   trainer_args:
     max_epochs: 3
     accelerator: gpu
     devices: 1
     accumulate_grad_batches: 1
-    limit_val_batches: 0.5
+    limit_val_batches: 5
 
   evaluation:
     mols_to_sample: 64 # how many molecules to sample during evaluation

@@ -12,6 +12,7 @@ class AdaptiveEdgeSampler(Sampler):
 
         self.dataset: MoleculeDataset = dataset
         self.edges_per_batch = edges_per_batch
+        self.distributed = distributed
 
         if self.distributed:
             self.num_replicas = num_replicas if num_replicas is not None else torch.distributed.get_world_size()
@@ -27,13 +28,17 @@ class AdaptiveEdgeSampler(Sampler):
             self.frac_end = 1
 
         self.samples_per_epoch = len(self.dataset) // self.num_replicas
+        edges_per_sample = (44*(1+self.dataset.fake_atom_p/2))**2
+        samples_per_batch = edges_per_batch / edges_per_sample
+        self.batches_per_epoch = self.samples_per_epoch // samples_per_batch
+        self.batches_per_epoch = int(self.batches_per_epoch)
         
 
     def setup_queue(self):
-        self.sample_queue = torch.randperm(len(self.dataset))
+        start_idx = int(self.frac_start * len(self.dataset))
+        end_idx = int(self.frac_end * len(self.dataset))
+        self.sample_queue = torch.randperm(len(self.dataset))[start_idx:end_idx]
         self.queue_idx = 0
-        if self.samples_per_epoch < len(self.sample_queue):
-            self.sample_queue = self.sample_queue[:self.samples_per_epoch]
 
     def get_next_batch(self):
 
@@ -44,19 +49,21 @@ class AdaptiveEdgeSampler(Sampler):
             n_edges += self.dataset.n_edges_per_graph[idx]
             batch_idxs.append(idx)
             self.queue_idx += 1
+
             if self.queue_idx >= len(self.sample_queue):
-                break
+                self.setup_queue()
+
         return batch_idxs
 
 
     def __iter__(self):
 
         self.setup_queue()
-        while True:
-            yield self.get_next_batch()
-            if self.queue_idx >= len(self.sample_queue):
-                break
+        for _ in range(self.batches_per_epoch):
+            next_batch = self.get_next_batch()
+            print('serving batch size of ', len(next_batch))
+            yield next_batch
 
 
     def __len__(self):
-        return (len(self.data_source) + self.batch_size - 1) // self.batch_size
+        return self.batches_per_epoch
