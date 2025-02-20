@@ -78,6 +78,11 @@ def featurize_molecule(molecule: Chem.rdchem.Mol, atom_map_dict: Dict[str, int],
     if not explicit_hydrogens:
         molecule = Chem.RemoveHs(molecule)
 
+    num_fragments = len(Chem.GetMolFrags(molecule, sanitizeFrags=False))
+    if num_fragments > 1:
+        print(f"Fragmented molecule with {num_fragments} fragments", flush=True)
+        return None, None, None, None, None
+
     # get positions
     positions = molecule.GetConformer().GetPositions()
     positions = torch.from_numpy(positions)
