@@ -177,7 +177,7 @@ if __name__ == "__main__":
     all_atom_charges = []
     all_bond_types = []
     all_bond_idxs = []
-    all_bond_order_counts = torch.zeros(5, dtype=torch.int64)
+    all_bond_order_counts = torch.zeros(4, dtype=torch.int64)
 
     mol_featurizer = MoleculeFeaturizer(config['dataset']['atom_map'], n_cpus=args.n_cpus)
 

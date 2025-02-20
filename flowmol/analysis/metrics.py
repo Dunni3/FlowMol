@@ -47,8 +47,8 @@ class SampleAnalyzer():
         n_stable_molecules = 0
         n_molecules = len(sampled_molecules)
         for molecule in sampled_molecules:
-            n_atoms += molecule.num_atoms
-            n_stable_atoms_this_mol, mol_stable = check_stability(molecule)
+            n_stable_atoms_this_mol, mol_stable, n_fake_atoms = check_stability(molecule)
+            n_atoms += molecule.num_atoms - n_fake_atoms
             n_stable_atoms += n_stable_atoms_this_mol
             n_stable_molecules += int(mol_stable)
 
@@ -104,6 +104,9 @@ class SampleAnalyzer():
         frag_fracs = []
         error_message = Counter()
         for mol in sampled_molecules:
+            if mol.num_atoms == 0:
+                error_message[4] += 1
+                continue
             rdmol = mol.rdkit_mol
             if rdmol is not None:
                 try:
@@ -219,13 +222,18 @@ class SampleAnalyzer():
 def check_stability(molecule: SampledMolecule):
     """ molecule: Molecule object. """
     atom_types = molecule.atom_types
-    # edge_types = molecule.bond_types
-
     valencies = molecule.valencies
+    charges = molecule.atom_charges
 
     n_stable_atoms = 0
+    n_fake_atoms = 0 
     mol_stable = True
-    for i, (atom_type, valency, charge) in enumerate(zip(atom_types, valencies, molecule.atom_charges)):
+    for i, (atom_type, valency, charge) in enumerate(zip(atom_types, valencies, charges)):
+
+        if molecule.fake_atoms and atom_type == 'Sn':
+            n_fake_atoms += 1
+            continue
+
         valency = int(valency)
         charge = int(charge)
         possible_bonds = allowed_bonds[atom_type]
@@ -240,4 +248,4 @@ def check_stability(molecule: SampledMolecule):
             mol_stable = False
         n_stable_atoms += int(is_stable)
 
-    return n_stable_atoms, mol_stable
+    return n_stable_atoms, mol_stable, n_fake_atoms

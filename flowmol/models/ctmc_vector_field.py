@@ -29,6 +29,7 @@ class CTMCVectorField(EndpointVectorField):
                  cat_temp_decay_a: float = 2,
                  forward_weight_schedule: Union[str, Callable, float] = 'beta',
                  fw_beta_a: float = 0.25, fw_beta_b: float = 0.25, fw_beta_max: float = 10.0,
+                 fake_atoms: bool = False,
                  **kwargs):
         super().__init__(*args, has_mask=True, **kwargs) # initialize endpoint vector field
 
@@ -36,6 +37,7 @@ class CTMCVectorField(EndpointVectorField):
         self.eta = stochasticity # default stochasticity parameter, 0 means no stochasticity
         self.hc_thresh = high_confidence_threshold # the threshold for for calling a prediction high-confidence, 0 means no purity sampling
         self.dfm_type = dfm_type
+        self.fake_atoms = fake_atoms
 
         # configure temperature schedule for categorical features
         self.cat_temperature_schedule = cat_temperature_schedule
@@ -199,6 +201,7 @@ class CTMCVectorField(EndpointVectorField):
                 traj_frames[feat] = [ init_frame ]
                 traj_frames[f'{feat}_1_pred'] = []
     
+        dst_dict = None
         for s_idx in range(1,t.shape[0]):
 
             # get the next timepoint (s) and the current timepoint (t)
@@ -215,7 +218,7 @@ class CTMCVectorField(EndpointVectorField):
                 last_step = False
 
             # compute next step and set x_t = x_s
-            g = self.step(g, s_i, t_i, alpha_t_i, alpha_s_i, 
+            g, dst_dict = self.step(g, s_i, t_i, alpha_t_i, alpha_s_i, 
                 alpha_t_prime_i, 
                 node_batch_idx, 
                 edge_batch_idx, 
@@ -226,6 +229,7 @@ class CTMCVectorField(EndpointVectorField):
                 stochasticity=stochasticity, 
                 high_confidence_threshold=high_confidence_threshold,
                 last_step=last_step, 
+                prev_dst_dict=dst_dict,
                 **kwargs)
 
             if visualize:
@@ -285,6 +289,7 @@ class CTMCVectorField(EndpointVectorField):
              node_batch_idx: torch.Tensor, edge_batch_idx: torch.Tensor, upper_edge_mask: torch.Tensor,
              cat_temp_func: Callable,
              forward_weight_func: Callable, 
+             prev_dst_dict: dict = None,
              dfm_type: str = 'campbell',
              stochasticity: float = 8.0,
              high_confidence_threshold: float = 0.9, 
@@ -316,7 +321,8 @@ class CTMCVectorField(EndpointVectorField):
             node_batch_idx=node_batch_idx,
             upper_edge_mask=upper_edge_mask,
             apply_softmax=True,
-            remove_com=True
+            remove_com=True,
+            prev_dst_dict=prev_dst_dict,
         )
         
         dt = s_i - t_i
@@ -402,7 +408,7 @@ class CTMCVectorField(EndpointVectorField):
             data_src[f'{feat}_t'] = xt
             data_src[f'{feat}_1_pred'] = x_1_sampled
 
-        return g
+        return g, dst_dict
 
         
     def campbell_step(self, p_1_given_t: torch.Tensor,

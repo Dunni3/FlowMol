@@ -2,12 +2,14 @@ training:
   output_dir: runs/
   batch_size: 32
   num_workers: 0
+  ema_decay: 0.999
+  max_num_edges: 5000
   trainer_args:
     max_epochs: 3
     accelerator: gpu
     devices: 1
     accumulate_grad_batches: 1
-    limit_val_batches: 0.5
+    limit_val_batches: 5
 
   evaluation:
     mols_to_sample: 64 # how many molecules to sample during evaluation
@@ -28,11 +30,11 @@ lr_scheduler:
   restart_type: 'linear'
 
 dataset:
-  raw_data_dir: data/qm9_raw
-  processed_data_dir: data/qm9_dev
+  raw_data_dir: data/raw
+  processed_data_dir: data/geom_dev
   # in order to disbale explicit hydrogens, just remove 'H' from atom_map
-  atom_map: ['C', 'H', 'N', 'O', 'F',] 
-  dataset_name: qm9 # must be qm9 or geom
+  atom_map: ['C', 'H', 'N', 'O', 'F', 'P', 'S', 'Cl', 'Br', 'I']
+  dataset_name: geom # must be qm9 or geom
   dataset_size: 500
 
 checkpointing:
@@ -46,6 +48,7 @@ mol_fm:
   target_blur: 0.0
   time_scaled_loss: True
   exclude_charges: False
+  fake_atom_p: 0.2
   total_loss_weights:
     x: 1.0
     a: 1.0
@@ -71,12 +74,20 @@ mol_fm:
 
 vector_field:
   # w_max: 8
-  stochasticity: 2.0
+  self_conditioning: True
+  stochasticity: 20.0
   high_confidence_threshold: 0.9
   update_edge_w_distance: True
   n_vec_channels: 16
   n_hidden_scalars: 64
   n_hidden_edge_feats: 64
+  s_message_dim: 
+  v_message_dim: 
+  n_expansion_gvps: 2
+  use_dst_feats: True 
+  dst_feat_msg_reduction_factor: 4
+  attention: False
+  n_heads: 4
   n_recycles: 1
   n_molecule_updates: 3
   separate_mol_updaters: True
@@ -84,20 +95,19 @@ vector_field:
   n_cp_feats: 4
   n_message_gvps: 3
   n_update_gvps: 3
-  message_norm: 100
-  rbf_dmax: 12
-  rbf_dim: 16
+  message_norm: 'sum'
+  rbf_dmax: 10
+  rbf_dim: 32
+  time_embedding_dim: 64
+  a_token_dim: 64 # warning - cant have this be non-zero  if using non-CTMC parameterization, only due to implementation details
+  c_token_dim: 64
+  e_token_dim: 64
+  dropout: 0.0
 
 interpolant_scheduler:
   schedule_type: # can be 'cosine', 'linear' or a dictionary with keys 'x', 'a', 'c', 'e'
-    x: 'cosine'
-    a: 'cosine'
-    c: 'cosine'
-    e: 'cosine'
-  
-  cosine_params:
-    x: 1
-    a: 2.0
-    c: 2.0
-    e: 1.5
+    x: 'linear'
+    a: 'linear'
+    c: 'linear'
+    e: 'linear'
 
