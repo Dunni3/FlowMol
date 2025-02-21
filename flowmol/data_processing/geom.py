@@ -111,9 +111,19 @@ class MoleculeFeaturizer():
 
 def featurize_molecule(molecule: Chem.rdchem.Mol, atom_map_dict: Dict[str, int], explicit_hydrogens=True):
 
+    # sanitize the molecule
+    try:
+        Chem.SanitizeMol(molecule)
+    except Chem.SanitizeException as e:
+        print(f"Sanitization failed for molecule {molecule.GetProp('_Name')}", flush=True)
+        return MoleculeData(
+            failed=True,
+            failure_mode='sanitization'
+        )
+
     # kekulize the molecule
     try:
-        Chem.Kekulize(molecule)
+        Chem.Kekulize(molecule, clearAromaticFlags=True)
     except Chem.KekulizeException as e:
         print(f"Kekulization failed for molecule {molecule.GetProp('_Name')}", flush=True)
         return MoleculeData(
