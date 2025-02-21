@@ -1,5 +1,6 @@
 from typing import List
-from .molecule_builder import SampledMolecule
+import json
+from flowmol.analysis.molecule_builder import SampledMolecule
 from pathlib import Path
 import torch
 from rdkit import Chem
@@ -10,7 +11,7 @@ from flowmol.analysis.ff_energy import compute_mmff_energy
 from flowmol.analysis.reos import REOS
 from flowmol.analysis.ring_systems import RingSystemCounter, ring_counts_to_df
 
-allowed_bonds = {'H': {0: 1, 1: 0, -1: 0},
+midi_valence_table = {'H': {0: 1, 1: 0, -1: 0},
                  'C': {0: [3, 4], 1: 3, -1: 3},
                  'N': {0: [2, 3], 1: [2, 3, 4], -1: 2},    # In QM9, N+ seems to be present in the form NH+ and NH2+
                  'O': {0: 2, 1: 3, -1: 1},
@@ -26,7 +27,7 @@ bond_dict = [None, Chem.rdchem.BondType.SINGLE, Chem.rdchem.BondType.DOUBLE, Che
 
 class SampleAnalyzer():
 
-    def __init__(self, processed_data_dir: str = None, dataset='geom'):
+    def __init__(self, processed_data_dir: str = None, dataset='geom', use_midi_valence=False):
 
         self.processed_data_dir = processed_data_dir
 
@@ -35,9 +36,26 @@ class SampleAnalyzer():
 
         energy_dist_file = self.processed_data_dir / 'energy_dist.npz'
         self.energy_div_calculator = DivergenceCalculator(energy_dist_file)
+
+        if use_midi_valence:
+            self.allowed_bonds = midi_valence_table
+        else:
+            valence_file = self.processed_data_dir / 'train_data_valencies.json'
+            with open(valence_file, 'r') as f:
+                loaded_dict = json.load(f)
+
+            # Convert charge keys to integers
+            converted_dict = {
+                atom_type: {int(charge): valencies for charge, valencies in charges.items()}
+                for atom_type, charges in loaded_dict.items()
+            }
+            self.allowed_bonds = converted_dict
             
 
-    def analyze(self, sampled_molecules: List[SampledMolecule], return_counts: bool = False, energy_div: bool = False, functional_validity: bool = False):
+    def analyze(self, sampled_molecules: List[SampledMolecule], 
+                    return_counts: bool = False, 
+                    energy_div: bool = False, 
+                    functional_validity: bool = False):
 
         # compute the atom-level stabiltiy of a molecule. this is the number of atoms that have valid valencies.
         # note that since is computed at the atom level, even if the entire molecule is unstable, we can still get an idea
@@ -47,7 +65,7 @@ class SampleAnalyzer():
         n_stable_molecules = 0
         n_molecules = len(sampled_molecules)
         for molecule in sampled_molecules:
-            n_stable_atoms_this_mol, mol_stable, n_fake_atoms = check_stability(molecule)
+            n_stable_atoms_this_mol, mol_stable, n_fake_atoms = check_stability(molecule, self.allowed_bonds)
             n_atoms += molecule.num_atoms - n_fake_atoms
             n_stable_atoms += n_stable_atoms_this_mol
             n_stable_molecules += int(mol_stable)
@@ -217,9 +235,9 @@ class SampleAnalyzer():
             flag_rate = -1
             ood_rate = -1
         
-        return dict(flag_rate=flag_rate, ood_rate=ood_rate)
+        return dict(flag_rate=flag_rate, ood_rate=ood_rate) 
 
-def check_stability(molecule: SampledMolecule):
+def check_stability(molecule: SampledMolecule, allowed_bonds):
     """ molecule: Molecule object. """
     atom_types = molecule.atom_types
     valencies = molecule.valencies

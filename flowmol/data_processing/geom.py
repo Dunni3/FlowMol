@@ -1,10 +1,81 @@
-from typing import Dict, List
 import torch
 from torch.nn.functional import one_hot
 from rdkit import Chem
 from collections import defaultdict
+from dataclasses import dataclass
+from typing import Optional, List, Dict
 
 from multiprocessing import Pool
+
+@dataclass
+class MoleculeData:
+    positions: Optional[torch.Tensor] = None
+    atom_types: Optional[torch.Tensor] = None
+    atom_charges: Optional[torch.Tensor] = None
+    bond_types: Optional[torch.Tensor] = None
+    bond_idxs: Optional[torch.Tensor] = None
+    bond_order_counts: Optional[torch.Tensor] = None
+    unique_valencies: Optional[torch.Tensor] = None
+    failed: bool = False
+    failure_mode: Optional[str] = None
+
+@dataclass
+class BatchMoleculeData:
+    positions: List[torch.Tensor]
+    atom_types: List[torch.Tensor]
+    atom_charges: List[torch.Tensor]
+    bond_types: List[torch.Tensor]
+    bond_idxs: List[torch.Tensor]
+    bond_order_counts: torch.Tensor
+    unique_valencies: torch.Tensor
+    n_mols: int
+    failed_idxs: List[int]
+    failure_counts: Dict[str, int]
+
+def batch_molecule_data(mol_data: List[MoleculeData]):
+    special_fields = ['bond_order_counts', 'unique_valencies', 'failed', 'failure_mode']
+    fields_to_concat = [field for field in mol_data[0].__dataclass_fields__.keys() if field not in special_fields]
+
+    data_to_concat = {field: [] for field in fields_to_concat}
+    failed_idxs = []
+    failure_counts = defaultdict(int)
+    all_bond_order_counts = torch.zeros(4, dtype=torch.int64)
+    all_unique_valencies = []
+    n_mols = 0
+    for idx, mol in enumerate(mol_data):
+
+        # take care of failed molecules
+        if mol.failed:
+            failed_idxs.append(idx)
+            failure_counts[mol.failure_mode] += 1
+            continue
+
+        n_mols += 1
+
+        # collect all data that is just concatenated
+        for field in fields_to_concat:
+            data_to_concat[field].append(getattr(mol, field))
+
+        # handle bond order counts and unique valencies, which are not concatenated
+        all_unique_valencies.append(mol.unique_valencies)
+        all_bond_order_counts += mol.bond_order_counts
+
+        if len(all_unique_valencies) > 100:
+            unique_valencies = torch.unique(torch.cat(all_unique_valencies, dim=0), dim=0)
+            all_unique_valencies = [unique_valencies]
+
+    all_unique_valencies = torch.unique(torch.cat(all_unique_valencies, dim=0), dim=0)
+    
+    output = BatchMoleculeData(
+        bond_order_counts=all_bond_order_counts,
+        unique_valencies=all_unique_valencies,
+        failed_idxs=failed_idxs,
+        failure_counts=failure_counts,
+        n_mols=n_mols,
+        **data_to_concat,
+    )
+    return output
+        
 
 class MoleculeFeaturizer():
 
@@ -23,76 +94,18 @@ class MoleculeFeaturizer():
         else:    
             self.explicit_hydrogens = False
 
-    def parse_result(self, result, failure_counts):
-
-        if not isinstance(result, tuple):
-            failure_counts[result] += 1
-            positions = None
-            atom_types = None
-            atom_charges = None
-            bond_types = None
-            bond_idxs = None
-            bond_order_counts = None
-        else:
-            positions, atom_types, atom_charges, bond_types, bond_idxs, bond_order_counts = result
-        
-        return positions, atom_types, atom_charges, bond_types, bond_idxs, bond_order_counts
-
+    
     def featurize_molecules(self, molecules):
-
-
-        all_positions, all_atom_types, all_atom_charges, all_bond_types, all_bond_idxs = [], [], [], [], []
-        all_bond_order_counts = torch.zeros(4, dtype=torch.int64)
-
         failure_counts = defaultdict(int)
 
         if self.n_cpus == 1:
-            for molecule in molecules:
-                result = featurize_molecule(molecule, self.atom_map_dict)
-
-                positions, atom_types, atom_charges, bond_types, bond_idxs, bond_order_counts = \
-                self.parse_result(result, failure_counts)
-
-                all_positions.append(positions)
-                all_atom_types.append(atom_types)
-                all_atom_charges.append(atom_charges)
-                all_bond_types.append(bond_types)
-                all_bond_idxs.append(bond_idxs)
-
-                if bond_order_counts is not None:
-                    all_bond_order_counts += bond_order_counts
-
+            results = [featurize_molecule(molecule, self.atom_map_dict) for molecule in molecules]
         else:
             args = [(molecule, self.atom_map_dict) for molecule in molecules]
             results = self.pool.starmap(featurize_molecule, args)
-            for result in results:
-                positions, atom_types, atom_charges, bond_types, bond_idxs, bond_order_counts = \
-                self.parse_result(result, failure_counts)
-                all_positions.append(positions)
-                all_atom_types.append(atom_types)
-                all_atom_charges.append(atom_charges)
-                all_bond_types.append(bond_types)
-                all_bond_idxs.append(bond_idxs)
 
-                if bond_order_counts is not None:
-                    all_bond_order_counts += bond_order_counts
-
-        # find molecules that failed to featurize and count them
-        num_failed = 0
-        failed_idxs = []
-        for i in range(len(all_positions)):
-            if all_positions[i] is None:
-                num_failed += 1
-                failed_idxs.append(i)
-
-        # remove failed molecules
-        all_positions = [pos for i, pos in enumerate(all_positions) if i not in failed_idxs]
-        all_atom_types = [atom for i, atom in enumerate(all_atom_types) if i not in failed_idxs]
-        all_atom_charges = [charge for i, charge in enumerate(all_atom_charges) if i not in failed_idxs]
-        all_bond_types = [bond for i, bond in enumerate(all_bond_types) if i not in failed_idxs]
-        all_bond_idxs = [idx for i, idx in enumerate(all_bond_idxs) if i not in failed_idxs]
-
-        return all_positions, all_atom_types, all_atom_charges, all_bond_types, all_bond_idxs, num_failed, all_bond_order_counts, failure_counts
+        batch_data: BatchMoleculeData = batch_molecule_data(results)
+        return batch_data
 
 
 
@@ -103,7 +116,10 @@ def featurize_molecule(molecule: Chem.rdchem.Mol, atom_map_dict: Dict[str, int],
         Chem.Kekulize(molecule)
     except Chem.KekulizeException as e:
         print(f"Kekulization failed for molecule {molecule.GetProp('_Name')}", flush=True)
-        return 'kekulization'
+        return MoleculeData(
+            failed=True,
+            failure_mode='kekulization'
+        )
 
     # if explicit_hydrogens is False, remove all hydrogens from the molecule
     if not explicit_hydrogens:
@@ -112,7 +128,10 @@ def featurize_molecule(molecule: Chem.rdchem.Mol, atom_map_dict: Dict[str, int],
     num_fragments = len(Chem.GetMolFrags(molecule, sanitizeFrags=False))
     if num_fragments > 1:
         print(f"Fragmented molecule with {num_fragments} fragments", flush=True)
-        return 'fragmented'
+        return MoleculeData(
+            failed=True,
+            failure_mode='fragmentation'
+        )
 
     # get positions
     positions = molecule.GetConformer().GetPositions()
@@ -121,15 +140,20 @@ def featurize_molecule(molecule: Chem.rdchem.Mol, atom_map_dict: Dict[str, int],
     # get atom elements as a string
     # atom_types_str = [atom.GetSymbol() for atom in molecule.GetAtoms()]
     atom_types_idx = torch.zeros(molecule.GetNumAtoms()).long()
+    atom_types_str = []
     atom_charges = torch.zeros_like(atom_types_idx)
     for i, atom in enumerate(molecule.GetAtoms()):
         try:
             atom_types_idx[i] = atom_map_dict[atom.GetSymbol()]
         except KeyError:
             print(f"Atom {atom.GetSymbol()} not in atom map", flush=True)
-            return 'atom_map'
+            return MoleculeData(
+                failed=True,
+                failure_mode='atom_map'
+            )
         
         atom_charges[i] = atom.GetFormalCharge()
+        atom_types_str.append(atom.GetSymbol())
 
     # get atom types as one-hot vectors
     atom_types = one_hot(atom_types_idx, num_classes=len(atom_map_dict)).bool()
@@ -139,6 +163,11 @@ def featurize_molecule(molecule: Chem.rdchem.Mol, atom_map_dict: Dict[str, int],
     # get one-hot encoded of existing bonds only (no non-existing bonds)
     adj = torch.from_numpy(Chem.rdmolops.GetAdjacencyMatrix(molecule, useBO=True))
     edge_index = adj.triu().nonzero().contiguous() # upper triangular portion of adjacency matrix
+
+    # compute valencies
+    valencies = adj.sum(dim=1)
+    tcv = torch.stack([atom_types_idx, atom_charges, valencies], dim=1)
+    unique_valencies = torch.unique(tcv, dim=0)
 
     # note that because we take the upper-triangular portion of the adjacency matrix, there is only one edge per bond
     # at training time for every edge (i,j) in edge_index, we will also add edges (j,i)
@@ -167,4 +196,13 @@ def featurize_molecule(molecule: Chem.rdchem.Mol, atom_map_dict: Dict[str, int],
 
     bond_order_counts[0] = n_unbonded
 
-    return positions, atom_types, atom_charges, edge_attr, edge_index, bond_order_counts
+    return MoleculeData(
+        positions=positions,
+        atom_types=atom_types,
+        atom_charges=atom_charges,
+        bond_types=edge_attr,
+        bond_idxs=edge_index,
+        bond_order_counts=bond_order_counts,
+        unique_valencies=unique_valencies,
+        failed=False
+    )

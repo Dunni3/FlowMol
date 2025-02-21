@@ -35,7 +35,7 @@ dataset:
   # in order to disbale explicit hydrogens, just remove 'H' from atom_map
   atom_map: ['C', 'H', 'N', 'O', 'F', 'P', 'S', 'Cl', 'Br', 'I']
   dataset_name: geom # must be qm9 or geom
-  dataset_size: 
+  dataset_size: 1000
   confs_per_mol: 5
 
 checkpointing:

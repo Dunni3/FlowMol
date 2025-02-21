@@ -15,7 +15,7 @@ import yaml
 from rdkit import Chem
 from multiprocessing import Pool
 
-from flowmol.data_processing.geom import MoleculeFeaturizer
+from flowmol.data_processing.geom import MoleculeFeaturizer, BatchMoleculeData
 from flowmol.utils.dataset_stats import compute_p_c_given_a
 
 def chunks(lst, n):
@@ -194,24 +194,30 @@ if __name__ == "__main__":
 
     failed_molecules = 0
     failure_counts = defaultdict(int)
+    unique_valencies = None
     for molecule_chunk in tqdm_iterator:
 
-        # TODO: we should collect all the molecules from each individual list into a single list and then featurize them all at once - this would make the multiprocessing actually useful
-        positions, atom_types, atom_charges, bond_types, bond_idxs, num_failed, bond_order_counts, batch_failure_counts = \
-              mol_featurizer.featurize_molecules(molecule_chunk)
+        batch_data: BatchMoleculeData = mol_featurizer.featurize_molecules(molecule_chunk)
+
+        num_failed = len(batch_data.failed_idxs)
 
         failed_molecules += num_failed
         failed_molecules_bar.update(num_failed)
-        total_molecules_bar.update(len(molecule_chunk))
-        for k, v in batch_failure_counts.items():
+        total_molecules_bar.update(batch_data.n_mols)
+        for k, v in batch_data.failure_counts.items():
             failure_counts[k] += v
 
-        all_positions.extend(positions)
-        all_atom_types.extend(atom_types)
-        all_atom_charges.extend(atom_charges)
-        all_bond_types.extend(bond_types)
-        all_bond_idxs.extend(bond_idxs)
-        all_bond_order_counts += bond_order_counts
+        all_positions.extend(batch_data.positions)
+        all_atom_types.extend(batch_data.atom_types)
+        all_atom_charges.extend(batch_data.atom_charges)
+        all_bond_types.extend(batch_data.bond_types)
+        all_bond_idxs.extend(batch_data.bond_idxs)
+        all_bond_order_counts += batch_data.bond_order_counts
+
+        if unique_valencies is None:
+            unique_valencies = batch_data.unique_valencies
+        else:
+            unique_valencies = torch.unique(torch.cat((unique_valencies, batch_data.unique_valencies), dim=0), dim=0)
 
         # early stopping - a feature only used for debugging / creating small datasets
         if dataset_size is not None and len(all_positions) > dataset_size and full_dataset:
@@ -303,6 +309,28 @@ if __name__ == "__main__":
     failure_counts_file = output_dir / f'{args.split_file.stem}_failure_counts.json'
     with open(failure_counts_file, 'w') as f:
         json.dump(failure_counts, f)
+
+    # convert unique valencies to a dict representation
+    atom_type_idxs, atom_charges, valencies = unique_valencies.unbind(dim=1)
+    unique_valencies_dict = {}
+    for atom_type_idx, charge, valency in zip(atom_type_idxs, atom_charges, valencies):
+        atom_type_idx = int(atom_type_idx)
+
+        atom_type = config['dataset']['atom_map'][atom_type_idx]
+
+        charge = int(charge)
+        valency = int(valency)
+
+        if atom_type not in unique_valencies_dict:
+            unique_valencies_dict[atom_type] = {}
+        if charge not in unique_valencies_dict[atom_type]:
+            unique_valencies_dict[atom_type][charge] = []
+        unique_valencies_dict[atom_type][charge].append(valency)
+
+    # write unique valencies to a file
+    valencies_file = output_dir / f'{args.split_file.stem}_valencies.json'
+    with open(valencies_file, 'w') as f:
+        json.dump(unique_valencies_dict, f)
 
 
 
