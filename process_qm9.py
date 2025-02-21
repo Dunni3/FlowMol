@@ -64,7 +64,8 @@ def process_split(split_df, split_name, args, dataset_config):
     # read all the molecules from the sdf file
     all_molecules = []
     all_smiles = []
-    mol_reader = Chem.SDMolSupplier(str(sdf_file), removeHs=False, sanitize=True)
+    mol_reader = Chem.SDMolSupplier(str(sdf_file), removeHs=False, sanitize=False)
+    # we sanitize inside of the molecule featurizer and the featurizer is to built to count the number of failed molecules
     for mol_idx, mol in enumerate(mol_reader):
 
         if mol is None:
