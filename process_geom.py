@@ -6,6 +6,7 @@ import signal
 import sys
 from pathlib import Path
 from typing import List
+from collections import defaultdict
 
 import numpy as np
 import torch
@@ -192,14 +193,18 @@ if __name__ == "__main__":
     total_molecules_bar = tqdm.tqdm(desc="Total Molecules", unit="molecules", total=len(molecules))
 
     failed_molecules = 0
+    failure_counts = defaultdict(int)
     for molecule_chunk in tqdm_iterator:
 
         # TODO: we should collect all the molecules from each individual list into a single list and then featurize them all at once - this would make the multiprocessing actually useful
-        positions, atom_types, atom_charges, bond_types, bond_idxs, num_failed, bond_order_counts = mol_featurizer.featurize_molecules(molecule_chunk)
+        positions, atom_types, atom_charges, bond_types, bond_idxs, num_failed, bond_order_counts, batch_failure_counts = \
+              mol_featurizer.featurize_molecules(molecule_chunk)
 
         failed_molecules += num_failed
         failed_molecules_bar.update(num_failed)
         total_molecules_bar.update(len(molecule_chunk))
+        for k, v in batch_failure_counts.items():
+            failure_counts[k] += v
 
         all_positions.extend(positions)
         all_atom_types.extend(atom_types)
@@ -290,5 +295,14 @@ if __name__ == "__main__":
         smiles_file = output_dir / f'{args.split_file.stem}_smiles.pkl'
         with open(smiles_file, 'wb') as f:
             pickle.dump(all_smiles, f)
+
+    # print failure counts to console and also write them to a file
+    print(f"Failed to process {failed_molecules} molecules")
+    for k, v in failure_counts.items():
+        print(f"failure mode: {k}, {v} molecules")
+    failure_counts_file = output_dir / f'{args.split_file.stem}_failure_counts.json'
+    with open(failure_counts_file, 'w') as f:
+        json.dump(failure_counts, f)
+
 
 

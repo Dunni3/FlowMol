@@ -2,6 +2,7 @@ from typing import Dict, List
 import torch
 from torch.nn.functional import one_hot
 from rdkit import Chem
+from collections import defaultdict
 
 from multiprocessing import Pool
 
@@ -22,15 +23,36 @@ class MoleculeFeaturizer():
         else:    
             self.explicit_hydrogens = False
 
+    def parse_result(self, result, failure_counts):
+
+        if not isinstance(result, tuple):
+            failure_counts[result] += 1
+            positions = None
+            atom_types = None
+            atom_charges = None
+            bond_types = None
+            bond_idxs = None
+            bond_order_counts = None
+        else:
+            positions, atom_types, atom_charges, bond_types, bond_idxs, bond_order_counts = result
+        
+        return positions, atom_types, atom_charges, bond_types, bond_idxs, bond_order_counts
+
     def featurize_molecules(self, molecules):
 
 
         all_positions, all_atom_types, all_atom_charges, all_bond_types, all_bond_idxs = [], [], [], [], []
         all_bond_order_counts = torch.zeros(4, dtype=torch.int64)
 
+        failure_counts = defaultdict(int)
+
         if self.n_cpus == 1:
             for molecule in molecules:
-                positions, atom_types, atom_charges, bond_types, bond_idxs, bond_order_counts = featurize_molecule(molecule, self.atom_map_dict)
+                result = featurize_molecule(molecule, self.atom_map_dict)
+
+                positions, atom_types, atom_charges, bond_types, bond_idxs, bond_order_counts = \
+                self.parse_result(result, failure_counts)
+
                 all_positions.append(positions)
                 all_atom_types.append(atom_types)
                 all_atom_charges.append(atom_charges)
@@ -43,7 +65,9 @@ class MoleculeFeaturizer():
         else:
             args = [(molecule, self.atom_map_dict) for molecule in molecules]
             results = self.pool.starmap(featurize_molecule, args)
-            for positions, atom_types, atom_charges, bond_types, bond_idxs, bond_order_counts in results:
+            for result in results:
+                positions, atom_types, atom_charges, bond_types, bond_idxs, bond_order_counts = \
+                self.parse_result(result, failure_counts)
                 all_positions.append(positions)
                 all_atom_types.append(atom_types)
                 all_atom_charges.append(atom_charges)
@@ -68,7 +92,7 @@ class MoleculeFeaturizer():
         all_bond_types = [bond for i, bond in enumerate(all_bond_types) if i not in failed_idxs]
         all_bond_idxs = [idx for i, idx in enumerate(all_bond_idxs) if i not in failed_idxs]
 
-        return all_positions, all_atom_types, all_atom_charges, all_bond_types, all_bond_idxs, num_failed, all_bond_order_counts
+        return all_positions, all_atom_types, all_atom_charges, all_bond_types, all_bond_idxs, num_failed, all_bond_order_counts, failure_counts
 
 
 
@@ -79,7 +103,7 @@ def featurize_molecule(molecule: Chem.rdchem.Mol, atom_map_dict: Dict[str, int],
         Chem.Kekulize(molecule)
     except Chem.KekulizeException as e:
         print(f"Kekulization failed for molecule {molecule.GetProp('_Name')}", flush=True)
-        return None, None, None, None, None, None
+        return 'kekulization'
 
     # if explicit_hydrogens is False, remove all hydrogens from the molecule
     if not explicit_hydrogens:
@@ -88,7 +112,7 @@ def featurize_molecule(molecule: Chem.rdchem.Mol, atom_map_dict: Dict[str, int],
     num_fragments = len(Chem.GetMolFrags(molecule, sanitizeFrags=False))
     if num_fragments > 1:
         print(f"Fragmented molecule with {num_fragments} fragments", flush=True)
-        return None, None, None, None, None
+        return 'fragmented'
 
     # get positions
     positions = molecule.GetConformer().GetPositions()
@@ -103,7 +127,7 @@ def featurize_molecule(molecule: Chem.rdchem.Mol, atom_map_dict: Dict[str, int],
             atom_types_idx[i] = atom_map_dict[atom.GetSymbol()]
         except KeyError:
             print(f"Atom {atom.GetSymbol()} not in atom map", flush=True)
-            return None, None, None, None, None, None
+            return 'atom_map'
         
         atom_charges[i] = atom.GetFormalCharge()
 
