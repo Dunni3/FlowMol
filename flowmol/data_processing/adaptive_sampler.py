@@ -1,10 +1,11 @@
 import torch
-from torch.utils.data import Sampler
+from torch.utils.data import Sampler, BatchSampler
 
 from flowmol.data_processing.dataset import MoleculeDataset
 
-class AdaptiveEdgeSampler(Sampler):
+class AdaptiveEdgeSampler(BatchSampler):
     def __init__(self, dataset, edges_per_batch: int,
+                 sampler = None,
                  distributed: bool = False,
                  rank: int = None,
                  num_replicas: int = None,
@@ -28,7 +29,8 @@ class AdaptiveEdgeSampler(Sampler):
             self.frac_end = 1
 
         self.samples_per_epoch = len(self.dataset) // self.num_replicas
-        edges_per_sample = (44*(1+self.dataset.fake_atom_p/2))**2
+        # edges_per_sample = (44*(1+self.dataset.fake_atom_p/2))**2
+        edges_per_sample = 3000 # manually computed the expectation of the square of number of atoms in training data, account for fake atoms
         samples_per_batch = edges_per_batch / edges_per_sample
         self.batches_per_epoch = self.samples_per_epoch // samples_per_batch
         self.batches_per_epoch = int(self.batches_per_epoch)
