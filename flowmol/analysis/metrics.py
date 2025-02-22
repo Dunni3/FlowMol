@@ -11,6 +11,9 @@ from flowmol.analysis.ff_energy import compute_mmff_energy
 from flowmol.analysis.reos import REOS
 from flowmol.analysis.ring_systems import RingSystemCounter, ring_counts_to_df
 
+# TODO: refactor this table and rewrite the check_stability function
+# i want it to always by table[atom_type][charge] = a list of possible valencies
+# we never don't have a charge key, but MiDi's code is written to handle that case
 midi_valence_table = {'H': {0: 1, 1: 0, -1: 0},
                  'C': {0: [3, 4], 1: 3, -1: 3},
                  'N': {0: [2, 3], 1: [2, 3, 4], -1: 2},    # In QM9, N+ seems to be present in the form NH+ and NH2+
@@ -21,6 +24,9 @@ midi_valence_table = {'H': {0: 1, 1: 0, -1: 0},
                  'S': {0: [2, 6], 1: [2, 3], 2: 4, 3: 5, -1: 3},
                  'Cl': 1, 'As': 3,
                  'Br': {0: 1, 1: 2}, 'I': 1, 'Hg': [1, 2], 'Bi': [3, 5], 'Se': [2, 4, 6]}
+
+
+
 bond_dict = [None, Chem.rdchem.BondType.SINGLE, Chem.rdchem.BondType.DOUBLE, Chem.rdchem.BondType.TRIPLE,
              Chem.rdchem.BondType.AROMATIC]
 
@@ -38,7 +44,8 @@ class SampleAnalyzer():
         self.energy_div_calculator = DivergenceCalculator(energy_dist_file)
 
         if use_midi_valence:
-            self.allowed_bonds = midi_valence_table
+            self.valid_valency_table = midi_valence_table
+            self.stability_func = check_stability_midi
         else:
             valence_file = self.processed_data_dir / 'train_data_valencies.json'
             with open(valence_file, 'r') as f:
@@ -49,7 +56,8 @@ class SampleAnalyzer():
                 atom_type: {int(charge): valencies for charge, valencies in charges.items()}
                 for atom_type, charges in loaded_dict.items()
             }
-            self.allowed_bonds = converted_dict
+            self.valid_valency_table = converted_dict
+            self.stability_func = check_stability
             
 
     def analyze(self, sampled_molecules: List[SampledMolecule], 
@@ -65,7 +73,7 @@ class SampleAnalyzer():
         n_stable_molecules = 0
         n_molecules = len(sampled_molecules)
         for molecule in sampled_molecules:
-            n_stable_atoms_this_mol, mol_stable, n_fake_atoms = check_stability(molecule, self.allowed_bonds)
+            n_stable_atoms_this_mol, mol_stable, n_fake_atoms = self.stability_func(molecule, self.valid_valency_table)
             n_atoms += molecule.num_atoms - n_fake_atoms
             n_stable_atoms += n_stable_atoms_this_mol
             n_stable_molecules += int(mol_stable)
@@ -237,7 +245,38 @@ class SampleAnalyzer():
         
         return dict(flag_rate=flag_rate, ood_rate=ood_rate) 
 
-def check_stability(molecule: SampledMolecule, allowed_bonds):
+def check_stability(molecule: SampledMolecule, valid_valency_table):
+    """ molecule: Molecule object. """
+    atom_types = molecule.atom_types
+    valencies = molecule.valencies
+    charges = molecule.atom_charges
+
+    n_stable_atoms = 0
+    n_fake_atoms = 0 
+    for i, (atom_type, valency, charge) in enumerate(zip(atom_types, valencies, charges)):
+
+        if molecule.fake_atoms and atom_type == 'Sn':
+            n_fake_atoms += 1
+            continue
+
+        valency = int(valency)
+        charge = int(charge)
+        charge_to_valid_valencies = valid_valency_table[atom_type]
+
+        if charge not in charge_to_valid_valencies:
+            continue
+
+        valid_valencies = charge_to_valid_valencies[charge]
+        if valency in valid_valencies:
+            n_stable_atoms += 1
+
+    n_real_atoms = len(atom_types) - n_fake_atoms
+    mol_stable = n_stable_atoms == n_real_atoms
+
+    return n_stable_atoms, mol_stable, n_fake_atoms
+
+
+def check_stability_midi(molecule: SampledMolecule, valid_valency_table):
     """ molecule: Molecule object. """
     atom_types = molecule.atom_types
     valencies = molecule.valencies
@@ -254,10 +293,13 @@ def check_stability(molecule: SampledMolecule, allowed_bonds):
 
         valency = int(valency)
         charge = int(charge)
-        possible_bonds = allowed_bonds[atom_type]
+        possible_bonds = valid_valency_table[atom_type]
         if type(possible_bonds) == int:
             is_stable = possible_bonds == valency
         elif type(possible_bonds) == dict:
+            # this line is problematic! if you generate a molecule with a charge that is not in the allowed_bonds dict
+            # this code just takes the valid valencies for whatever the first charge is. so if you generated a carbon with
+            # charge 10000 and valence 4, it would get counted as stable!
             expected_bonds = possible_bonds[charge] if charge in possible_bonds.keys() else possible_bonds[0]
             is_stable = expected_bonds == valency if type(expected_bonds) == int else valency in expected_bonds
         else:
