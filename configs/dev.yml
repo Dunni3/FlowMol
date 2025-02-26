@@ -3,7 +3,7 @@ training:
   batch_size: 32
   num_workers: 0
   ema_decay: 0.999
-  max_num_edges: 5000
+  max_num_edges: 10000
   trainer_args:
     max_epochs: 3
     accelerator: gpu
@@ -14,7 +14,7 @@ training:
   evaluation:
     mols_to_sample: 64 # how many molecules to sample during evaluation
     sample_interval: 0.25 # how often to sample molecules during training, measured in epochs
-    val_loss_interval: 0.5 # how often to compute validation set loss during training, measured in epochs
+    val_loss_interval: 2 # how often to compute validation set loss during training, measured in epochs
 
 wandb:
   project: mol-fm
