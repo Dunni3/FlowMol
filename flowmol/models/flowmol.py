@@ -87,8 +87,9 @@ class FlowMol(pl.LightningModule):
         processed_data_dir = Path(self.marginal_dists_file).parent
         if not processed_data_dir.exists():
             repo_root = Path(__file__).parent.parent.parent
-            self.marginal_dists_file = repo_root / self.marginal_dists_file
-            self.n_atoms_hist_file = repo_root / self.n_atoms_hist_file
+            processed_data_dir = repo_root / processed_data_dir
+            self.marginal_dists_file = processed_data_dir / self.marginal_dists_file
+            self.n_atoms_hist_file = processed_data_dir / self.n_atoms_hist_file
 
         # do some boring stuff regarding the prior distribution
         self.configure_prior()
@@ -150,7 +151,7 @@ class FlowMol(pl.LightningModule):
         self.sample_interval = sample_interval # how often to sample molecules from the model, measured in epochs
         self.n_mols_to_sample = n_mols_to_sample # how many molecules to sample from the model during each sample/eval step during training
         self.last_sample_marker = 0 # this is the epoch_exact value of the last time we sampled molecules from the model
-        self.sample_analyzer = SampleAnalyzer()
+        self.sample_analyzer = SampleAnalyzer(processed_data_dir=processed_data_dir)
 
 
         # record the last epoch value for training steps -  this is really hacky but it lets me

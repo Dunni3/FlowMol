@@ -62,7 +62,9 @@ if __name__ == "__main__":
     train_dataset = data_module.train_dataset
 
     # create sample analyzer
-    sample_analyzer = SampleAnalyzer()
+    processed_data_dir = config['dataset']['processed_data_dir']
+    processed_data_dir = Path(processed_data_dir)
+    sample_analyzer = SampleAnalyzer(processed_data_dir=processed_data_dir)
 
     if args.n_mols is not None:
         # randomly select n_mols numbers from the range (0, len(dataset))
