@@ -88,8 +88,8 @@ class FlowMol(pl.LightningModule):
         if not processed_data_dir.exists():
             repo_root = Path(__file__).parent.parent.parent
             processed_data_dir = repo_root / processed_data_dir
-            self.marginal_dists_file = processed_data_dir / self.marginal_dists_file
-            self.n_atoms_hist_file = processed_data_dir / self.n_atoms_hist_file
+            self.marginal_dists_file = processed_data_dir / self.marginal_dists_file.name
+            self.n_atoms_hist_file = processed_data_dir / self.n_atoms_hist_file.name
 
         # do some boring stuff regarding the prior distribution
         self.configure_prior()
