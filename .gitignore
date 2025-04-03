@@ -21,7 +21,7 @@ baseline_comparison*
 flowmol/trained_models/qm9*
 flowmol/trained_models/geom*
 figures/
-
+local/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
