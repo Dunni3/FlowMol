@@ -40,11 +40,13 @@ Actual config files used to train models presented in the paper are available in
 
 Note, you don't have to reprocess the dataset for every model you train, as long as the models you are training contain the same parameters under the `dataset` section of the config file. 
 
-# Sampling
+# Sampling (Reproducing Paper Results)
 In addition to the sampling example provdid in the "Using FlowMol" section, you can also sample from a trained model using the `test.py` script which has some extra features built into it like returning sampling trajectories and computing metrics on the generated molecules. To sample from a trained model, using `test.py`, pass a trained model directory or a checkpoint with the `--model_dir` or `--checkpoint` arguments, respectively. Here's an example command to sample from a trained model:
 
+**To reproduce the results for CTMC-based models as they are published, you must set `--stochasticity=30` and `--hc_thresh=0.9` when running `test.py`**  
+
 ```console
-python test.py --model_dir=flowmol/trained_models/geom_ctmc --n_mols=100 --n_timesteps=250 --output_file=brand_new_molecules.sdf
+python test.py --model_dir=flowmol/trained_models/geom_ctmc --n_mols=100 --n_timesteps=250 --output_file=brand_new_molecules.sdf --stochasticity=30 --hc_thresh=0.9
 ```
 
 The output file, if specified, must be an SDF file. If not specified, sampled molecules will be written to the model directory. You can also have the script produce a molecule for every integration step to see the evolution of the molecule over time by adding the `--xt_traj` and/or `--ep_traj` flag. You can compute all of the metrics reported in the paper by adding the `--metrics` flag.
