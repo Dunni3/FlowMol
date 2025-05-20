@@ -44,6 +44,7 @@ checkpointing:
   # every_n_epochs: 1
 
 mol_fm:
+  explicit_aromaticity: True
   distort_p: 0.2
   parameterization: ctmc # can be "endpoint", "vector-field", "dirichlet", or "ctmc"
   weight_ae: False

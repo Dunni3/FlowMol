@@ -181,7 +181,7 @@ if __name__ == "__main__":
     running_file = running_dir / output_file.name
 
     # setup exit handler
-    setup_exit_handler(running_file)
+    # setup_exit_handler(running_file)
 
     # combine all the conformers from all the molecules into a single list
     all_molecules = []
@@ -211,19 +211,20 @@ if __name__ == "__main__":
     all_smiles = all_smiles[start_idx:end_idx]
 
     dataset_size = config['dataset']['dataset_size']
-
+    explicit_aromaticity = config['mol_fm'].get('explicit_aromaticity', False)
 
     all_positions = []
     all_atom_types = []
     all_atom_charges = []
     all_bond_types = []
     all_bond_idxs = []
-    all_bond_order_counts = torch.zeros(4, dtype=torch.int64)
+    n_bond_orders = 5 if explicit_aromaticity else 4
+    all_bond_order_counts = torch.zeros(n_bond_orders, dtype=torch.int64)
 
     mol_featurizer = MoleculeFeaturizer(
         config['dataset']['atom_map'], 
         n_cpus=args.n_cpus,
-        explicit_aromaticity=config['mol-fm'].get('explicit_aromaticity', False),
+        explicit_aromaticity=explicit_aromaticity,
         )
 
     # molecules is a list of rdkit molecules.  now we create an iterator that yields sub-lists of molecules. we do this using itertools:
@@ -362,7 +363,7 @@ if __name__ == "__main__":
     else:
         raise ValueError(f"unique valencies has shape {unique_valencies.shape}, expected 3 or 4")
     
-    explicit_aromaticity = config['mol-fm'].get('explicit_aromaticity', False)
+    explicit_aromaticity = config['mol_fm'].get('explicit_aromaticity', False)
     if explicit_aromaticity:
         name_str = 'aromatic'
     else:

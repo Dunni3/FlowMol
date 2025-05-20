@@ -40,7 +40,8 @@ def batch_molecule_data(mol_data: List[MoleculeData]):
     data_to_concat = {field: [] for field in fields_to_concat}
     failed_idxs = []
     failure_counts = defaultdict(int)
-    all_bond_order_counts = torch.zeros(4, dtype=torch.int64)
+    n_bond_orders = mol_data[0].bond_order_counts.shape[0]
+    all_bond_order_counts = torch.zeros(n_bond_orders, dtype=torch.int64)
     all_unique_valencies = []
     n_mols = 0
     for idx, mol in enumerate(mol_data):
@@ -221,7 +222,8 @@ def featurize_molecule(molecule: Chem.rdchem.Mol, atom_map_dict: Dict[str, int],
 
     # construct an array containing the counts of each bond type in the molecule
     bond_order_idxs, existing_bond_order_counts = torch.unique(edge_attr, return_counts=True)
-    bond_order_counts = torch.zeros(4, dtype=torch.int64)
+    n_bond_orders = 5 if explicit_aromaticity else 4
+    bond_order_counts = torch.zeros(n_bond_orders, dtype=torch.int64)
     for bond_order_idx, count in zip(bond_order_idxs, existing_bond_order_counts):
         bond_order_counts[bond_order_idx] = count
 
