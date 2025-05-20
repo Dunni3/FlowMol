@@ -71,6 +71,7 @@ def data_module_from_config(config: dict) -> MoleculeDataModule:
     dataset_config = config['dataset']
     dataset_config = deepcopy(dataset_config)
     dataset_config['fake_atom_p'] = fake_atom_p
+    dataset_config['explicit_aromaticity'] = config['mol_fm'].get('explicit_aromaticity', False)
 
     data_module = MoleculeDataModule(dataset_config=dataset_config,
                                      dm_prior_config=config['mol_fm']['prior_config'],

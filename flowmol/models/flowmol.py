@@ -31,7 +31,6 @@ class FlowMol(pl.LightningModule):
                  n_atoms_hist_file: str,
                  marginal_dists_file: str,                 
                  n_atom_charges: int = 6,
-                 n_bond_types: int = 4,
                  sample_interval: float = 1.0, # how often to sample molecules from the model, measured in epochs
                  n_mols_to_sample: int = 64, # how many molecules to sample from the model during each sample/eval step during training
                  time_scaled_loss: bool = True,
@@ -45,9 +44,10 @@ class FlowMol(pl.LightningModule):
                  vector_field_config: dict = {},
                  prior_config: dict = {},
                  default_n_timesteps: int = 250,
-                 ema_weight: float = 0.999,
+                 ema_weight: float = 0.999, # TODO: currently unused but thought i implemented it at some point? maybe floating in a branch somewhere
                  fake_atom_p: float = 0.0,
                  distort_p: float = 0.0,
+                 explicit_aromaticity: bool = False,
                  ):
         super().__init__()
 
@@ -67,6 +67,7 @@ class FlowMol(pl.LightningModule):
         self.n_atoms_hist_file = n_atoms_hist_file
         self.default_n_timesteps = default_n_timesteps
         self.distort_p = distort_p
+        self.explicit_aromaticity = explicit_aromaticity
 
         # fake atoms settings
         self.fake_atom_p = fake_atom_p
@@ -100,6 +101,7 @@ class FlowMol(pl.LightningModule):
             self.total_loss_weights.pop('c')
 
         # create a dictionary mapping feature -> number of categories
+        n_bond_types = 5 if self.explicit_aromaticity else 4
         self.n_cat_dict = {
             'a': self.n_atom_types,
             'c': n_atom_charges,
@@ -557,6 +559,8 @@ class FlowMol(pl.LightningModule):
                 fake_atoms=self.fake_atoms,
                 build_xt_traj=xt_traj,
                 build_ep_traj=ep_traj,
-                exclude_charges=self.exclude_charges))
+                exclude_charges=self.exclude_charges,
+                explicit_aromaticity=self.explicit_aromaticity,
+            ))
 
         return molecules

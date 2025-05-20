@@ -70,6 +70,46 @@ def parse_args():
 
     return args
 
+def build_kekulized_valency_dict(unique_valencies):
+    atom_type_idxs, atom_charges, valencies = unique_valencies.unbind(dim=1)
+    
+    unique_valencies_dict = {}
+    for atom_type_idx, charge, valency in zip(atom_type_idxs, atom_charges, valencies):
+        atom_type_idx = int(atom_type_idx)
+
+        atom_type = config['dataset']['atom_map'][atom_type_idx]
+
+        charge = int(charge)
+        valency = int(valency)
+
+        if atom_type not in unique_valencies_dict:
+            unique_valencies_dict[atom_type] = {}
+        if charge not in unique_valencies_dict[atom_type]:
+            unique_valencies_dict[atom_type][charge] = []
+        unique_valencies_dict[atom_type][charge].append(valency)
+    return unique_valencies_dict
+
+def build_explicit_arom_valency_dict(unique_valencies):
+    atom_type_idxs, atom_charges, n_arom_bonds, non_arom_valencies = unique_valencies.unbind(dim=1)
+
+    unique_valencies_dict = {}
+    for atom_type_idx, charge, n_arom_bonds, non_arom_valency in zip(atom_type_idxs, atom_charges, n_arom_bonds, non_arom_valencies):
+        atom_type_idx = int(atom_type_idx)
+
+        atom_type = config['dataset']['atom_map'][atom_type_idx]
+
+        charge = int(charge)
+        n_arom_bonds = int(n_arom_bonds)
+        non_arom_valency = int(non_arom_valency)
+
+        if atom_type not in unique_valencies_dict:
+            unique_valencies_dict[atom_type] = {}
+        if charge not in unique_valencies_dict[atom_type]:
+            unique_valencies_dict[atom_type][charge] = []
+        unique_valencies_dict[atom_type][charge].append((n_arom_bonds, non_arom_valency))
+    return unique_valencies_dict
+
+
 
 if __name__ == "__main__":
 
@@ -180,7 +220,11 @@ if __name__ == "__main__":
     all_bond_idxs = []
     all_bond_order_counts = torch.zeros(4, dtype=torch.int64)
 
-    mol_featurizer = MoleculeFeaturizer(config['dataset']['atom_map'], n_cpus=args.n_cpus)
+    mol_featurizer = MoleculeFeaturizer(
+        config['dataset']['atom_map'], 
+        n_cpus=args.n_cpus,
+        explicit_aromaticity=config['mol-fm'].get('explicit_aromaticity', False),
+        )
 
     # molecules is a list of rdkit molecules.  now we create an iterator that yields sub-lists of molecules. we do this using itertools:
     chunk_iterator = chunks(molecules, args.chunk_size)
@@ -311,24 +355,21 @@ if __name__ == "__main__":
         json.dump(failure_counts, f)
 
     # convert unique valencies to a dict representation
-    atom_type_idxs, atom_charges, valencies = unique_valencies.unbind(dim=1)
-    unique_valencies_dict = {}
-    for atom_type_idx, charge, valency in zip(atom_type_idxs, atom_charges, valencies):
-        atom_type_idx = int(atom_type_idx)
-
-        atom_type = config['dataset']['atom_map'][atom_type_idx]
-
-        charge = int(charge)
-        valency = int(valency)
-
-        if atom_type not in unique_valencies_dict:
-            unique_valencies_dict[atom_type] = {}
-        if charge not in unique_valencies_dict[atom_type]:
-            unique_valencies_dict[atom_type][charge] = []
-        unique_valencies_dict[atom_type][charge].append(valency)
+    if unique_valencies.shape[1] == 3:
+        unique_valencies_dict = build_kekulized_valency_dict(unique_valencies)
+    elif unique_valencies.shape[1] == 4:
+        unique_valencies_dict = build_explicit_arom_valency_dict(unique_valencies)
+    else:
+        raise ValueError(f"unique valencies has shape {unique_valencies.shape}, expected 3 or 4")
+    
+    explicit_aromaticity = config['mol-fm'].get('explicit_aromaticity', False)
+    if explicit_aromaticity:
+        name_str = 'aromatic'
+    else:
+        name_str = 'kekulized'
 
     # write unique valencies to a file
-    valencies_file = output_dir / f'{args.split_file.stem}_valencies.json'
+    valencies_file = output_dir / f'{args.split_file.stem}_valencies_{name_str}.json'
     with open(valencies_file, 'w') as f:
         json.dump(unique_valencies_dict, f)
 

@@ -24,7 +24,9 @@ class SampledMolecule:
         exclude_charges: bool = False, 
         align_traj: bool = True,
         build_xt_traj=True,
-        build_ep_traj=True,):
+        build_ep_traj=True,
+        explicit_aromaticity: bool = False,
+    ):
         """Represents a molecule sampled from a model. Converts the DGL graph to an rdkit molecule and keeps all associated information."""
 
         atom_type_map = list(atom_type_map) # create a shallow copy of the atom type map so that we don't modify the original
@@ -33,13 +35,13 @@ class SampledMolecule:
         self.align_traj = align_traj
         self.ctmc_mol = ctmc_mol
         self.fake_atoms = fake_atoms
+        self.explicit_aromaticity = explicit_aromaticity
 
         if fake_atoms:
             atom_type_map.append('Sn') # fake atoms will show up as tin, only in trajectories
 
         if ctmc_mol:
             atom_type_map.append('Se') # masked molecules will show up as selenium
-        
         
         # save the graph
         self.g = g
@@ -128,8 +130,12 @@ class SampledMolecule:
         mol = build_molecule(self.positions, self.atom_types, self.atom_charges, self.bond_src_idxs, self.bond_dst_idxs, self.bond_types)
         return mol
     
-    def compute_valencies(self):
+    def compute_valencies(self, arom_dependent: bool = False):
         """Compute the valencies of every atom in the molecule. Returns a tensor of shape (num_atoms,)."""
+
+        if arom_dependent:
+            raise NotImplementedError("Aromaticity dependent valency computation is not implemented yet.")
+
         adj = torch.zeros((self.num_atoms, self.num_atoms)).float()
         adjusted_bond_types = self.bond_types.clone().float().float()
         adjusted_bond_types[adjusted_bond_types == 4] = 1.5

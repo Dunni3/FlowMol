@@ -4,6 +4,7 @@ from rdkit import Chem
 from collections import defaultdict
 from dataclasses import dataclass
 from typing import Optional, List, Dict
+import functools
 
 from multiprocessing import Pool
 
@@ -79,10 +80,15 @@ def batch_molecule_data(mol_data: List[MoleculeData]):
 
 class MoleculeFeaturizer():
 
-    def __init__(self, atom_map: str, n_cpus=1):
+    def __init__(self, 
+                 atom_map: str, 
+                 n_cpus=1,
+                 explicit_aromaticity=False,
+                 ):
         self.n_cpus = n_cpus
         self.atom_map = atom_map
         self.atom_map_dict = {atom: i for i, atom in enumerate(atom_map)}
+        self.explicit_aromaticity = explicit_aromaticity
 
         if self.n_cpus == 1:
             self.pool = None
@@ -98,18 +104,25 @@ class MoleculeFeaturizer():
     def featurize_molecules(self, molecules):
         failure_counts = defaultdict(int)
 
+        process_func = functools.partial(featurize_molecule, 
+                               atom_map_dict=self.atom_map_dict, 
+                               explicit_hydrogens=self.explicit_hydrogens,
+                               explicit_aromaticity=self.explicit_aromaticity
+                               )
+
         if self.n_cpus == 1:
-            results = [featurize_molecule(molecule, self.atom_map_dict) for molecule in molecules]
+            results = [process_func(molecule) for molecule in molecules]
         else:
-            args = [(molecule, self.atom_map_dict) for molecule in molecules]
-            results = self.pool.starmap(featurize_molecule, args)
+            # args = [(molecule, self.atom_map_dict) for molecule in molecules]
+            # results = self.pool.starmap(featurize_molecule, args)
+            results = self.pool.map(process_func, molecules)
 
         batch_data: BatchMoleculeData = batch_molecule_data(results)
         return batch_data
 
 
 
-def featurize_molecule(molecule: Chem.rdchem.Mol, atom_map_dict: Dict[str, int], explicit_hydrogens=True):
+def featurize_molecule(molecule: Chem.rdchem.Mol, atom_map_dict: Dict[str, int], explicit_hydrogens=True, explicit_aromaticity=False) -> MoleculeData:
 
     # sanitize the molecule
     try:
@@ -122,14 +135,15 @@ def featurize_molecule(molecule: Chem.rdchem.Mol, atom_map_dict: Dict[str, int],
         )
 
     # kekulize the molecule
-    try:
-        Chem.Kekulize(molecule, clearAromaticFlags=True)
-    except Chem.KekulizeException as e:
-        print(f"Kekulization failed for molecule {molecule.GetProp('_Name')}", flush=True)
-        return MoleculeData(
-            failed=True,
-            failure_mode='kekulization'
-        )
+    if not explicit_aromaticity:
+        try:
+            Chem.Kekulize(molecule, clearAromaticFlags=True)
+        except Chem.KekulizeException as e:
+            print(f"Kekulization failed for molecule {molecule.GetProp('_Name')}", flush=True)
+            return MoleculeData(
+                failed=True,
+                failure_mode='kekulization'
+            )
 
     # if explicit_hydrogens is False, remove all hydrogens from the molecule
     if not explicit_hydrogens:
@@ -175,8 +189,15 @@ def featurize_molecule(molecule: Chem.rdchem.Mol, atom_map_dict: Dict[str, int],
     edge_index = adj.triu().nonzero().contiguous() # upper triangular portion of adjacency matrix
 
     # compute valencies
-    valencies = adj.sum(dim=1)
-    tcv = torch.stack([atom_types_idx, atom_charges, valencies], dim=1)
+    if not explicit_aromaticity:
+        valencies = adj.sum(dim=1)
+        tcv = torch.stack([atom_types_idx, atom_charges, valencies], dim=1)
+    else:
+        # if our molecules have aromatic bonds
+        n_arom_bonds = (adj == 1.5).sum(dim=1).int()
+        non_arom_valencies = adj.sum(dim=1) - n_arom_bonds*1.5
+        non_arom_valencies = non_arom_valencies.int()
+        tcv = torch.stack([atom_types_idx, atom_charges, n_arom_bonds, non_arom_valencies], dim=1)
     unique_valencies = torch.unique(tcv, dim=0)
 
     # note that because we take the upper-triangular portion of the adjacency matrix, there is only one edge per bond

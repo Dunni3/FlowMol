@@ -20,6 +20,8 @@ class MoleculeDataset(torch.utils.data.Dataset):
         self.dataset_config = dataset_config
         self.fake_atom_p = dataset_config['fake_atom_p']
         self.use_fake_atoms = self.fake_atom_p > 0
+        self.explicit_aromaticity = dataset_config['explicit_aromaticity']
+        self.n_bond_types = 5 if self.explicit_aromaticity else 4
 
         # get the processed data directory
         processed_data_dir: Path = Path(dataset_config['processed_data_dir'])
@@ -143,7 +145,7 @@ class MoleculeDataset(torch.utils.data.Dataset):
         edge_labels = torch.cat((upper_edge_labels, upper_edge_labels))
 
         # one-hot encode edge labels and atom charges
-        edge_labels = one_hot(edge_labels.to(torch.int64), num_classes=4).float() # hard-coded assumption of 4 bond types
+        edge_labels = one_hot(edge_labels.to(torch.int64), num_classes=self.n_bond_types).float() # hard-coded assumption of 4 bond types
         try:
             atom_charges = one_hot(atom_charges + 2, num_classes=6).float() # hard-coded assumption that charges are in range [-2, 3]
         except Exception as e:
