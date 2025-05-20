@@ -47,6 +47,7 @@ class FlowMol(pl.LightningModule):
                  default_n_timesteps: int = 250,
                  ema_weight: float = 0.999,
                  fake_atom_p: float = 0.0,
+                 distort_p: float = 0.0,
                  ):
         super().__init__()
 
@@ -65,6 +66,7 @@ class FlowMol(pl.LightningModule):
         self.target_blur = target_blur
         self.n_atoms_hist_file = n_atoms_hist_file
         self.default_n_timesteps = default_n_timesteps
+        self.distort_p = distort_p
 
         # fake atoms settings
         self.fake_atom_p = fake_atom_p
@@ -86,8 +88,8 @@ class FlowMol(pl.LightningModule):
         if not processed_data_dir.exists():
             repo_root = Path(__file__).parent.parent.parent
             processed_data_dir = repo_root / processed_data_dir
-            self.marginal_dists_file = processed_data_dir / self.marginal_dists_file
-            self.n_atoms_hist_file = processed_data_dir / self.n_atoms_hist_file
+            self.marginal_dists_file = processed_data_dir / self.marginal_dists_file.name
+            self.n_atoms_hist_file = processed_data_dir / self.n_atoms_hist_file.name
 
         # do some boring stuff regarding the prior distribution
         self.configure_prior()
@@ -319,6 +321,12 @@ class FlowMol(pl.LightningModule):
 
         # construct interpolated molecules
         g = self.vector_field.sample_conditional_path(g, t, node_batch_idx, edge_batch_idx, upper_edge_mask)
+
+        if self.distort_p > 0.0:
+            t_mask = (t > 0.5)[node_batch_idx]
+            distort_mask = torch.rand(g.num_nodes(), 1, device=device) < self.distort_p
+            distort_mask = distort_mask & t_mask.unsqueeze(-1)
+            g.ndata['x_t'] = g.ndata['x_t'] + torch.randn_like(g.ndata['x_t'])*distort_mask*0.5
 
         # forward pass for the vector field
         vf_output = self.vector_field(g, t, node_batch_idx=node_batch_idx, upper_edge_mask=upper_edge_mask)

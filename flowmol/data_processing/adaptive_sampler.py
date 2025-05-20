@@ -39,7 +39,8 @@ class AdaptiveEdgeSampler(BatchSampler):
     def setup_queue(self):
         start_idx = int(self.frac_start * len(self.dataset))
         end_idx = int(self.frac_end * len(self.dataset))
-        self.sample_queue = torch.randperm(len(self.dataset))[start_idx:end_idx]
+        indices = torch.arange(start_idx, end_idx)
+        self.sample_queue = indices[torch.randperm(len(indices))]
         self.queue_idx = 0
 
     def get_next_batch(self):
