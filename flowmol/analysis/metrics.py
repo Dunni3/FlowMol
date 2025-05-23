@@ -11,6 +11,7 @@ from flowmol.analysis.ff_energy import compute_mmff_energy
 from flowmol.analysis.reos import REOS
 from flowmol.analysis.ring_systems import RingSystemCounter, ring_counts_to_df
 import functools
+from collections import defaultdict
 
 # TODO: refactor this table and rewrite the check_stability function
 # i want it to always by table[atom_type][charge] = a list of possible valencies
@@ -96,19 +97,16 @@ class SampleAnalyzer():
         frac_mols_stable_valence = n_stable_molecules / n_molecules # the fraction of generated molecules whose atoms all have valid valencies
 
         # compute validity as determined by rdkit, and the average size of the largest fragment, and the average number of fragments
-        validity_result = self.compute_validity(sampled_molecules, return_counts=return_counts)
-        if return_counts:
-            frac_valid_mols, avg_frag_frac, avg_num_components, n_valid, sum_frag_fracs, n_frag_fracs, sum_num_components, n_num_components = validity_result
-        else:
-            frac_valid_mols, avg_frag_frac, avg_num_components = validity_result
+        metrics_dict = self.compute_validity(sampled_molecules, return_counts=return_counts)
+        # if return_counts:
+        #     frac_valid_mols, avg_frag_frac, avg_num_components, n_valid, sum_frag_fracs, n_frag_fracs, sum_num_components, n_num_components = validity_result
+        # else:
+        #     frac_valid_mols, avg_frag_frac, avg_num_components = validity_result
 
-        metrics_dict = {
+        metrics_dict.update({
             'frac_atoms_stable': frac_atoms_stable,
             'frac_mols_stable_valence': frac_mols_stable_valence,
-            'frac_valid_mols': frac_valid_mols,
-            'avg_frag_frac': avg_frag_frac,
-            'avg_num_components': avg_num_components
-        }
+        })
         # TODO: i think the return_counts functionality was so that we could
         # compute metrics on the  entire dataset by chunking it and combining the counts at the end
         # this functionality is not supported yet for reos and rings`
@@ -118,6 +116,7 @@ class SampleAnalyzer():
             metrics_dict.update(self.reos_and_rings(sampled_molecules, return_raw=False))
 
         if return_counts:
+            raise NotImplementedError("return_counts is not implemented for analyze")
             counts_dict = {}
             counts_dict['n_stable_atoms'] = n_stable_atoms
             counts_dict['n_atoms'] = n_atoms
@@ -140,20 +139,23 @@ class SampleAnalyzer():
     def compute_validity(self, sampled_molecules: List[SampledMolecule], return_counts: bool = False):
         """ generated: list of couples (positions, atom_types)"""
         n_valid = 0
+        n_connected = 0
         num_components = []
         frag_fracs = []
-        error_message = Counter()
+        error_message = defaultdict(int)
         for mol in sampled_molecules:
             if mol.num_atoms == 0:
                 error_message[4] += 1
                 continue
-            rdmol = mol.rdkit_mol
+            rdmol = mol.build_molecule()
             if rdmol is not None:
                 try:
                     mol_frags = Chem.rdmolops.GetMolFrags(rdmol, asMols=True, sanitizeFrags=False)
                     num_components.append(len(mol_frags))
                     if len(mol_frags) > 1:
-                        error_message[4] += 1
+                        error_message['disconnected'] += 1
+                    else:
+                        n_connected += 1
                     largest_mol = max(mol_frags, default=rdmol, key=lambda m: m.GetNumAtoms())
                     largest_mol_n_atoms = largest_mol.GetNumAtoms()
                     largest_frag_frac = largest_mol_n_atoms / mol.num_atoms
@@ -161,28 +163,37 @@ class SampleAnalyzer():
                     Chem.SanitizeMol(largest_mol)
                     smiles = Chem.MolToSmiles(largest_mol)
                     n_valid += 1
-                    error_message[-1] += 1
+                    error_message['valid'] += 1
                 except Chem.rdchem.AtomValenceException:
-                    error_message[1] += 1
+                    error_message['valence'] += 1
                     # print("Valence error in GetmolFrags")
                 except Chem.rdchem.KekulizeException:
-                    error_message[2] += 1
+                    error_message['kekulization'] += 1
                     # print("Can't kekulize molecule")
                 except Chem.rdchem.AtomKekulizeException or ValueError:
-                    error_message[3] += 1
-        print(f"Error messages: AtomValence {error_message[1]}, Kekulize {error_message[2]}, other {error_message[3]}, "
-              f" -- No error {error_message[-1]}")
-        
+                    error_message['other'] += 1
+                except Exception as e:
+                    error_message['other'] += 1
 
-        frac_valid_mols = n_valid / len(sampled_molecules)
-        avg_frag_frac = sum(frag_fracs) / len(frag_fracs)
-        avg_num_components = sum(num_components) / len(num_components)
+        error_strs = []
+        for key in ['disconnected', 'valence', 'kekulization', 'other', 'valid']:
+            error_strs.append(f"{key}: {error_message[key]}")
+        error_strs.append(f"total: {len(sampled_molecules)}")
+
+        print(f"Error messages: {', '.join(error_strs)}", flush=True)
+
+        results = {
+            'frac_valid_mols': n_valid / len(sampled_molecules),
+            'avg_frag_frac': sum(frag_fracs) / len(frag_fracs),
+            'avg_num_components': sum(num_components) / len(num_components),
+            'frac_connected': n_connected / len(sampled_molecules)
+        }
 
         if return_counts:
+            raise NotImplementedError("return_counts is not implemented for compute_validity")
             return frac_valid_mols, avg_frag_frac, avg_num_components, n_valid, sum(frag_fracs), len(frag_fracs), sum(num_components), len(num_components)
 
-        return frac_valid_mols, avg_frag_frac, avg_num_components
-
+        return results
     def compute_sample_energy(self, samples: List[SampledMolecule]):
         """ samples: list of SampledMolecule objects. """
         energies = []
