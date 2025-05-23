@@ -9,6 +9,8 @@ from flowmol.utils.divergences import DivergenceCalculator
 from flowmol.analysis.ff_energy import compute_mmff_energy
 from flowmol.analysis.reos import REOS
 from flowmol.analysis.ring_systems import RingSystemCounter, ring_counts_to_df
+import posebusters as pb
+import yaml
 
 allowed_bonds = {'H': {0: 1, 1: 0, -1: 0},
                  'C': {0: [3, 4], 1: 3, -1: 3},
@@ -35,9 +37,19 @@ class SampleAnalyzer():
 
         energy_dist_file = self.processed_data_dir / 'energy_dist.npz'
         self.energy_div_calculator = DivergenceCalculator(energy_dist_file)
+
+        pb_config_file = Path(__file__).parent / 'pb_config.yaml'
+        with open(pb_config_file, 'r') as f:
+            config = yaml.safe_load(f)
+        self.buster = pb.PoseBusters(config=config)
             
 
-    def analyze(self, sampled_molecules: List[SampledMolecule], return_counts: bool = False, energy_div: bool = False, functional_validity: bool = False):
+    def analyze(self, sampled_molecules: List[SampledMolecule], 
+                return_counts: bool = False, 
+                energy_div: bool = False, 
+                functional_validity: bool = False,
+                posebusters: bool = False,
+                ):
 
         # compute the atom-level stabiltiy of a molecule. this is the number of atoms that have valid valencies.
         # note that since is computed at the atom level, even if the entire molecule is unstable, we can still get an idea
