@@ -68,7 +68,7 @@ class SampledMolecule:
         self.rdkit_mol = self.build_molecule()
 
         # compute valencies on every atom
-        self.valencies = self.compute_valencies()
+        self.valencies = self.compute_valencies(arom_dependent=explicit_aromaticity)
 
         # build trajectory molecules
         self.traj_frames = traj_frames
@@ -142,7 +142,16 @@ class SampledMolecule:
         adjusted_bond_types = adjusted_bond_types.float()
         adj[self.bond_src_idxs, self.bond_dst_idxs] = adjusted_bond_types
         adj[self.bond_dst_idxs, self.bond_src_idxs] = adjusted_bond_types
-        valencies = torch.sum(adj, dim=-1).long()
+
+
+        valencies = torch.sum(adj, dim=-1)
+
+        if arom_dependent:
+            n_arom = (adj == 1.5).sum(dim=-1)
+            non_arom_valence = (valencies - n_arom*1.5).long()
+            valencies = torch.stack([n_arom, non_arom_valence], dim=1)
+
+        
         return valencies
     
     def process_traj_frames(self, traj_frames: Dict[str, torch.Tensor], ep_traj: bool = False):

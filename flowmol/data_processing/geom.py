@@ -33,14 +33,14 @@ class BatchMoleculeData:
     failed_idxs: List[int]
     failure_counts: Dict[str, int]
 
-def batch_molecule_data(mol_data: List[MoleculeData]):
+def batch_molecule_data(mol_data: List[MoleculeData], explicit_aromaticity: bool):
     special_fields = ['bond_order_counts', 'unique_valencies', 'failed', 'failure_mode']
     fields_to_concat = [field for field in mol_data[0].__dataclass_fields__.keys() if field not in special_fields]
 
     data_to_concat = {field: [] for field in fields_to_concat}
     failed_idxs = []
     failure_counts = defaultdict(int)
-    n_bond_orders = mol_data[0].bond_order_counts.shape[0]
+    n_bond_orders = 5 if explicit_aromaticity else 4
     all_bond_order_counts = torch.zeros(n_bond_orders, dtype=torch.int64)
     all_unique_valencies = []
     n_mols = 0
@@ -66,7 +66,10 @@ def batch_molecule_data(mol_data: List[MoleculeData]):
             unique_valencies = torch.unique(torch.cat(all_unique_valencies, dim=0), dim=0)
             all_unique_valencies = [unique_valencies]
 
-    all_unique_valencies = torch.unique(torch.cat(all_unique_valencies, dim=0), dim=0)
+    if len(all_unique_valencies) > 0:
+        all_unique_valencies = torch.unique(torch.cat(all_unique_valencies, dim=0), dim=0)
+    else:
+        all_unique_valencies = torch.zeros(0, 4 if explicit_aromaticity else 3).long()
     
     output = BatchMoleculeData(
         bond_order_counts=all_bond_order_counts,
@@ -111,14 +114,14 @@ class MoleculeFeaturizer():
                                explicit_aromaticity=self.explicit_aromaticity
                                )
 
-        if self.n_cpus == 1:
+        if self.pool is None:
             results = [process_func(molecule) for molecule in molecules]
         else:
             # args = [(molecule, self.atom_map_dict) for molecule in molecules]
             # results = self.pool.starmap(featurize_molecule, args)
             results = self.pool.map(process_func, molecules)
 
-        batch_data: BatchMoleculeData = batch_molecule_data(results)
+        batch_data: BatchMoleculeData = batch_molecule_data(results, explicit_aromaticity=self.explicit_aromaticity)
         return batch_data
 
 

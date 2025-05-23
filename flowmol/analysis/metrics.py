@@ -10,6 +10,7 @@ from flowmol.utils.divergences import DivergenceCalculator
 from flowmol.analysis.ff_energy import compute_mmff_energy
 from flowmol.analysis.reos import REOS
 from flowmol.analysis.ring_systems import RingSystemCounter, ring_counts_to_df
+import functools
 
 # TODO: refactor this table and rewrite the check_stability function
 # i want it to always by table[atom_type][charge] = a list of possible valencies
@@ -33,7 +34,11 @@ bond_dict = [None, Chem.rdchem.BondType.SINGLE, Chem.rdchem.BondType.DOUBLE, Che
 
 class SampleAnalyzer():
 
-    def __init__(self, processed_data_dir: str = None, dataset='geom', use_midi_valence=False):
+    def __init__(self, 
+        processed_data_dir: str = None, 
+        dataset='geom', 
+        use_midi_valence=False,
+        ):
 
         self.processed_data_dir = processed_data_dir
 
@@ -47,7 +52,12 @@ class SampleAnalyzer():
             self.valid_valency_table = midi_valence_table
             self.stability_func = check_stability_midi
         else:
-            valence_file = self.processed_data_dir / 'train_data_valencies.json'
+            # Find valency file using glob wildcard
+            valency_files = list(self.processed_data_dir.glob('train_data_valencies_*.json'))
+            if not valency_files:
+                raise FileNotFoundError(f"No valency file found in {self.processed_data_dir}")
+            valence_file = valency_files[0]
+            explicit_aromaticity = 'aromatic' in valence_file.name
             with open(valence_file, 'r') as f:
                 loaded_dict = json.load(f)
 
@@ -57,7 +67,11 @@ class SampleAnalyzer():
                 for atom_type, charges in loaded_dict.items()
             }
             self.valid_valency_table = converted_dict
-            self.stability_func = check_stability
+            self.stability_func = functools.partial(
+                check_stability, 
+                valid_valency_table=converted_dict,
+                explicit_aromaticity=explicit_aromaticity, 
+            )
             
 
     def analyze(self, sampled_molecules: List[SampledMolecule], 
@@ -245,10 +259,10 @@ class SampleAnalyzer():
         
         return dict(flag_rate=flag_rate, ood_rate=ood_rate) 
 
-def check_stability(molecule: SampledMolecule, valid_valency_table):
+def check_stability(molecule: SampledMolecule, valid_valency_table: dict, explicit_aromaticity: bool = False):
     """ molecule: Molecule object. """
     atom_types = molecule.atom_types
-    valencies = molecule.valencies
+    valencies = molecule.valencies.tolist()
     charges = molecule.atom_charges
 
     n_stable_atoms = 0
