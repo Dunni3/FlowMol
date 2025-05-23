@@ -12,6 +12,8 @@ from flowmol.analysis.reos import REOS
 from flowmol.analysis.ring_systems import RingSystemCounter, ring_counts_to_df
 import functools
 from collections import defaultdict
+import posebusters as pb
+import yaml
 
 # TODO: refactor this table and rewrite the check_stability function
 # i want it to always by table[atom_type][charge] = a list of possible valencies
@@ -73,12 +75,18 @@ class SampleAnalyzer():
                 valid_valency_table=converted_dict,
                 explicit_aromaticity=explicit_aromaticity, 
             )
-            
+
+        pb_config_file = Path(__file__).parent / 'pb_config.yaml'
+        with open(pb_config_file, 'r') as f:
+            config = yaml.safe_load(f)
+        self.buster = pb.PoseBusters(config=config)
 
     def analyze(self, sampled_molecules: List[SampledMolecule], 
-                    return_counts: bool = False, 
-                    energy_div: bool = False, 
-                    functional_validity: bool = False):
+                return_counts: bool = False, 
+                energy_div: bool = False, 
+                functional_validity: bool = False,
+                posebusters: bool = False,
+                ):
 
         # compute the atom-level stabiltiy of a molecule. this is the number of atoms that have valid valencies.
         # note that since is computed at the atom level, even if the entire molecule is unstable, we can still get an idea
