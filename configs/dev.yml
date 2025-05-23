@@ -9,7 +9,7 @@ training:
     accelerator: gpu
     devices: 1
     accumulate_grad_batches: 1
-    limit_val_batches: 5
+    limit_val_batches: 1
 
   evaluation:
     mols_to_sample: 64 # how many molecules to sample during evaluation
@@ -31,7 +31,7 @@ lr_scheduler:
 
 dataset:
   raw_data_dir: data/raw
-  processed_data_dir: data/geom_dev
+  processed_data_dir: data/geom_5_aromatic
   # in order to disbale explicit hydrogens, just remove 'H' from atom_map
   atom_map: ['C', 'H', 'N', 'O', 'F', 'P', 'S', 'Cl', 'Br', 'I']
   dataset_name: geom # must be qm9 or geom

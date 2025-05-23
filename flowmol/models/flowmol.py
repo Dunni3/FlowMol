@@ -55,7 +55,7 @@ class FlowMol(pl.LightningModule):
         self.atom_type_map = atom_type_map
         self.n_atom_types = len(atom_type_map)
         self.n_atom_charges = n_atom_charges
-        self.n_bond_types = n_bond_types
+        self.n_bond_types = 5 if explicit_aromaticity else 4
         self.total_loss_weights = total_loss_weights
         self.time_scaled_loss = time_scaled_loss
         self.prior_config = prior_config

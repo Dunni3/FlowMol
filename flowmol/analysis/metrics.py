@@ -41,6 +41,7 @@ class SampleAnalyzer():
         processed_data_dir: str = None, 
         dataset='geom', 
         use_midi_valence=False,
+        pb_workers=0,
         ):
 
         self.processed_data_dir = processed_data_dir
@@ -79,7 +80,7 @@ class SampleAnalyzer():
         pb_config_file = Path(__file__).parent / 'pb_config.yaml'
         with open(pb_config_file, 'r') as f:
             config = yaml.safe_load(f)
-        self.buster = pb.PoseBusters(config=config)
+        self.buster = pb.PoseBusters(config=config, max_workers=pb_workers)
 
     def analyze(self, sampled_molecules: List[SampledMolecule], 
                 return_counts: bool = False, 
@@ -139,6 +140,11 @@ class SampleAnalyzer():
         
         if self.processed_data_dir is not None and Path(self.processed_data_dir).exists() and energy_div:
             metrics_dict['energy_js_div'] = self.compute_energy_divergence(sampled_molecules)
+
+        if posebusters:
+            rdmols = [sample.rdkit_mol for sample in sampled_molecules]
+            pb_results = self.buster.bust(rdmols, None, None).mean().to_dict()
+            metrics_dict.update(pb_results)
 
 
         return metrics_dict
