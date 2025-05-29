@@ -243,7 +243,12 @@ class FlowMol(pl.LightningModule):
             with torch.no_grad():
                 sampled_molecules = self.sample_random_sizes(n_molecules=self.n_mols_to_sample, device=g.device)
             self.train()
-            sampled_mols_metrics = self.sample_analyzer.analyze(sampled_molecules, energy_div=False, functional_validity=True)
+            sampled_mols_metrics = self.sample_analyzer.analyze(
+                sampled_molecules, 
+                energy_div=False, 
+                functional_validity=True,
+                posebusters=True,
+            )
             self.log_dict(sampled_mols_metrics)
 
         # compute losses
@@ -435,7 +440,9 @@ class FlowMol(pl.LightningModule):
             g.ndata[f'{feat}_0'] = prior_fn(*args, **kwargs).to(device)
 
         # sample the prior for edge features
-        g.edata['e_0'] = edge_prior(upper_edge_mask, self.prior_config['e']).to(device)
+        g.edata['e_0'] = edge_prior(upper_edge_mask, 
+                                    self.prior_config['e'], 
+                                    explicit_aromaticity=self.explicit_aromaticity).to(device)
             
         return g
     

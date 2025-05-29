@@ -133,9 +133,6 @@ class SampledMolecule:
     def compute_valencies(self, arom_dependent: bool = False):
         """Compute the valencies of every atom in the molecule. Returns a tensor of shape (num_atoms,)."""
 
-        if arom_dependent:
-            raise NotImplementedError("Aromaticity dependent valency computation is not implemented yet.")
-
         adj = torch.zeros((self.num_atoms, self.num_atoms)).float()
         adjusted_bond_types = self.bond_types.clone().float().float()
         adjusted_bond_types[adjusted_bond_types == 4] = 1.5

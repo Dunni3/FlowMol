@@ -97,7 +97,7 @@ class SampleAnalyzer():
         n_stable_molecules = 0
         n_molecules = len(sampled_molecules)
         for molecule in sampled_molecules:
-            n_stable_atoms_this_mol, mol_stable, n_fake_atoms = self.stability_func(molecule, self.valid_valency_table)
+            n_stable_atoms_this_mol, mol_stable, n_fake_atoms = self.stability_func(molecule)
             n_atoms += molecule.num_atoms - n_fake_atoms
             n_stable_atoms += n_stable_atoms_this_mol
             n_stable_molecules += int(mol_stable)
@@ -298,7 +298,8 @@ def check_stability(molecule: SampledMolecule, valid_valency_table: dict, explic
             n_fake_atoms += 1
             continue
 
-        valency = int(valency)
+        if not explicit_aromaticity:
+            valency = int(valency)
         charge = int(charge)
         charge_to_valid_valencies = valid_valency_table[atom_type]
 

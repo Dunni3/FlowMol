@@ -178,6 +178,6 @@ class MoleculeDataset(torch.utils.data.Dataset):
         upper_edge_mask = torch.zeros(g.num_edges(), dtype=torch.bool)
         n_upper_edges = upper_edge_idxs.shape[1]
         upper_edge_mask[:n_upper_edges] = True
-        g.edata['e_0'] = edge_prior(upper_edge_mask, self.prior_config['e'])
+        g.edata['e_0'] = edge_prior(upper_edge_mask, self.prior_config['e'], explicit_aromaticity=self.explicit_aromaticity)
 
         return g

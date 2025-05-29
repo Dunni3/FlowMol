@@ -13,7 +13,7 @@ training:
 
   evaluation:
     mols_to_sample: 64 # how many molecules to sample during evaluation
-    sample_interval: 0.25 # how often to sample molecules during training, measured in epochs
+    sample_interval: 0.005 # how often to sample molecules during training, measured in epochs
     val_loss_interval: 2 # how often to compute validation set loss during training, measured in epochs
 
 wandb:
@@ -31,7 +31,7 @@ lr_scheduler:
 
 dataset:
   raw_data_dir: data/raw
-  processed_data_dir: data/geom_5_aromatic
+  processed_data_dir: data/geom_5_kekulized
   # in order to disbale explicit hydrogens, just remove 'H' from atom_map
   atom_map: ['C', 'H', 'N', 'O', 'F', 'P', 'S', 'Cl', 'Br', 'I']
   dataset_name: geom # must be qm9 or geom
@@ -44,7 +44,7 @@ checkpointing:
   # every_n_epochs: 1
 
 mol_fm:
-  explicit_aromaticity: True
+  explicit_aromaticity: False
   distort_p: 0.2
   parameterization: ctmc # can be "endpoint", "vector-field", "dirichlet", or "ctmc"
   weight_ae: False
