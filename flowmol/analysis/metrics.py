@@ -12,6 +12,8 @@ from flowmol.analysis.reos import REOS
 from flowmol.analysis.ring_systems import RingSystemCounter, ring_counts_to_df
 import functools
 from collections import defaultdict
+import posebusters as pb
+import yaml
 
 # TODO: refactor this table and rewrite the check_stability function
 # i want it to always by table[atom_type][charge] = a list of possible valencies
@@ -39,6 +41,7 @@ class SampleAnalyzer():
         processed_data_dir: str = None, 
         dataset='geom', 
         use_midi_valence=False,
+        pb_workers=0,
         ):
 
         self.processed_data_dir = processed_data_dir
@@ -73,12 +76,18 @@ class SampleAnalyzer():
                 valid_valency_table=converted_dict,
                 explicit_aromaticity=explicit_aromaticity, 
             )
-            
+
+        pb_config_file = Path(__file__).parent / 'pb_config.yaml'
+        with open(pb_config_file, 'r') as f:
+            config = yaml.safe_load(f)
+        self.buster = pb.PoseBusters(config=config, max_workers=pb_workers)
 
     def analyze(self, sampled_molecules: List[SampledMolecule], 
-                    return_counts: bool = False, 
-                    energy_div: bool = False, 
-                    functional_validity: bool = False):
+                return_counts: bool = False, 
+                energy_div: bool = False, 
+                functional_validity: bool = False,
+                posebusters: bool = False,
+                ):
 
         # compute the atom-level stabiltiy of a molecule. this is the number of atoms that have valid valencies.
         # note that since is computed at the atom level, even if the entire molecule is unstable, we can still get an idea
@@ -88,7 +97,7 @@ class SampleAnalyzer():
         n_stable_molecules = 0
         n_molecules = len(sampled_molecules)
         for molecule in sampled_molecules:
-            n_stable_atoms_this_mol, mol_stable, n_fake_atoms = self.stability_func(molecule, self.valid_valency_table)
+            n_stable_atoms_this_mol, mol_stable, n_fake_atoms = self.stability_func(molecule)
             n_atoms += molecule.num_atoms - n_fake_atoms
             n_stable_atoms += n_stable_atoms_this_mol
             n_stable_molecules += int(mol_stable)
@@ -131,6 +140,11 @@ class SampleAnalyzer():
         
         if self.processed_data_dir is not None and Path(self.processed_data_dir).exists() and energy_div:
             metrics_dict['energy_js_div'] = self.compute_energy_divergence(sampled_molecules)
+
+        if posebusters:
+            rdmols = [sample.rdkit_mol for sample in sampled_molecules]
+            pb_results = self.buster.bust(rdmols, None, None).mean().to_dict()
+            metrics_dict.update(pb_results)
 
 
         return metrics_dict
@@ -284,7 +298,8 @@ def check_stability(molecule: SampledMolecule, valid_valency_table: dict, explic
             n_fake_atoms += 1
             continue
 
-        valency = int(valency)
+        if not explicit_aromaticity:
+            valency = int(valency)
         charge = int(charge)
         charge_to_valid_valencies = valid_valency_table[atom_type]
 
