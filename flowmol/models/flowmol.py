@@ -55,7 +55,7 @@ class FlowMol(pl.LightningModule):
         self.atom_type_map = atom_type_map
         self.n_atom_types = len(atom_type_map)
         self.n_atom_charges = n_atom_charges
-        self.n_bond_types = n_bond_types
+        self.n_bond_types = 5 if explicit_aromaticity else 4
         self.total_loss_weights = total_loss_weights
         self.time_scaled_loss = time_scaled_loss
         self.prior_config = prior_config
@@ -101,11 +101,10 @@ class FlowMol(pl.LightningModule):
             self.total_loss_weights.pop('c')
 
         # create a dictionary mapping feature -> number of categories
-        n_bond_types = 5 if self.explicit_aromaticity else 4
         self.n_cat_dict = {
             'a': self.n_atom_types,
             'c': n_atom_charges,
-            'e': n_bond_types,
+            'e': self.n_bond_types,
         }
 
         for feat in self.canonical_feat_order:
@@ -141,7 +140,7 @@ class FlowMol(pl.LightningModule):
                                            canonical_feat_order=self.canonical_feat_order,
                                            interpolant_scheduler=self.interpolant_scheduler, 
                                            n_charges=n_atom_charges, 
-                                           n_bond_types=n_bond_types,
+                                           n_bond_types=self.n_bond_types,
                                            exclude_charges=self.exclude_charges,
                                            fake_atoms=self.fake_atoms,
                                            **vector_field_config)
