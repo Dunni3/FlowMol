@@ -207,7 +207,6 @@ def featurize_molecule(molecule: Chem.rdchem.Mol, atom_map_dict: Dict[str, int],
     # note that because we take the upper-triangular portion of the adjacency matrix, there is only one edge per bond
     # at training time for every edge (i,j) in edge_index, we will also add edges (j,i)
     # we also only retain existing bonds, but then at training time we will add in edges for non-existing bonds
-
     bond_types = adj[edge_index[:, 0], edge_index[:, 1]]
     bond_types[bond_types == 1.5] = 4
     edge_attr = bond_types.type(torch.int32)

@@ -52,7 +52,9 @@ class SampledMolecule:
             exclude_charges=exclude_charges,
             ctmc_mol=self.ctmc_mol,
             fake_atoms=self.fake_atoms,
-            show_fake_atoms=False)
+            show_fake_atoms=False,
+            explicit_aromaticity=self.explicit_aromaticity
+            )
 
         self.atom_type_map = atom_type_map
         self.num_atom_types = len(atom_type_map)
@@ -191,6 +193,7 @@ class SampledMolecule:
                 ctmc_mol=self.ctmc_mol,
                 fake_atoms=self.fake_atoms,
                 show_fake_atoms=True, # for trajectories, we want to show fake atoms
+                explicit_aromaticity=self.explicit_aromaticity
                 )
 
             # align positions to final frame
@@ -211,7 +214,14 @@ class SampledMolecule:
         return traj_mols
     
 
-def extract_moldata_from_graph(g: dgl.DGLGraph, atom_type_map: List[str], exclude_charges: bool = False, ctmc_mol: bool = False, fake_atoms: bool = False, show_fake_atoms: bool = False):
+def extract_moldata_from_graph(g: dgl.DGLGraph, 
+                               atom_type_map: List[str], 
+                               exclude_charges: bool = False, 
+                               ctmc_mol: bool = False, 
+                               fake_atoms: bool = False, 
+                               show_fake_atoms: bool = False,
+                               explicit_aromaticity: bool = False
+                               ):
 
     # if fake atoms are present, identify them
     if fake_atoms and not show_fake_atoms:
@@ -235,7 +245,9 @@ def extract_moldata_from_graph(g: dgl.DGLGraph, atom_type_map: List[str], exclud
 
     # get bond types and atom indicies for every edge, convert types from simplex to integer
     bond_types = g.edata['e_1'].argmax(dim=1)
-    bond_types[bond_types == 4] = 0 # set masked bonds to 0
+    # set masked bonds to 0
+    mask_idx = 5 if explicit_aromaticity else 4
+    bond_types[bond_types == mask_idx] = 0 # set masked bonds to 0
     bond_src_idxs, bond_dst_idxs = g.edges()
 
     # get just the upper triangle of the adjacency matrix
@@ -306,7 +318,7 @@ def copy_graph(g: dgl.DGLGraph) -> dgl.DGLGraph:
 
     return g_copy
 
-def dataset_mol_to_sampled_mol(g, atom_type_map) -> SampledMolecule:
+def dataset_mol_to_sampled_mol(g, atom_type_map, **kwargs) -> SampledMolecule:
     for feat in 'xace':
         if feat == 'e':
             data_src = g.edata
@@ -315,7 +327,7 @@ def dataset_mol_to_sampled_mol(g, atom_type_map) -> SampledMolecule:
         data_src[f'{feat}_1'] = data_src[f'{feat}_1_true']
 
     g.edata['ue_mask'] = get_upper_edge_mask(g)
-    return SampledMolecule(g, atom_type_map)
+    return SampledMolecule(g, atom_type_map, **kwargs)
 
 def dataset_mol_to_rdmol(g, atom_type_map):
     dataset_mol_to_sampled_mol(g, atom_type_map).rdkit_mol
