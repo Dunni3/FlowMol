@@ -84,7 +84,7 @@ class SampledMolecule:
                 self.ep_traj_mols = self.process_traj_frames(traj_frames, ep_traj=True)
 
     @classmethod
-    def from_rdkit_mol(cls, mol: Chem.Mol, atom_type_map: List[str] = None):
+    def from_rdkit_mol(cls, mol: Chem.Mol, atom_type_map: List[str] = None, **kwargs):
         """Creates a SampledMolecule from an rdkit molecule."""
 
         if atom_type_map is None:
@@ -125,7 +125,7 @@ class SampledMolecule:
         g.edata['e_1'] = one_hot(edge_attr.long(), num_classes=5).float()
         g.edata['ue_mask'] = torch.ones(g.num_edges()).bool()
 
-        return cls(g, atom_type_map=atom_type_map)
+        return cls(g, atom_type_map=atom_type_map, **kwargs)
     
     # this code is adapted from MiDi: https://github.com/cvignac/MiDi/blob/ba07fc5b1313855c047ba0b90e7aceae47e34e38/midi/analysis/rdkit_functions.py
     def build_molecule(self):
