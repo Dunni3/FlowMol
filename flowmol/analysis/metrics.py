@@ -144,6 +144,8 @@ class SampleAnalyzer():
         if posebusters:
             rdmols = [sample.rdkit_mol for sample in sampled_molecules]
             pb_results = self.buster.bust(rdmols, None, None).mean().to_dict()
+            pb_results = { f'pb_{key}': pb_results[key] for key in pb_results }
+            # TODO: compute how many are pose busters valid, which i think we need to get like the "full report"
             metrics_dict.update(pb_results)
 
 
