@@ -4,6 +4,8 @@ import pickle
 from flowmol.analysis.metrics import SampleAnalyzer
 from flowmol.analysis.molecule_builder import SampledMolecule
 from rdkit import Chem
+import numpy as np
+import math
 
 def parse_args():
     p = argparse.ArgumentParser(description='Computes Metrics on a set of molecules sampled using a generative model.')
@@ -11,6 +13,7 @@ def parse_args():
     p.add_argument('--output_file', type=Path, help='Path to output file', default=None)
     p.add_argument('--dataset', type=str, default=None, help='Name of dataset, can be geom or qm9')
     p.add_argument('--processed_data_dir', type=Path, default=None, help='Path to directory containing processed data for the dataset')
+    p.add_argument('--n_subsets', type=int, default=None)
 
     args = p.parse_args()
 
@@ -57,12 +60,35 @@ if __name__ == "__main__":
     # convert rdkit molecules back to SampledMolecules
     sampled_mols = [ SampledMolecule.from_rdkit_mol(mol) for mol in rdkit_mols if mol is not None]
 
-    # compute metrics on the molecules
-    metrics = sample_analyzer.analyze(sampled_mols,
-        functional_validity=True,
-        posebusters=True
-    )
-    # metrics['js_div'] = sample_analyzer.compute_energy_divergence(sampled_mols)
+    if args.n_subsets is None:
+
+        # compute metrics on the molecules
+        metrics = sample_analyzer.analyze(sampled_mols,
+            functional_validity=True,
+            posebusters=True
+        )
+    else:
+        mols_per_subset = len(rdkit_mols) / args.n_subsets
+        subset_metrics = []
+        for i in range(args.n_subsets):
+            start_idx = i*mols_per_subset
+            end_idx = min(start_idx + mols_per_subset, len(sampled_mols))
+            subset_metrics.append(
+                sample_analyzer.analyze(
+                sampled_mols[start_idx:end_idx],
+                functional_validity=True,
+                posebusters=True
+            ))
+
+        metrics = {}
+        for key in subset_metrics[0].keys():
+            vals = np.array([d[key] for d in subset_metrics])
+            mean = vals.mean()
+            std = vals.std()
+            count = vals.shape[0]
+            ci95 = 1.96*std/math.sqrt(count)
+            metrics[key] = mean
+            metrics[f'{key}_ci95'] = ci95
 
     # add sampling time to metrics
     metrics['sampling_time'] = sampling_time
