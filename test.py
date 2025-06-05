@@ -148,11 +148,11 @@ if __name__ == "__main__":
     if args.metrics:
         processed_data_dir = config['dataset']['processed_data_dir']
         sample_analyzer = SampleAnalyzer(processed_data_dir=Path(processed_data_dir))
-        metrics = sample_analyzer.analyze(molecules)
-
-        # compute js-divergence of energies
-        js_div = sample_analyzer.compute_energy_divergence(molecules)
-        metrics['energy_js_div'] = js_div
+        metrics = sample_analyzer.analyze(
+            molecules,
+            energy_div=False,
+            posebusters=True
+        )
 
         metrics_txt_file = output_file.parent / f'{output_file.stem}_metrics.txt'
         metrics_pkl_file = output_file.parent / f'{output_file.stem}_metrics.pkl'

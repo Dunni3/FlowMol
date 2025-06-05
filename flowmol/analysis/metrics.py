@@ -143,8 +143,12 @@ class SampleAnalyzer():
 
         if posebusters:
             rdmols = [sample.rdkit_mol for sample in sampled_molecules]
-            pb_results = self.buster.bust(rdmols, None, None).mean().to_dict()
+            
+            df_pb = self.buster.bust(rdmols, None, None)
+            pb_results = df_pb.mean().to_dict()
             pb_results = { f'pb_{key}': pb_results[key] for key in pb_results }
+            n_pb_valid = df_pb[df_pb['sanitization'] == True].values.astype(bool).all(axis=1).sum()
+            pb_results['pb_valid'] = n_pb_valid / df_pb.shape[0]
             # TODO: compute how many are pose busters valid, which i think we need to get like the "full report"
             metrics_dict.update(pb_results)
 
@@ -210,6 +214,7 @@ class SampleAnalyzer():
             return frac_valid_mols, avg_frag_frac, avg_num_components, n_valid, sum(frag_fracs), len(frag_fracs), sum(num_components), len(num_components)
 
         return results
+    
     def compute_sample_energy(self, samples: List[SampledMolecule]):
         """ samples: list of SampledMolecule objects. """
         energies = []
