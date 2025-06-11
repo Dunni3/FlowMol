@@ -246,7 +246,7 @@ class SampleAnalyzer():
 
     def reos_and_rings(self, samples: List[SampledMolecule], return_raw=False):
         """ samples: list of SampledMolecule objects. """
-        rd_mols = [sample.rdkit_mol for sample in samples]
+        rd_mols = [sample.build_molecule() for sample in samples]
         valid_idxs = []
         sanitized_mols = []
         for i, mol in enumerate(rd_mols):
