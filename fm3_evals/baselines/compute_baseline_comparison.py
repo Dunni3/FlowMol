@@ -14,7 +14,7 @@ def parse_args():
     p.add_argument('--dataset', type=str, default=None, help='Name of dataset, can be geom or qm9')
     p.add_argument('--processed_data_dir', type=Path, default=None, help='Path to directory containing processed data for the dataset')
     p.add_argument('--n_subsets', type=int, default=None)
-    p.add_argument('--reos_raw', action='store_true')
+    p.add_argument('--reos_raw', action='store_true', help='whether to write out raw reos and rings data to file')
     p.add_argument('--kekulized', action='store_true', help='Whether the input molecules are kekulized.')
 
     args = p.parse_args()
