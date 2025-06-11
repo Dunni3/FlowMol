@@ -14,7 +14,7 @@ The other ablations will remove some of our like, imporant features, to demonstr
 
 The steps here are: 
 1. collect a directory of flowmol model directories.
-2. run `ablations/gen_test_cmds.py` to generate a set of commands to run. this will produce something like `test_cmds.sh` or a file you can set with `--cmd_file` when running `gen_test_cmds.py`
+2. run `ablations/gen_test_cmds.py` to generate a set of commands to run. this will produce something like `test_cmds.sh` or a file you can set with `--cmd_file` at the command line. The file that `gen_test_cmds.py` produces will be a list of commands to run `test.py` on each model in the directory.
 3. run the commands in `test_cmds.sh` to sample from the models. 
 4. do geometry analysis on the sampled molecules.
 
