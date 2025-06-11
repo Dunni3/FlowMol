@@ -107,3 +107,14 @@ if __name__ == "__main__":
     
     with open(output_file, 'wb') as f:
         pickle.dump(metrics, f)
+
+
+    # compute and write raw reos data
+    if args.reos_raw:
+        reos_raw = sample_analyzer.reos_and_rings(sampled_mols, return_raw=True)
+        if args.output_file is None:
+            reos_file = args.sample_file.parent / f'{args.sample_file.stem}_reos_and_rings.pkl'
+        else:
+            reos_file = args.output_file.parent / f'{args.output_file.stem}_reos_and_rings.pkl'
+        with open(reos_file, mode='wb') as f:
+            f.write(reos_file)
