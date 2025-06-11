@@ -15,21 +15,13 @@ def parse_args():
     p.add_argument('--processed_data_dir', type=Path, default=None, help='Path to directory containing processed data for the dataset')
     p.add_argument('--n_subsets', type=int, default=None)
     p.add_argument('--reos_raw', action='store_true')
+    p.add_argument('--kekulized', action='store_true', help='Whether the input molecules are kekulized.')
 
     args = p.parse_args()
 
-    if args.dataset and args.dataset not in ['geom', 'qm9']:
-        raise ValueError('dataset must be one of [geom, qm9]')
+    # if args.dataset and args.dataset not in ['geom', 'qm9']:
+    #     raise ValueError('dataset must be one of [geom, qm9]')
 
-    if args.dataset is None:
-        for dataset in ['geom', 'qm9']:
-            if dataset in args.sample_file.name:
-                args.dataset = dataset
-                break
-        if args.dataset is None:
-            raise ValueError('dataset could not be inferred from file name')
-
-    
     return args
 
 if __name__ == "__main__":
@@ -46,20 +38,13 @@ if __name__ == "__main__":
     else:
         raise ValueError
 
-    if args.processed_data_dir is not None:
-        processed_data_dir = args.processed_data_dir
-    elif args.dataset == 'geom':
-        processed_data_dir = Path('data/geom/')
-    elif args.dataset == 'qm9':
-        processed_data_dir = Path('data/qm9/')
-
-    sample_analyzer = SampleAnalyzer(processed_data_dir=processed_data_dir)
+    sample_analyzer = SampleAnalyzer(dataset=args.dataset,)
     
 
     n_raw_samples = len(rdkit_mols)
 
     # convert rdkit molecules back to SampledMolecules
-    sampled_mols = [ SampledMolecule.from_rdkit_mol(mol) for mol in rdkit_mols if mol is not None]
+    sampled_mols = [ SampledMolecule.from_rdkit_mol(mol, explicit_aromaticity= not args.kekulized) for mol in rdkit_mols if mol is not None]
 
     if args.n_subsets is None:
 
@@ -117,4 +102,4 @@ if __name__ == "__main__":
         else:
             reos_file = args.output_file.parent / f'{args.output_file.stem}_reos_and_rings.pkl'
         with open(reos_file, mode='wb') as f:
-            f.write(reos_file)
+            pickle.dump(reos_raw, f)

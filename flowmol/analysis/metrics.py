@@ -14,6 +14,7 @@ import functools
 from collections import defaultdict
 import posebusters as pb
 import yaml
+from flowmol.utils.path import flowmol_root
 
 # TODO: refactor this table and rewrite the check_stability function
 # i want it to always by table[atom_type][charge] = a list of possible valencies
@@ -47,7 +48,7 @@ class SampleAnalyzer():
         self.processed_data_dir = processed_data_dir
 
         if self.processed_data_dir is None:
-            self.processed_data_dir = Path(__file__).parent.parent.parent / 'data' / dataset
+            self.processed_data_dir = Path(flowmol_root()) / 'data' / dataset
 
         energy_dist_file = self.processed_data_dir / 'energy_dist.npz'
         self.energy_div_calculator = DivergenceCalculator(energy_dist_file)

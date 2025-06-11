@@ -33,6 +33,8 @@ def parse_args():
     p.add_argument('--stochasticity', type=float, default=None, help='Stochasticity for sampling molecules, only applies to models using CTMC')
     p.add_argument('--hc_thresh', type=float, default=None, help='High confidence threshold for purity sampling, only applies to models using CTMC')
     
+    p.add_argument('--reos_raw', action='store_true')
+
     p.add_argument('--seed', type=int, default=None)
 
     args = p.parse_args()
@@ -151,7 +153,8 @@ if __name__ == "__main__":
         metrics = sample_analyzer.analyze(
             molecules,
             energy_div=False,
-            posebusters=True
+            posebusters=True,
+            functional_validity=True
         )
 
         metrics_txt_file = output_file.parent / f'{output_file.stem}_metrics.txt'
@@ -164,6 +167,13 @@ if __name__ == "__main__":
                 f.write(f'{k}: {v}\n')
         with open(metrics_pkl_file, 'wb') as f:
             pickle.dump(metrics, f)
+
+        if args.reos_raw:
+            reos_raw_file = output_file.parent / f'{output_file.stem}_reos_and_rings.pkl'
+            reos_raw = sample_analyzer.reos_and_rings(molecules, return_raw=True)
+            print(f'Writing REOS raw data to {reos_raw_file}')
+            with open(reos_raw_file, 'wb') as f:
+                pickle.dump(reos_raw, f)
 
     # check that output file is an sdf file
     if output_file.suffix != '.sdf':
