@@ -1,6 +1,7 @@
 import argparse
 import shlex
 from pathlib import Path
+from flowmol.utils.path import flowmol_root
 
 def main():
     parser = argparse.ArgumentParser(
@@ -20,8 +21,7 @@ def main():
     )
     # all other args are passed through to test.py
     args, passthrough = parser.parse_known_args()
-
-    test_py = (Path(__file__).parent.parent / "test.py").resolve()
+    test_py = Path(flowmol_root()) / 'test.py'
     out = args.cmd_file
     out.parent.mkdir(parents=True, exist_ok=True)
 
