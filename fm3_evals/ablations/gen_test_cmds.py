@@ -30,6 +30,7 @@ def main():
         # gather all model subdirs
         model_dirs = sorted(d for d in args.models_root.iterdir() if d.is_dir())
         for md in model_dirs:
+            md = md.resolve()
             cmd_parts = ["python", shlex.quote(str(test_py)),
                          "--model_dir", shlex.quote(str(md))]
             # append any extra flags/values passed to this script

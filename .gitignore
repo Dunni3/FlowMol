@@ -22,6 +22,7 @@ flowmol/trained_models/qm9*
 flowmol/trained_models/geom*
 figures/
 local/
+fm3_evals/ablations/*runs/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

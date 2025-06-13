@@ -18,6 +18,12 @@ The steps here are:
 3. run the commands in `test_cmds.sh` to sample from the models. 
 4. do geometry analysis on the sampled molecules.
 
+
+I ran this command:
+```console
+python gen_test_cmds.py --models_root=kek_runs/ --n_timesteps=250 --metrics --n_mols=5000 --reos_raw
+```
+
 ## Baslines
 Baselines (2) is more quirky. This is because sampling each model is different, so we decided the starting point for baselines should just be like an sdf file or a pickle file with rdkit molecules in it.
 
