@@ -21,7 +21,7 @@ The steps here are:
 
 I ran this command:
 ```console
-python gen_test_cmds.py --models_root=kek_runs/ --n_timesteps=250 --metrics --n_mols=5000 --reos_raw
+python gen_test_cmds.py --models_root=kek_runs/ --n_timesteps=250 --metrics --n_mols=5000 --reos_raw --n_subsets=5
 ```
 
 ## Baslines
