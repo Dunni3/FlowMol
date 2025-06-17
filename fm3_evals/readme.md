@@ -24,8 +24,17 @@ I ran this command:
 python gen_test_cmds.py --models_root=kek_runs/ --n_timesteps=250 --metrics --n_mols=5000 --reos_raw --n_subsets=5
 ```
 
+And then these commands from `fm3_evals/ablations`:
+```console
+python gen_cmds/gen_min_cmds.py kek_runs/ --n_cpus=16 --cmd_file=cmd_files/min_cmds.txt
+sbatch --array 1-4 slurm_files/min.slurm cmd_files/min_cmds.txt
+```
+
 ## Baslines
 Baselines (2) is more quirky. This is because sampling each model is different, so we decided the starting point for baselines should just be like an sdf file or a pickle file with rdkit molecules in it.
+
+1. collect a directory of sdf files or rdkit pickles with molecules in them
+2. run a script to generate commands that will call `fm3_evals/baselines/compute_baseline_comparison.py` on each file in the directory, and write metrics out to some file (which?)
 
 
 ## Geometry eval
