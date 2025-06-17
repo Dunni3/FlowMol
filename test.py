@@ -12,6 +12,7 @@ from flowmol.model_utils.load import read_config_file
 import pickle
 import math
 import time
+import numpy as np
 
 def parse_args():
     p = argparse.ArgumentParser(description='Testing Script')
@@ -36,6 +37,8 @@ def parse_args():
     p.add_argument('--reos_raw', action='store_true')
 
     p.add_argument('--seed', type=int, default=None)
+    p.add_argument('--n_subsets', type=int, default=None, 
+                  help='Number of subsets to divide molecules into for confidence interval calculation')
 
     args = p.parse_args()
 
@@ -150,12 +153,39 @@ if __name__ == "__main__":
     if args.metrics:
         processed_data_dir = config['dataset']['processed_data_dir']
         sample_analyzer = SampleAnalyzer(processed_data_dir=Path(processed_data_dir))
-        metrics = sample_analyzer.analyze(
-            molecules,
-            energy_div=False,
-            posebusters=True,
-            functional_validity=True
-        )
+        
+        # Add subset-based metric calculation
+        if args.n_subsets is not None and args.n_subsets > 1:
+            mols_per_subset = len(molecules) / args.n_subsets
+            subset_metrics = []
+            for i in range(args.n_subsets):
+                start_idx = int(i * mols_per_subset)
+                end_idx = min(int(start_idx + mols_per_subset), len(molecules))
+                subset_metrics.append(
+                    sample_analyzer.analyze(
+                        molecules[start_idx:end_idx],
+                        energy_div=False,
+                        posebusters=True,
+                        functional_validity=True
+                    )
+                )
+            
+            metrics = {}
+            for key in subset_metrics[0].keys():
+                vals = np.array([d[key] for d in subset_metrics])
+                mean = vals.mean()
+                std = vals.std()
+                count = vals.shape[0]
+                ci95 = 1.96 * std / math.sqrt(count)
+                metrics[key] = mean
+                metrics[f'{key}_ci95'] = ci95
+        else:
+            metrics = sample_analyzer.analyze(
+                molecules,
+                energy_div=False,
+                posebusters=True,
+                functional_validity=True
+            )
 
         metrics_txt_file = output_file.parent / f'{output_file.stem}_metrics.txt'
         metrics_pkl_file = output_file.parent / f'{output_file.stem}_metrics.pkl'
@@ -227,6 +257,5 @@ if __name__ == "__main__":
                 sdf_writer.close()
 
         print(f'All molecules written to {output_file.parent}')
-    
 
-    
+

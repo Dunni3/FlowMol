@@ -29,3 +29,37 @@ Baselines (2) is more quirky. This is because sampling each model is different, 
 
 
 ## Geometry eval
+
+Copying some stuff from Filipp's readme here:
+
+---
+
+### 3. `energy_benchmark/xtb_optimization.py`
+
+**Purpose:** Optimize molecules with GFN2-xTB and extract energy/RMSD values.
+
+**Usage:**
+```bash
+MKL_NUM_THREADS=16 OMP_NUM_THREADS=16 python energy_benchmark/xtb_optimization.py \
+  --input_sdf path/to/generated.sdf \
+  --output_sdf path/to/optimized_output.sdf \
+  --init_sdf path/to/saved_initial_structures.sdf
+```
+
+**Note:** Requires `xtb` to be installed and available in your `PATH`.
+
+---
+
+### 5. `energy_benchmark/rmsd_energy.py`
+
+**Purpose:** Compute GFN2-xTB energy gains, MMFF energy drops, and RMSD across molecule pairs.
+
+**Usage:**
+```bash
+python energy_benchmark/rmsd_energy.py \
+  --init_sdf path/to/initial.sdf \
+  --opt_sdf path/to/optimized.sdf \
+  --n_subsets 5
+```
+
+---
