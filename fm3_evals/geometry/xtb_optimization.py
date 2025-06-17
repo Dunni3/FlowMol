@@ -2,6 +2,9 @@ import argparse
 import os
 import re
 import subprocess
+import tempfile
+import shutil
+from pathlib import Path
 
 from rdkit import Chem
 from tqdm import tqdm
@@ -16,12 +19,12 @@ def sdf_to_xyz(mol, filename):
             f.write(f"{atom.GetSymbol()} {pos.x} {pos.y} {pos.z}\n")
 
 
-def run_xtb_optimization(xyz_filename, output_prefix, charge):
+def run_xtb_optimization(xyz_filename, output_prefix, charge, work_dir):
     """Run xTB optimization and capture output."""
-    output_filename = f"{output_prefix}_xtb_output.out"
+    output_filename = os.path.join(work_dir, f"{output_prefix}_xtb_output.out")
 
     # Pass the charge to xTB using --charge flag
-    command = f"xtb {xyz_filename} --opt --charge {charge} --namespace {output_prefix} > {output_filename}"
+    command = f"cd {work_dir} && xtb {os.path.basename(xyz_filename)} --opt --charge {charge} --namespace {output_prefix} > {os.path.basename(output_filename)}"
 
     subprocess.run(command, shell=True)
     with open(output_filename, 'r') as f:
@@ -69,21 +72,6 @@ def write_mol_to_sdf(mol, f):
     f.write("$$$$\n")
 
 
-def remove_files_with_regex(directory, regex_pattern):
-    """Remove files in a directory that match the given regex pattern."""
-    # Compile the regex pattern
-    pattern = re.compile(regex_pattern)
-
-    # List all files in the specified directory
-    files = os.listdir(directory)  # Get all files
-
-    # Iterate over files and remove those that match the regex pattern
-    for file_name in files:
-        file_path = os.path.join(directory, file_name)
-        if pattern.match(file_name) and os.path.isfile(file_path):  # Ensure it's a file
-            os.remove(file_path)
-
-
 def get_molecule_charge(mol):
     """Calculate the total formal charge of a molecule by summing the formal charges of its atoms."""
     total_charge = 0
@@ -92,15 +80,16 @@ def get_molecule_charge(mol):
     return total_charge
 
 
-def process_molecule(args):
+def process_molecule(args, temp_dir):
     """Process a single molecule: run xTB optimization, parse output, and return the optimized molecule."""
     i, mol = args
     if mol is None:
         return None, None, None
 
-    xyz_filename = f"mol_{i}.xyz"
+    # Create paths within the temp directory
+    xyz_filename = os.path.join(temp_dir, f"mol_{i}.xyz")
     output_prefix = f"mol_{i}"
-    xtb_topo_filename = f"{output_prefix}.xtbtopo.mol"
+    xtb_topo_filename = os.path.join(temp_dir, f"{output_prefix}.xtbtopo.mol")
 
     sdf_to_xyz(mol, xyz_filename)
 
@@ -109,7 +98,7 @@ def process_molecule(args):
 
     try:
         # Pass the charge to the xTB optimization
-        xtb_output = run_xtb_optimization(xyz_filename, output_prefix, charge)
+        xtb_output = run_xtb_optimization(xyz_filename, output_prefix, charge, temp_dir)
         total_energy_gain, total_rmsd = parse_xtb_output(xtb_output)
 
         if not os.path.exists(xtb_topo_filename):
@@ -122,17 +111,13 @@ def process_molecule(args):
         print(f"Error processing molecule {i}: {e}")
         return None, None, None
 
-    finally:
-        if int(i) > 5:
-            remove_files_with_regex("./", r"^mol_{}.*".format(i))
-            remove_files_with_regex("./", r"^\.mol_{}.*".format(i))
-
 
 def write_results_to_file(output_sdf, optimized_mols, how="w"):
     """Write the optimized molecules to the output SDF file."""
     with open(output_sdf, how) as f:
         for mol in optimized_mols:
             write_mol_to_sdf(mol, f)
+
 
 def main_fn(input_sdf, output_sdf, init_sdf):
     suppl = Chem.SDMolSupplier(input_sdf, sanitize=False, removeHs=False)
@@ -142,25 +127,28 @@ def main_fn(input_sdf, output_sdf, init_sdf):
     # Remove existing output file to start fresh
     if os.path.exists(output_sdf):
         os.remove(output_sdf)
-    try:
-        for task in tqdm(enumerate(suppl)):
-            optimized_mol, total_energy_gain, total_rmsd = process_molecule(task)
-            if optimized_mol is not None:
-                if task[1].HasProp("_Name"):
-                    optimized_mol.SetProp("_Name", task[1].GetProp("_Name"))
-                else:
-                    optimized_mol.SetProp("_Name", str(task[0]))
-                if total_energy_gain is not None:
-                    optimized_mol.SetProp("energy_gain", f"{total_energy_gain:.4f}")
-                if total_rmsd is not None:
-                    optimized_mol.SetProp("RMSD", f"{total_rmsd:.4f}")
-                init_mols.append(task[1])
-                optimized_mols.append(optimized_mol)
-    finally:
-        # Write remaining optimized molecules to the SDF file
-        if optimized_mols:
-            write_results_to_file(output_sdf, optimized_mols)
-            write_results_to_file(init_sdf, init_mols)
+    
+    # Create a temporary directory for all intermediate files
+    with tempfile.TemporaryDirectory() as temp_dir:
+        try:
+            for task in tqdm(enumerate(suppl)):
+                optimized_mol, total_energy_gain, total_rmsd = process_molecule(task, temp_dir)
+                if optimized_mol is not None:
+                    if task[1].HasProp("_Name"):
+                        optimized_mol.SetProp("_Name", task[1].GetProp("_Name"))
+                    else:
+                        optimized_mol.SetProp("_Name", str(task[0]))
+                    if total_energy_gain is not None:
+                        optimized_mol.SetProp("energy_gain", f"{total_energy_gain:.4f}")
+                    if total_rmsd is not None:
+                        optimized_mol.SetProp("RMSD", f"{total_rmsd:.4f}")
+                    init_mols.append(task[1])
+                    optimized_mols.append(optimized_mol)
+        finally:
+            # Write remaining optimized molecules to the SDF file
+            if optimized_mols:
+                write_results_to_file(output_sdf, optimized_mols)
+                write_results_to_file(init_sdf, init_mols)
 
     print(f"Successfully processed molecules.")
 
@@ -171,4 +159,4 @@ if __name__ == "__main__":
     parser.add_argument("--output_sdf", type=str, required=True, help="Path to output optimized .sdf")
     parser.add_argument("--init_sdf", type=str, required=True, help="Path to output initial structures .sdf")
     args = parser.parse_args()
-    main_fn(args.input, args.output, args.init)
+    main_fn(args.input_sdf, args.output_sdf, args.init_sdf)
