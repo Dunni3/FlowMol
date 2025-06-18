@@ -24,6 +24,8 @@ I ran this command:
 python gen_test_cmds.py --models_root=kek_runs/ --n_timesteps=250 --metrics --n_mols=5000 --reos_raw --n_subsets=5
 ```
 
+## how we did the geometry analysis on the sampled molecules  
+
 And then these commands from `fm3_evals/ablations`:
 ```console
 python gen_cmds/gen_min_cmds.py kek_runs/ --n_cpus=16 --cmd_file=cmd_files/min_cmds.txt
@@ -36,16 +38,34 @@ sbatch --array 1-4 slurm_files/rmsd.slurm cmd_files/rmsd_cmds.txt
 Baselines (2) is more quirky. This is because sampling each model is different, so we decided the starting point for baselines should just be like an sdf file or a pickle file with rdkit molecules in it.
 
 1. collect a directory of sdf files or rdkit pickles with molecules in them
-2. run a script to generate commands that will call `fm3_evals/baselines/compute_baseline_comparison.py` on each file in the directory, and write metrics out to some file (which?)
+2. run `fm3_evals/baselines/gen_cmds/gen_baseline_comparison_cmds.py` to generate commands that will call `fm3_evals/baselines/compute_baseline_comparison.py` on each file in the directory, and write metrics out to some file, perhaps like the input file name with `_metrics.json` appended to it.
+
+I ran these commands from `fm3_evals/baselines`:
+```console
+python gen_cmds/gen_baseline_comparison_cmds.py baseline_mols/ --cmd_file=cmd_files/fm_metrics.txt --n_subsets=5 --reos_raw --dataset=geom_5_aromatic
+sbatch --array 3-7 slurm_files/onecpu.slurm cmd_files/fm_metrics.txt
+```
+
+An annoying gotcha here is that for the flowmol model here i had to manually go in and set `--dataset=geom_5_kekulized` in the command file and add `--kekulized` ot the its invocation of `compute_baseline_comparison.py` because the flowmol model is kekulized, but the baseline molecules are not. 
 
 
-## Geometry eval
+## Geometry analysis on baseline models
 
-Copying some stuff from Filipp's readme here:
+This has yet to be done.
+
+## todo
+
+1. the baseline eval script is breaking because of boron
+2. have not yet run geometry eval but i decided that the baseline eval should be writing results to a different directory than the one the molecules themselves are stored in, as this will also possibly be a more useful pattern for the geometry eval
+
+
+# Geometry eval
+
+Ok so the geometry eval proceeds through two scripts, run sequentially, described below in the order they are used:
 
 ---
 
-### 3. `energy_benchmark/xtb_optimization.py`
+## `fm3_evals/geometry/xtb_optimization.py`
 
 **Purpose:** Optimize molecules with GFN2-xTB and extract energy/RMSD values.
 
@@ -61,7 +81,7 @@ MKL_NUM_THREADS=16 OMP_NUM_THREADS=16 python energy_benchmark/xtb_optimization.p
 
 ---
 
-### 5. `energy_benchmark/rmsd_energy.py`
+## `fm3_evals/geometry/rmsd_energy.py`
 
 **Purpose:** Compute GFN2-xTB energy gains, MMFF energy drops, and RMSD across molecule pairs.
 

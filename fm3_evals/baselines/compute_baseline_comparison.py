@@ -54,7 +54,7 @@ if __name__ == "__main__":
             posebusters=True
         )
     else:
-        mols_per_subset = len(rdkit_mols) / args.n_subsets
+        mols_per_subset = len(rdkit_mols) // args.n_subsets
         subset_metrics = []
         for i in range(args.n_subsets):
             start_idx = i*mols_per_subset
