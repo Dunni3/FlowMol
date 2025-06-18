@@ -3,6 +3,9 @@ import numpy as np
 from rdkit import Chem
 from rdkit import RDLogger
 from collections import defaultdict
+from copy import deepcopy
+from pathlib import Path
+import pickle
 
 from geom_utils.utils import is_valid, compute_mmff_energy_drop, compute_rmsd
 
@@ -54,6 +57,7 @@ def main():
     parser.add_argument("--opt_sdf", required=True, help="Path to optimized SDF file")
     parser.add_argument("--no_hydrogens", action="store_true", help="Remove hydrogens before computing RMSD")
     parser.add_argument("--n_subsets", type=int, default=1, help="Number of subsets to compute std over")
+    parser.add_argument('--output_file', type=str, default=None, help="Output file to save results (optional)")
 
     args = parser.parse_args()
     hydrogens = not args.no_hydrogens
@@ -71,6 +75,8 @@ def main():
         for key, val in results.items():
             if key != "n":
                 print(f"{key.replace('_', ' ').title()}: {val:.4f}")
+
+        output_results = results
     else:
         subset_metrics = defaultdict(list)
         subsets = split_into_subsets(pairs, args.n_subsets)
@@ -83,11 +89,32 @@ def main():
         n_total = sum(subset_metrics["n"])
         print(f"Processed {n_total} molecules across {args.n_subsets} subsets.")
 
+        output_results = {}
         for key in ["avg_energy_gain", "med_energy_gain", "avg_rmsd", "med_rmsd", "avg_mmff_drop", "med_mmff_drop"]:
             values = subset_metrics[key]
             mean = np.mean(values)
             std = np.std(values)
+            ci95 = 1.96 * (std / np.sqrt(len(values))) if len(values) > 1 else 0.0
             print(f"{key.replace('_', ' ').title()}: {mean:.4f} ± {std:.4f}")
+            output_results[key] = mean
+            output_results[f"{key}_ci95"] = ci95
+
+    if args.output_file is None:
+        output_file_pkl = Path(args.init_sdf).parent / "rmsd_energy_results.pkl"
+        output_file_txt = Path(args.init_sdf).parent / "rmsd_energy_results.txt"
+    else:
+        output_file_pkl = Path(args.output_file).with_suffix('.pkl')
+        output_file_txt = Path(args.output_file).with_suffix('.txt')
+
+    with open(output_file_pkl, 'wb') as f:
+        pickle.dump(output_results, f)
+    print(f"Results saved to {output_file_pkl}")
+    with open(output_file_txt, 'w') as f:
+        for key, value in output_results.items():
+            f.write(f"{key.replace('_', ' ').title()}: {value:.4f}\n")
+    print(f"Results saved to {output_file_txt}")
+    
+
 
 
 if __name__ == "__main__":

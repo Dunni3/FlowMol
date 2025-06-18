@@ -28,6 +28,8 @@ And then these commands from `fm3_evals/ablations`:
 ```console
 python gen_cmds/gen_min_cmds.py kek_runs/ --n_cpus=16 --cmd_file=cmd_files/min_cmds.txt
 sbatch --array 1-4 slurm_files/min.slurm cmd_files/min_cmds.txt
+python gen_cmds/gen_rmsd_cmds.py kek_runs/ --cmd_file=cmd_files/rmsd_cmds.txt --n_subsets=5
+sbatch --array 1-4 slurm_files/rmsd.slurm cmd_files/rmsd_cmds.txt
 ```
 
 ## Baslines
