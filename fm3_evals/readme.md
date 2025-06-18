@@ -46,7 +46,7 @@ python gen_cmds/gen_baseline_comparison_cmds.py baseline_mols/ --cmd_file=cmd_fi
 sbatch --array 3-7 slurm_files/onecpu.slurm cmd_files/fm_metrics.txt
 ```
 
-An annoying gotcha here is that for the flowmol model here i had to manually go in and set `--dataset=geom_5_kekulized` in the command file and add `--kekulized` ot the its invocation of `compute_baseline_comparison.py` because the flowmol model is kekulized, but the baseline molecules are not. 
+An annoying gotcha here is that for the flowmol model here i had to manually go in and set `--dataset=geom_5_kekulized` in the command file and add `--kekulized` to its invocation of `compute_baseline_comparison.py` because the flowmol model is kekulized, but the baseline molecules are not. 
 
 
 ## Geometry analysis on baseline models
