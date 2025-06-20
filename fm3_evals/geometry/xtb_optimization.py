@@ -8,6 +8,7 @@ from pathlib import Path
 
 from rdkit import Chem
 from tqdm import tqdm
+import pickle
 
 
 def sdf_to_xyz(mol, filename):
@@ -120,7 +121,18 @@ def write_results_to_file(output_sdf, optimized_mols, how="w"):
 
 
 def main_fn(input_sdf, output_sdf, init_sdf):
-    suppl = Chem.SDMolSupplier(input_sdf, sanitize=False, removeHs=False)
+
+    input_sdf_path = Path(input_sdf)
+    if input_sdf_path.suffix == '.pkl':
+        # If input is a pickle file, load the molecules from it
+        with open(input_sdf, 'rb') as f:
+            suppl, _ = pickle.load(f)
+    elif input_sdf_path.suffix == '.sdf':
+        # If input is an SDF file, read it using RDKit
+        suppl = Chem.SDMolSupplier(input_sdf, sanitize=False, removeHs=False)
+    else:
+        raise ValueError(f"Unsupported input file format: {input_sdf_path.suffix}. Only .sdf and .pkl files are supported.")
+
     optimized_mols = []
     init_mols = []
 
@@ -151,6 +163,8 @@ def main_fn(input_sdf, output_sdf, init_sdf):
                 write_results_to_file(init_sdf, init_mols)
 
     print(f"Successfully processed molecules.")
+    print(len(optimized_mols), "molecules optimized and written to", output_sdf)
+    print(len(init_mols), "initial structures written to", init_sdf)
 
 
 if __name__ == "__main__":
