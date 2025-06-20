@@ -94,6 +94,9 @@ class MoleculeFeaturizer():
         self.atom_map_dict = {atom: i for i, atom in enumerate(atom_map)}
         self.explicit_aromaticity = explicit_aromaticity
 
+        if len(atom_map) != len(set(atom_map)):
+            raise ValueError("Atom map must contain unique elements. Found duplicates in the atom map.")
+
         if self.n_cpus == 1:
             self.pool = None
         else:
@@ -131,8 +134,8 @@ def featurize_molecule(molecule: Chem.rdchem.Mol, atom_map_dict: Dict[str, int],
     # sanitize the molecule
     try:
         Chem.SanitizeMol(molecule)
-    except Chem.SanitizeException as e:
-        print(f"Sanitization failed for molecule {molecule.GetProp('_Name')}", flush=True)
+    except Chem.MolSanitizeException as e:
+        # print(f"Sanitization failed for molecule {molecule.GetProp('_Name')}", flush=True)
         return MoleculeData(
             failed=True,
             failure_mode='sanitization'
@@ -143,7 +146,7 @@ def featurize_molecule(molecule: Chem.rdchem.Mol, atom_map_dict: Dict[str, int],
         try:
             Chem.Kekulize(molecule, clearAromaticFlags=True)
         except Chem.KekulizeException as e:
-            print(f"Kekulization failed for molecule {molecule.GetProp('_Name')}", flush=True)
+            # print(f"Kekulization failed for molecule {molecule.GetProp('_Name')}", flush=True)
             return MoleculeData(
                 failed=True,
                 failure_mode='kekulization'
@@ -177,12 +180,12 @@ def featurize_molecule(molecule: Chem.rdchem.Mol, atom_map_dict: Dict[str, int],
             print(f"Atom {atom.GetSymbol()} not in atom map", flush=True)
             return MoleculeData(
                 failed=True,
-                failure_mode='atom_map'
+                failure_mode='atom_map' 
             )
         
         atom_charges[i] = atom.GetFormalCharge()
         atom_types_str.append(atom.GetSymbol())
-
+    
     # get atom types as one-hot vectors
     atom_types = one_hot(atom_types_idx, num_classes=len(atom_map_dict)).bool()
 
