@@ -23,6 +23,9 @@ flowmol/trained_models/geom*
 figures/
 local/
 fm3_evals/ablations/*runs/
+fm3_evals/baselines/baseline_mols/
+fm3_evals/baselines/baseline_results/
+fm3_evals/baselines/cmd_files/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

@@ -10,7 +10,7 @@ import math
 def parse_args():
     p = argparse.ArgumentParser(description='Computes Metrics on a set of molecules sampled using a generative model.')
     p.add_argument('sample_file', type=Path, help='Path to file containing sampled molecules') # note this scripts assumes that the contents of the pickle file is a tuple where the first element is a list of rdkit molecules and the second element is the sampling time as a float in seconds
-    p.add_argument('--output_file', type=Path, help='Path to output file', default=None)
+    p.add_argument('--output_file', type=Path, help='Path to output file, must be pkl file', default=None)
     p.add_argument('--dataset', type=str, default=None, help='Name of dataset, can be geom or qm9')
     p.add_argument('--processed_data_dir', type=Path, default=None, help='Path to directory containing processed data for the dataset')
     p.add_argument('--n_subsets', type=int, default=None)
@@ -26,6 +26,11 @@ def parse_args():
 
 if __name__ == "__main__":
     args = parse_args()
+
+    if args.output_file:
+        if args.output_file.suffix != '.pkl':
+            raise ValueError('output file must be a pkl file')
+        # args.output_file.parent.mkdir(parents=True, exist_ok=True)
 
     # we used to assume that sample_file was a pickle file containing rdkit molecules 
     if args.sample_file.suffix == '.pkl':

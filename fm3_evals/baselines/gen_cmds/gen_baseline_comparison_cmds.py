@@ -24,6 +24,11 @@ def main():
         default=None,
         help="File pattern to match sample files (e.g., '*.pkl', '*.sdf'). If None, all files in the directory are included."
     )
+    parser.add_argument(
+        '--output_dir',
+        type=Path,
+        default=None,
+    )
     # all other args are passed through to compute_baseline_comparison.py
     args, passthrough = parser.parse_known_args()
 
@@ -31,6 +36,10 @@ def main():
     out = args.cmd_file
     out.parent.mkdir(parents=True, exist_ok=True)
 
+    if args.output_dir is None:
+        output_dir = args.samples_dir
+    else:
+        output_dir = args.output_dir
     with open(out, "w") as f:
         f.write("#!/usr/bin/env bash\n\n")
         # gather all sample files
@@ -41,8 +50,12 @@ def main():
             
         for sample_file in sample_files:
             sample_file = sample_file.resolve()
-            cmd_parts = ["python", shlex.quote(str(compute_script)),
-                         shlex.quote(str(sample_file))]
+            output_file = output_dir / (sample_file.stem + "_metrics.pkl")
+            cmd_parts = ["python", 
+                         shlex.quote(str(compute_script)),
+                         shlex.quote(str(sample_file)),
+                         f"--output_file={output_file}"
+                        ]
             # append any extra flags/values passed to this script
             for tok in passthrough:
                 cmd_parts.append(shlex.quote(tok))

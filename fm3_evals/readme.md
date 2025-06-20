@@ -42,7 +42,7 @@ Baselines (2) is more quirky. This is because sampling each model is different, 
 
 I ran these commands from `fm3_evals/baselines`:
 ```console
-python gen_cmds/gen_baseline_comparison_cmds.py baseline_mols/ --cmd_file=cmd_files/fm_metrics.txt --n_subsets=5 --reos_raw --dataset=geom_5_aromatic
+python gen_cmds/gen_baseline_comparison_cmds.py baseline_mols/ --cmd_file=cmd_files/fm_metrics.txt --output_dir=baseline_results/ --n_subsets=5 --reos_raw --dataset=geom_alltypes_aromatic
 sbatch --array 3-7 slurm_files/onecpu.slurm cmd_files/fm_metrics.txt
 ```
 
