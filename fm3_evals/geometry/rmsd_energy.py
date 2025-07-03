@@ -39,7 +39,7 @@ def compute_metrics_for_pairs(pairs, hydrogens=True):
         "med_rmsd": np.median(rmsds) if rmsds else 0.0,
         "avg_mmff_drop": np.mean(mmff_drops) if mmff_drops else 0.0,
         "med_mmff_drop": np.median(mmff_drops) if mmff_drops else 0.0,
-        "n": len(energy_gains)
+        "n": len(energy_gains),
     }
 
 
