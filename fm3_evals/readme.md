@@ -44,24 +44,18 @@ I ran these commands from `fm3_evals/baselines`:
 ```console
 python gen_cmds/gen_baseline_comparison_cmds.py baseline_mols/ --cmd_file=cmd_files/fm_metrics.txt --output_dir=baseline_results/ --n_subsets=5 --reos_raw --dataset=geom_alltypes_aromatic
 sbatch --array 3-7 slurm_files/onecpu.slurm cmd_files/fm_metrics.txt
+```
+
+An annoying gotcha here is that for the flowmol model, when doing running `compute_baseline_comparison.py`, which is being done in the second command in the block above,i had to manually go in and set `--dataset=geom_5_kekulized` in the command file and add `--kekulized` to its invocation of `compute_baseline_comparison.py` because the flowmol model is kekulized, but the baseline molecules are not. 
+
+
+3. geometry analysis on the baseline molecules.
+```console
 python gen_cmds/gen_bsmin_cmds.py baseline_mols/ --cmd_file=cmd_files/min_cmds.txt --n_cpus=16
 sbatch --array 1-5 slurm_files/min.slurm cmd_files/min_cmds.txt
 python gen_cmds/gen_rmsd_cmds.py baseline_mols/ --cmd_file=cmd_files/rmsd_cmds.txt --n_subsets=5
-sbatch --array 1-5 slurm_files/rmsd.slurm cmd_files/rmsd_cmds.txt
+sbatch --array 1-5 slurm_files/onecpu.slurm cmd_files/rmsd_cmds.txt
 ```
-
-An annoying gotcha here is that for the flowmol model here i had to manually go in and set `--dataset=geom_5_kekulized` in the command file and add `--kekulized` to its invocation of `compute_baseline_comparison.py` because the flowmol model is kekulized, but the baseline molecules are not. 
-
-
-## Geometry analysis on baseline models
-
-This has yet to be done.
-
-## todo
-
-1. the baseline eval script is breaking because of boron
-2. have not yet run geometry eval but i decided that the baseline eval should be writing results to a different directory than the one the molecules themselves are stored in, as this will also possibly be a more useful pattern for the geometry eval
-
 
 # Geometry eval
 

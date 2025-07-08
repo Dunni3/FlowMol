@@ -15,6 +15,8 @@ RDLogger.DisableLog('rdApp.*')
 def compute_metrics_for_pairs(pairs, hydrogens=True):
     energy_gains, mmff_drops, rmsds = [], [], []
 
+    output_counter = defaultdict(int)
+
     for init_mol, opt_mol in pairs:
         if init_mol is None or opt_mol is None or not is_valid(init_mol):
             continue
@@ -24,13 +26,34 @@ def compute_metrics_for_pairs(pairs, hydrogens=True):
             rmsd = compute_rmsd(init_mol, opt_mol, hydrogens=hydrogens)
             mmff_drop = compute_mmff_energy_drop(init_mol)
 
-            if energy_gain is not None and rmsd is not None:
+            if energy_gain is not None:
                 energy_gains.append(-energy_gain)
+            else:
+                output_counter['missing_energy_gain'] += 1
+
+            if rmsd is not None:
                 rmsds.append(rmsd)
-                if mmff_drop is not None:
-                    mmff_drops.append(mmff_drop)
-        except Exception:
+            else:
+                output_counter['missing_rmsd'] += 1
+
+            if mmff_drop is not None:
+                mmff_drops.append(mmff_drop)
+            else:
+                output_counter['missing_mmff_drop'] += 1
+
+            # if energy_gain is not None and rmsd is not None:
+            #     energy_gains.append(-energy_gain)
+            #     rmsds.append(rmsd)
+            #     if mmff_drop is not None:
+            #         mmff_drops.append(mmff_drop)
+
+            output_counter['successful_pairs'] += 1
+        except Exception as e:
+            print(e)
             continue
+
+    # this was for debugging
+    # print(*[f"{k}: {v}" for k, v in output_counter.items()], sep="\n", flush=True)
 
     return {
         "avg_energy_gain": np.mean(energy_gains) if energy_gains else 0.0,
