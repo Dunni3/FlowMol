@@ -43,7 +43,7 @@ if __name__ == "__main__":
     else:
         raise ValueError
 
-    sample_analyzer = SampleAnalyzer(dataset=args.dataset,)
+    sample_analyzer = SampleAnalyzer(dataset=args.dataset, pb_energy=True)
     
 
     n_raw_samples = len(rdkit_mols)
@@ -56,7 +56,7 @@ if __name__ == "__main__":
         # compute metrics on the molecules
         metrics = sample_analyzer.analyze(sampled_mols,
             functional_validity=True,
-            posebusters=True
+            posebusters=True,
         )
     else:
         mols_per_subset = len(rdkit_mols) // args.n_subsets
@@ -68,7 +68,7 @@ if __name__ == "__main__":
                 sample_analyzer.analyze(
                 sampled_mols[start_idx:end_idx],
                 functional_validity=True,
-                posebusters=True
+                posebusters=True,
             ))
 
         metrics = {}
