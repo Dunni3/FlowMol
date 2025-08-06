@@ -43,6 +43,7 @@ class SampleAnalyzer():
         dataset='geom', 
         use_midi_valence=False,
         pb_workers=0,
+        pb_energy=False
         ):
 
         self.processed_data_dir = processed_data_dir
@@ -78,9 +79,12 @@ class SampleAnalyzer():
                 explicit_aromaticity=explicit_aromaticity, 
             )
 
-        pb_config_file = Path(__file__).parent / 'pb_config.yaml'
-        with open(pb_config_file, 'r') as f:
-            config = yaml.safe_load(f)
+        if pb_energy:
+            config = 'mol'
+        else:
+            pb_config_file = Path(__file__).parent / 'pb_config.yaml'
+            with open(pb_config_file, 'r') as f:
+                config = yaml.safe_load(f)
         self.buster = pb.PoseBusters(config=config, max_workers=pb_workers)
 
     def analyze(self, sampled_molecules: List[SampledMolecule], 
@@ -145,6 +149,7 @@ class SampleAnalyzer():
         if posebusters:
             rdmols = [sample.rdkit_mol for sample in sampled_molecules]
             
+            print('running bosebusters', flush=True)
             df_pb = self.buster.bust(rdmols, None, None)
             pb_results = df_pb.mean().to_dict()
             pb_results = { f'pb_{key}': pb_results[key] for key in pb_results }

@@ -19,7 +19,7 @@ class SampledMolecule:
     def __init__(self, g: dgl.DGLGraph, 
         atom_type_map: List[str], 
         traj_frames: Dict[str, torch.Tensor] = None,
-        ctmc_mol: bool = False, # whether the molecule was sampled from a CTMC model. Important because one-hot encodings will contain a mask token. 
+        ctmc_mol: bool = True, # whether the molecule was sampled from a CTMC model. Important because one-hot encodings will contain a mask token. 
         fake_atoms: bool = False, # whether the molecule contains fake atoms,
         exclude_charges: bool = False, 
         align_traj: bool = True,

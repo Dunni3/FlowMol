@@ -152,7 +152,7 @@ if __name__ == "__main__":
     # compute metrics if necessary
     if args.metrics:
         processed_data_dir = config['dataset']['processed_data_dir']
-        sample_analyzer = SampleAnalyzer(processed_data_dir=Path(processed_data_dir))
+        sample_analyzer = SampleAnalyzer(processed_data_dir=Path(processed_data_dir), pb_energy=True)
         
         # Add subset-based metric calculation
         if args.n_subsets is not None and args.n_subsets > 1:

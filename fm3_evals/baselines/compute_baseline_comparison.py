@@ -17,6 +17,8 @@ def parse_args():
     p.add_argument('--reos_raw', action='store_true', help='whether to write out raw reos and rings data to file')
     p.add_argument('--kekulized', action='store_true', help='Whether the input molecules are kekulized.')
 
+    p.add_argument('--n_mols', type=int, default=None, help='Number of molecules. For debugging purposes.')
+
     args = p.parse_args()
 
     # if args.dataset and args.dataset not in ['geom', 'qm9']:
@@ -43,7 +45,12 @@ if __name__ == "__main__":
     else:
         raise ValueError
 
-    sample_analyzer = SampleAnalyzer(dataset=args.dataset,)
+    if args.n_mols is not None:
+        rdkit_mols = rdkit_mols[:args.n_mols]
+        if sampling_time is not None:
+            sampling_time = sampling_time[:args.n_mols]
+
+    sample_analyzer = SampleAnalyzer(dataset=args.dataset, pb_energy=True)
     
 
     n_raw_samples = len(rdkit_mols)
@@ -56,7 +63,7 @@ if __name__ == "__main__":
         # compute metrics on the molecules
         metrics = sample_analyzer.analyze(sampled_mols,
             functional_validity=True,
-            posebusters=True
+            posebusters=True,
         )
     else:
         mols_per_subset = len(rdkit_mols) // args.n_subsets
@@ -68,7 +75,7 @@ if __name__ == "__main__":
                 sample_analyzer.analyze(
                 sampled_mols[start_idx:end_idx],
                 functional_validity=True,
-                posebusters=True
+                posebusters=True,
             ))
 
         metrics = {}

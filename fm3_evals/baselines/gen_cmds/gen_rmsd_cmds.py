@@ -20,6 +20,7 @@ if __name__ == "__main__":
 
     script_path = Path(flowmol_root()) / 'fm3_evals/geometry/rmsd_energy.py'
 
+    cmds = []
     for sample_file in args.baselines_dir.resolve().iterdir():
         if not sample_file.is_file():
             continue
@@ -37,12 +38,13 @@ if __name__ == "__main__":
             min_mols_file = args.min_mols_dir / f'xtb_min_{sample_file.stem}.sdf'
 
         if not init_mols_file.exists() or not min_mols_file.exists():
-            print(f"Required files {init_mols_file} or {min_mols_file} do not exist, skipping model {model_name}.")
+            print(f"Required files {init_mols_file} or {min_mols_file} do not exist, skipping.")
             continue
 
         output_file = args.baselines_dir.parent / 'baseline_results' / f'{sample_file.stem}_rmsd_energy_results.pkl'
 
-        cmd = f'python {script_path} --init_sdf {init_mols_file} --opt_sdf {min_mols_file} --n_subsets={args.n_subsets} --output_file={output_file}\n'
+        cmd = f'python {script_path} --init_sdf {init_mols_file} --opt_sdf {min_mols_file} --n_subsets={args.n_subsets} --output_file={output_file}'
 
-        with open(args.cmd_file, 'a') as f:
-            f.write(cmd)
+        cmds.append(cmd)
+    with open(args.cmd_file, 'w') as f:
+        f.write('\n'.join(cmds)+'\n')

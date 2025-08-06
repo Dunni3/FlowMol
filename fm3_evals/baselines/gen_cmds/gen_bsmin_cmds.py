@@ -32,8 +32,8 @@ if __name__ == "__main__":
             continue
 
 
-        output_sdf = args.inits_dir / f'xtb_init_{sample_file.stem}.sdf'
-        init_sdf = args.mins_dir / f'xtb_min_{sample_file.stem}.sdf'
+        init_sdf = args.inits_dir / f'xtb_init_{sample_file.stem}.sdf'
+        output_sdf = args.mins_dir / f'xtb_min_{sample_file.stem}.sdf'
 
         cmds.append(
             f'MKL_NUM_THREADS={args.n_cpus} OMP_NUM_THREADS={args.n_cpus} python {minimization_script} --input_sdf {sample_file} --output_sdf {output_sdf} --init_sdf {init_sdf}\n'

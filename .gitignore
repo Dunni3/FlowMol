@@ -26,6 +26,7 @@ fm3_evals/ablations/*runs/
 fm3_evals/baselines/baseline_mols/
 fm3_evals/baselines/baseline_results/
 fm3_evals/baselines/cmd_files/
+fm3_evals/ablations/sc_runs_full
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
