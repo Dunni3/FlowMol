@@ -149,6 +149,7 @@ class SampleAnalyzer():
         if posebusters:
             rdmols = [sample.rdkit_mol for sample in sampled_molecules]
             
+            print('running bosebusters', flush=True)
             df_pb = self.buster.bust(rdmols, None, None)
             pb_results = df_pb.mean().to_dict()
             pb_results = { f'pb_{key}': pb_results[key] for key in pb_results }

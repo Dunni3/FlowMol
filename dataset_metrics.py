@@ -23,6 +23,7 @@ def parse_args():
     p.add_argument('--config', type=Path, required=True, help='Path to config file')
     p.add_argument('--n_mols', type=int, default=None)
     p.add_argument('--batch_size', type=int, default=None)
+    p.add_argument('--pb_workers', type=int, default=0, help='Number of workers for PoseBusters analysis')
 
     return p.parse_args()
 
@@ -67,7 +68,7 @@ if __name__ == "__main__":
     # create sample analyzer
     processed_data_dir = config['dataset']['processed_data_dir']
     processed_data_dir = Path(processed_data_dir)
-    sample_analyzer = SampleAnalyzer(processed_data_dir=processed_data_dir, pb_energy=True)
+    sample_analyzer = SampleAnalyzer(processed_data_dir=processed_data_dir, pb_energy=True, pb_workers=args.pb_workers)
 
     if args.n_mols is not None:
         # randomly select n_mols numbers from the range (0, len(dataset))
