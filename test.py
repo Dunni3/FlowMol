@@ -22,7 +22,7 @@ def parse_args():
 
     p.add_argument('--n_mols', type=int, default=100, help='The number of molecules to generate.')
     p.add_argument('--n_atoms_per_mol', type=int, default=None, help="The number of atoms in every molecule. If None, the number of atoms will be sampled independently for each molecule from the training data distribution.")
-    p.add_argument('--n_timesteps', type=int, default=20, help="Number of timesteps for integration via Euler's method")
+    p.add_argument('--n_timesteps', type=int, default=250, help="Number of timesteps for integration via Euler's method")
     # p.add_argument('--visualize', action='store_true', help='Visualize the sampled trajectories')
     p.add_argument('--xt_traj', action='store_true', help='Save the x-t trajectory of the sampled molecules')
     p.add_argument('--ep_traj', action='store_true', help='Save the endpoint trajectory of the sampled molecules')

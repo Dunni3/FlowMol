@@ -318,13 +318,13 @@ def copy_graph(g: dgl.DGLGraph) -> dgl.DGLGraph:
 
     return g_copy
 
-def dataset_mol_to_sampled_mol(g, atom_type_map, **kwargs) -> SampledMolecule:
+def dataset_mol_to_sampled_mol(g, atom_type_map, state='1_true', **kwargs) -> SampledMolecule:
     for feat in 'xace':
         if feat == 'e':
             data_src = g.edata
         else:
             data_src = g.ndata
-        data_src[f'{feat}_1'] = data_src[f'{feat}_1_true']
+        data_src[f'{feat}_1'] = data_src[f'{feat}_{state}']
 
     g.edata['ue_mask'] = get_upper_edge_mask(g)
     return SampledMolecule(g, atom_type_map, **kwargs)

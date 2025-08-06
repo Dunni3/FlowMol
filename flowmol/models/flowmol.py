@@ -486,7 +486,9 @@ class FlowMol(pl.LightningModule):
 
     @torch.no_grad()
     def sample(self, n_atoms: torch.Tensor, n_timesteps: int = None, device="cuda:0",
-        stochasticity=None, high_confidence_threshold=None, xt_traj=False, ep_traj=False, **kwargs):
+        stochasticity=None, high_confidence_threshold=None, xt_traj=False, ep_traj=False, 
+        prior=None,
+        **kwargs):
         """Sample molecules with the given number of atoms.
         
         Args:
@@ -525,7 +527,20 @@ class FlowMol(pl.LightningModule):
         node_batch_idx, edge_batch_idx = get_batch_idxs(g)
 
         # sample molecules from prior
-        g = self.sample_prior(g, node_batch_idx, upper_edge_mask)
+        if prior is None:
+            g = self.sample_prior(g, node_batch_idx, upper_edge_mask)
+        else:
+            g.ndata['x_0'] = prior['x_0'].to(g.device)
+            g.ndata['a_0'] = prior['a_0'].to(g.device)
+            g.ndata['c_0'] = prior['c_0'].to(g.device)
+            g.edata['e_0'] = prior['e_0'].to(g.device)
+
+            if prior['fake_atoms'] and not self.fake_atom_p > 0:
+                # prior uses fake atoms but the model does not, so we need to drop the fake atom type
+                g.ndata['a_0'] = g.ndata['a_0'][:, 1:] # drop one atom type
+            elif not prior['fake_atoms'] and self.fake_atom_p > 0:
+                # prior does not use fake atoms but the model does, so we need to add a fake atom type
+                g.ndata['a_0'] = torch.cat([torch.zeros(g.ndata['a_0'].shape[0], 1, device=g.device), g.ndata['a_0']], dim=-1)
 
         # integrate trajectories
         integrate_kwargs = {
