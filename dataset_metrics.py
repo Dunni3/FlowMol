@@ -24,6 +24,7 @@ def parse_args():
     p.add_argument('--n_mols', type=int, default=None)
     p.add_argument('--batch_size', type=int, default=None)
     p.add_argument('--pb_workers', type=int, default=0, help='Number of workers for PoseBusters analysis')
+    p.add_argument('--output_file', type=Path, default=None, help='Path to output metrics file (default: processed_data_dir/metrics_fm3.pkl)')
 
     return p.parse_args()
 
@@ -115,7 +116,11 @@ if __name__ == "__main__":
     processed_data_dir = Path(config['dataset']['processed_data_dir'])
 
     # write metrics
-    metrics_file = processed_data_dir / 'metrics_fm3.pkl'
+    if args.output_file is not None:
+        metrics_file = args.output_file
+        metrics_file.parent.mkdir(parents=True, exist_ok=True)
+    else:
+        metrics_file = processed_data_dir / 'metrics_fm3.pkl'
     with open(metrics_file, 'wb') as f:
         pickle.dump(output_metrics, f)
 
