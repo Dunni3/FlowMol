@@ -1,4 +1,4 @@
-name: mol-fm
+name: flowmol
 channels:
   - pyg
   - pytorch
