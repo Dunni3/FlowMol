@@ -3,29 +3,23 @@ from flowmol.models.flowmol import FlowMol
 import subprocess
 
 pretrained_model_names = [
-    'geom_ctmc',
-    'geom_gaussian',
-    'geom_simplexflow',
-    'geom_dirichlet',
-    'qm9_ctmc',
-    'qm9_gaussian',
-    'qm9_simplexflow',
-    'qm9_dirichlet'
+    'flowmol3',
+    'fm3_nofa',
+    'fm3_nodistort',
+    'fm3_nosc',
+    'fm3_none'
 ]
 
-def load_pretrained(model_name: str) -> FlowMol:
+def load_pretrained(model_name: str = 'flowmol3') -> FlowMol:
     """Load one of the pre-trained models by name.
 
     Args:
         model_name (str): Name of the model to load. Supported models are:
-            'geom_ctmc',
-            'geom_gaussian',
-            'geom_simplexflow',
-            'geom_dirichlet',
-            'qm9_ctmc',
-            'qm9_gaussian',
-            'qm9_simplexflow',
-            'qm9_dirichlet'  
+        'flowmol3' (default): FlowMol3 trained on the GEOM-Drugs dataset.,
+        'fm3_nofa',
+        'fm3_nodistort',
+        'fm3_nosc',
+        'fm3_none'
     """
     if model_name not in pretrained_model_names:
         raise ValueError(f"Model {model_name} not found. Supported models: {pretrained_model_names}")
@@ -45,15 +39,6 @@ def load_pretrained(model_name: str) -> FlowMol:
     
     ckpt_path = model_dir / 'checkpoints' / 'last.ckpt'
     model = FlowMol.load_from_checkpoint(ckpt_path, **load_kwargs)
-
-    if model_name == 'geom_ctmc':
-        # temporary fix - this model was trained with certain
-        # parameters for sampling that were later found to be suboptimal,
-        # so here we set the default sampling parameters
-        # to what we've found to give better results 
-        model.vector_field.eta = 30.0
-        model.vector_field.hc_thresh = 0.9
-        
 
     return model
 

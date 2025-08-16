@@ -92,6 +92,9 @@ class FlowMol(pl.LightningModule):
             self.marginal_dists_file = processed_data_dir / self.marginal_dists_file.name
             self.n_atoms_hist_file = processed_data_dir / self.n_atoms_hist_file.name
 
+            if not self.n_atoms_hist_file.exists():
+                raise FileNotFoundError(f"Could not find n_atoms_hist_file at {self.n_atoms_hist_file}. Please provide a valid path.")
+
         # do some boring stuff regarding the prior distribution
         self.configure_prior()
 
@@ -163,32 +166,27 @@ class FlowMol(pl.LightningModule):
 
     def configure_prior(self):
         # load the marginal distributions of atom types, bond orders and the conditional distribution of charges given atom type
-        p_a, p_c, p_e, p_c_given_a = torch.load(self.marginal_dists_file)
-        self.p_a = p_a
-        self.p_e = p_e
+        # p_a, p_c, p_e, p_c_given_a = torch.load(self.marginal_dists_file)
+        # self.p_a = p_a
+        # self.p_e = p_e
 
         # add the marginal distributions as arguments to the prior sampling functions
-        if self.prior_config['a']['type'] == 'marginal':
-            self.prior_config['a']['kwargs']['p'] = p_a
+        # if self.prior_config['a']['type'] == 'marginal':
+        #     self.prior_config['a']['kwargs']['p'] = p_a
 
-        if self.prior_config['e']['type'] == 'marginal':
-            self.prior_config['e']['kwargs']['p'] = p_e
+        # if self.prior_config['e']['type'] == 'marginal':
+        #     self.prior_config['e']['kwargs']['p'] = p_e
 
-        if self.prior_config['c']['type'] == 'marginal':
-            self.prior_config['c']['kwargs']['p'] = p_c
+        # if self.prior_config['c']['type'] == 'marginal':
+        #     self.prior_config['c']['kwargs']['p'] = p_c
         
-        if self.prior_config['c']['type'] == 'c-given-a':
-            self.prior_config['c']['kwargs']['p_c_given_a'] = p_c_given_a
+        # if self.prior_config['c']['type'] == 'c-given-a':
+        #     self.prior_config['c']['kwargs']['p_c_given_a'] = p_c_given_a
 
-        if self.parameterization == 'dirichlet':
-            for feat in ['a', 'c', 'e']:
-                if self.prior_config[feat]['type'] != 'uniform-simplex':
-                    raise ValueError('dirichlet parameterization requires that all categorical priors be uniform-simplex')
-
-        if self.parameterization == 'ctmc':
-            for feat in ['a', 'c', 'e']:
-                if self.prior_config[feat]['type'] != 'ctmc':
-                    raise ValueError('ctmc parameterization requires that all categorical priors be ctmc')
+        for modality in ['a', 'c', 'e']:
+            prior_type = self.prior_config[modality]['type']
+            if prior_type != 'ctmc':
+                raise NotImplementedError('Only ctmc masked priors are supported for categorical features. All other options depracated.')
                 
     def configure_loss_fns(self, device):    
         # instantiate loss functions
