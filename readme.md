@@ -6,24 +6,25 @@
 
 This is the offical implementation of FlowMol, a flow matching model for unconditional 3D de novo molecule generation. The current version is FlowMol3, which is described in the following paper:
 
-## What's going on the the FlowMol versions?
+## Citing FlowMol3 (and what's going on the the FlowMol versions?)
 
 Unintentionally, FlowMol has gone through a few iterations of improvement. We have released three versions along with three preprints. FlowMol3 is the current and final version, it was released publicly on August 15th, 2025 and will (hopefully) soon find its home in a journal publication.
 
 (flowmol3 citation goes here)
 
-Citations for earlier versions of FlowMol are still available below, but we recommend using FlowMol3 for all new work.
+Earlier versions of FlowMol are still accessible (see next 2 sections), but we recommend using FlowMol3 for all new work.
 
 ### FlowMol1
 
-> Dunn, I. & Koes, D. R. Exploring Discrete Flow Matching for 3D De Novo Molecule Generation. Preprint at https://doi.org/10.48550/arXiv.2411.16644 (2024).
-
-### FlowMol2
-
-FlowMol2 (referred to as FlowMol-CTMC originally) as presented the Machine Learning for Structural Biology workshop at NeurIPS 2024.
+This is the first FlowMol preprint. The code for this version is available at [this v0.1 tag](https://github.com/Dunni3/FlowMol/releases/tag/v0.1). Citation is below.
 
 > Dunn, I. & Koes, D. R. Mixed Continuous and Categorical Flow Matching for 3D De Novo Molecule Generation. Preprint at https://doi.org/10.48550/arXiv.2404.19739 (2024).
 
+### FlowMol2
+
+FlowMol2 (referred to as FlowMol-CTMC originally) as presented the Machine Learning for Structural Biology workshop at NeurIPS 2024. Its available with the [FlowMol 2.0 release](https://github.com/Dunni3/FlowMol/releases/tag/v2.0). The primary difference between FlowMol1 and FlowMol2 is the use of CTMC-based discrete flow matching on categorical modalities. Citation is below.
+
+> Dunn, I. & Koes, D. R. Exploring Discrete Flow Matching for 3D De Novo Molecule Generation. Preprint at https://doi.org/10.48550/arXiv.2411.16644 (2024).
 
 # Environment Setup
 

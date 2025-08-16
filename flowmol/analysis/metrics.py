@@ -8,13 +8,17 @@ from collections import Counter
 import wandb
 from flowmol.utils.divergences import DivergenceCalculator
 from flowmol.analysis.ff_energy import compute_mmff_energy
-from flowmol.analysis.reos import REOS
+from flowmol.analysis.reos import REOS, build_reos_df
 from flowmol.analysis.ring_systems import RingSystemCounter, ring_counts_to_df
 import functools
 from collections import defaultdict
 import posebusters as pb
 import yaml
 from flowmol.utils.path import flowmol_root
+import functools
+import pickle
+import pandas as pd
+import numpy as np
 
 # TODO: refactor this table and rewrite the check_stability function
 # i want it to always by table[atom_type][charge] = a list of possible valencies
@@ -40,7 +44,7 @@ class SampleAnalyzer():
 
     def __init__(self, 
         processed_data_dir: str = None, 
-        dataset='geom', 
+        dataset='geom_full_kekulized', 
         use_midi_valence=False,
         pb_workers=0,
         pb_energy=False
@@ -249,6 +253,24 @@ class SampleAnalyzer():
         js_div = self.energy_div_calculator.js_divergence(energies)
 
         return js_div
+    
+    @functools.lru_cache()
+    def get_train_reos_rings(self):
+        train_reos_file = Path(flowmol_root()) / 'data/geom_5_kekulized/train_reos_ring_counts.pkl'
+
+        if not train_reos_file.exists():
+            # TODO: downlaod file here
+            raise FileNotFoundError(f"Training REOS and ring counts file not found: {train_reos_file}")
+
+        with open(train_reos_file, 'rb') as f:
+            data = pickle.load(f)
+
+        flag_arr = data['reos_flag_arr']
+        flag_names = data['reos_flag_header']
+
+        df_reos = build_reos_df(flag_arr, flag_names)
+
+        return df_reos
 
     def reos_and_rings(self, samples: List[SampledMolecule], return_raw=False):
         """ samples: list of SampledMolecule objects. """
@@ -294,8 +316,15 @@ class SampleAnalyzer():
         else:
             flag_rate = -1
             ood_rate = -1
-        
-        return dict(flag_rate=flag_rate, ood_rate=ood_rate) 
+
+        metrics = dict(flag_rate=flag_rate, ood_rate=ood_rate)
+
+        # compute the cumulative deviation of reos flags
+        df_reos_train: pd.DataFrame = self.get_train_reos_rings()
+        df_reos_model = build_reos_df(reos_flags, reos.flag_arr_header) if reos_flags is not None else None
+        metrics.update(compute_cumulative_reos_deviation(df_reos_model, df_reos_train))
+
+        return metrics
 
 def check_stability(molecule: SampledMolecule, valid_valency_table: dict, explicit_aromaticity: bool = False):
     """ molecule: Molecule object. """
@@ -362,3 +391,22 @@ def check_stability_midi(molecule: SampledMolecule, valid_valency_table):
         n_stable_atoms += int(is_stable)
 
     return n_stable_atoms, mol_stable, n_fake_atoms
+
+
+
+def compute_cumulative_reos_deviation(df_reos, df_reos_train, fold_change_lims=(0.5, 2.0)):
+
+    if df_reos is None:
+        return {'reos_cum_dev': -1}
+
+    # flag_mask = df_reos_train['flag_rate'] > 5/5000
+    # fold_change = df_reos.loc[flag_mask, 'flag_rate'] / (df_reos_train.loc[flag_mask, 'flag_rate'] + 0/30000)
+    # n_flags_passing = ((fold_change > fold_change_lims[0]) & (fold_change < fold_change_lims[1])).sum()
+    # frac_flags_passing = n_flags_passing / len(df_reos['flag_rate'])
+    cum_deviation = np.abs(df_reos['flag_rate'] - df_reos_train['flag_rate']).sum()
+
+    metrics = {
+        'reos_cum_dev': cum_deviation
+    }
+
+    return metrics
