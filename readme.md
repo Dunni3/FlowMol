@@ -120,5 +120,5 @@ Note that these commands assumed you have downloaded our trained models as descr
 Run the `train.py` script. You can either pass a config file, or you can pass a trained model checkpoint for resuming. Note in the latter case, the script assumes the checkpoint is inside of a directory that contains a config file. To see the expected file structure of a model directory, refer to the [trained models readme](flowmol/trained_models/readme.md). Here's an example command to train a model:
 
 ```console
-python train.py --config=configs/qm9_ctmc.yaml
+python train.py --config=configs/flowmol3.yml
 ```
