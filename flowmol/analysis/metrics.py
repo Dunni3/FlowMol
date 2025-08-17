@@ -19,6 +19,7 @@ import functools
 import pickle
 import pandas as pd
 import numpy as np
+import subprocess
 
 # TODO: refactor this table and rewrite the check_stability function
 # i want it to always by table[atom_type][charge] = a list of possible valencies
@@ -256,11 +257,14 @@ class SampleAnalyzer():
     
     @functools.lru_cache()
     def get_train_reos_rings(self):
-        train_reos_file = Path(flowmol_root()) / 'data/geom_5_kekulized/train_reos_ring_counts.pkl'
+        train_reos_file = Path(flowmol_root()) / 'data/geom_full_kekulized/train_reos_ring_counts.pkl'
 
         if not train_reos_file.exists():
-            # TODO: downlaod file here
-            raise FileNotFoundError(f"Training REOS and ring counts file not found: {train_reos_file}")
+            # TODO: download file here
+            print(f"Training REOS and ring counts file not found at {train_reos_file}. Downloading...")
+            download_reos_train_data(download_path=train_reos_file)
+            if not train_reos_file.exists():
+                raise FileNotFoundError(f"Training REOS and ring counts file could not be found at {train_reos_file} after download.")
 
         with open(train_reos_file, 'rb') as f:
             data = pickle.load(f)
@@ -410,3 +414,15 @@ def compute_cumulative_reos_deviation(df_reos, df_reos_train, fold_change_lims=(
     }
 
     return metrics
+
+def download_reos_train_data(download_path: Path):
+    remote_reos_path = 'https://bits.csb.pitt.edu/files/FlowMol/data/train_reos_ring_counts.pkl'
+
+    if not download_path.parent.exists():
+        download_path.parent.mkdir(parents=True, exist_ok=True)
+
+    # download the model
+    wget_cmd = f"wget -O {download_path} {remote_reos_path}"
+    result = subprocess.run(wget_cmd, shell=True, capture_output=True, text=True)
+    if result.returncode != 0:
+        raise RuntimeError(f"Error downloading model: {result.stderr}")
