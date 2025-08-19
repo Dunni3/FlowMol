@@ -17,6 +17,7 @@ from flowmol.models.flowmol import FlowMol
 from flowmol.data_processing.data_module import MoleculeDataModule
 from flowmol.model_utils.sweep_config import merge_config_and_args, register_hyperparameter_args
 from flowmol.model_utils.load import read_config_file, model_from_config, data_module_from_config
+from flowmol.utils.ema import ExponentialMovingAverage
 
 def parse_args():
     p = argparse.ArgumentParser(description='Training Script')
@@ -149,7 +150,12 @@ if __name__ == "__main__":
         refresh_rate = 20
     pbar_callback = TQDMProgressBar(refresh_rate=refresh_rate)
 
-    trainer = pl.Trainer(logger=wandb_logger, **trainer_config, callbacks=[checkpoint_callback, pbar_callback])
+    callbacks = [checkpoint_callback, pbar_callback]
+    if 'ema_decay' in config['training'] and config['training']['ema_decay'] > 0:
+        ema = ExponentialMovingAverage(decay=config['training']['ema_decay'])
+        callbacks.append(ema)
+
+    trainer = pl.Trainer(logger=wandb_logger, **trainer_config, callbacks=callbacks)
     
     # train
     trainer.fit(model, datamodule=data_module, ckpt_path=ckpt_file)

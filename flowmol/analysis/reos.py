@@ -3,6 +3,7 @@ import numpy as np
 from rdkit.Chem.rdchem import Mol
 from rdkit import Chem
 from typing import List
+import pandas as pd
 
 class REOS:
     """Wrapper class for userful_rdkit_utils.reos.REOS that implements structural alert counting in a way that suits our needs."""
@@ -58,3 +59,27 @@ class REOS:
             rows.append(row)
 
         return np.stack(rows)
+    
+
+def build_reos_df(flag_arr, flag_names):
+    flag_rates = flag_arr.sum(0) / flag_arr.shape[0]
+    df_flags = pd.DataFrame({
+        'flag_name': flag_names,
+        'flag_count': flag_arr.sum(0),
+        'flag_rate': flag_rates,
+        'n_mols': flag_arr.shape[0],
+    })
+
+    avg_flag_rate = flag_arr.sum() / flag_arr.shape[0]
+
+    # data_frequency_map = { flag_name: flag_rate for flag_name, flag_rate in zip(flag_names, flag_rates) }
+
+    # has one flag rate
+    has_flags_rate = (flag_arr.sum(1) > 0).sum() / flag_arr.shape[0]
+
+    reos_metrics = {
+        'avg_flag_rate': avg_flag_rate,
+        'has_flags_rate': has_flags_rate,
+    }
+
+    return df_flags

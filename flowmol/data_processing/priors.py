@@ -302,11 +302,13 @@ def coupled_node_prior(dst_dict: dict,
 
     return prior_dict
 
-def edge_prior(upper_edge_mask: torch.Tensor, edge_prior_config: dict):
+def edge_prior(upper_edge_mask: torch.Tensor, edge_prior_config: dict, explicit_aromaticity: bool = False):
 
     n_upper_edges = upper_edge_mask.sum().item()
     prior_fn = train_prior_register[edge_prior_config['type']]
-    upper_edge_prior = prior_fn(n_upper_edges, 5, **edge_prior_config['kwargs'])
+
+    n_non_mask_bond_types = 5 if explicit_aromaticity else 4
+    upper_edge_prior = prior_fn(n_upper_edges, n_non_mask_bond_types, **edge_prior_config['kwargs'])
 
     edge_prior = torch.zeros(upper_edge_mask.shape[0], upper_edge_prior.shape[1])
     edge_prior[upper_edge_mask] = upper_edge_prior

@@ -5,6 +5,7 @@ def register_hyperparameter_args(p: argparse.ArgumentParser) -> argparse.Argumen
     """Register hyperparameter arguments for the model."""
 
     p.add_argument('--batch_size', type=int, default=None)
+    p.add_argument('--max_edges', type=int, default=None)
     p.add_argument('--lr', type=float, default=None)
     p.add_argument('--warmup_length', type=float, default=None)
 
@@ -55,6 +56,9 @@ def merge_config_and_args(config: dict, args: argparse.Namespace) -> dict:
 
     if args.warmup_length is not None:
         config['lr_scheduler']['warmup_length'] = args.warmup_length
+
+    if args.max_edges is not None:
+        config['training']['max_num_edges'] = args.max_edges
 
     # hyperparams which can be set for each feature
     feats = ['x', 'a', 'c', 'e']

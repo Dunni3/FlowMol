@@ -10,95 +10,100 @@ dataset:
   - N
   - O
   - F
-  dataset_name: qm9
+  - P
+  - S
+  - Cl
+  - Br
+  - I
+  dataset_name: geom
   dataset_size: null
-  processed_data_dir: data/qm9
-  raw_data_dir: data/qm9_raw
+  processed_data_dir: data/geom_full_kekulized/
+  raw_data_dir: data/geom_raw/
+  confs_per_mol: 
+
 interpolant_scheduler:
   cosine_params:
     a: 2
     c: 2
-    e: 1.5
+    e: 2
     x: 1
   schedule_type:
-    a: cosine
-    c: cosine
-    e: cosine
-    x: cosine
+    a: linear
+    c: linear
+    e: linear
+    x: linear
 lr_scheduler:
   base_lr: 0.0001
   restart_interval: 0
   restart_type: linear
-  warmup_length: 1.0
+  warmup_length: 0.0
   weight_decay: 1.0e-12
 mol_fm:
-  parameterization: endpoint
+  explicit_aromaticity: false
+  parameterization: ctmc
   prior_config:
     a:
       align: false
       kwargs: {}
-      type: gaussian
+      type: ctmc
     c:
       align: false
       kwargs: {}
-      type: gaussian
+      type: ctmc
     e:
       align: false
       kwargs: {}
-      type: gaussian
+      type: ctmc
     x:
       align: true
       kwargs:
         std: 1.0
       type: centered-normal
-  target_blur: 0.0
   time_scaled_loss: true
   total_loss_weights:
     a: 0.4
     c: 1.0
     e: 2.0
     x: 3.0
-  weight_ae: false
 resume:
-  run_id: 9skv7r3e
+  run_id: jcbq0qz5
 training:
-  batch_size: 64
+  batch_size: 16
   evaluation:
-    mols_to_sample: 128
-    sample_interval: 0.2
-    val_loss_interval: 0.2
-  max_num_edges: 400000.0
-  num_workers: 8
-  output_dir: runs_qm9_valid/
+    mols_to_sample: 64
+    sample_interval: 0.012
+    val_loss_interval: 0.012
+  num_workers: 4
+  output_dir: runs_ctmc/
   trainer_args:
     accelerator: gpu
     accumulate_grad_batches: 1
-    devices: 1
-    gradient_clip_algorithm: value
-    gradient_clip_val: 1.0
-    limit_val_batches: 0.1
-    max_epochs: 1000
+    devices: 4
+    limit_val_batches: 0.002
+    max_epochs: 20
     num_nodes: 1
-    strategy: auto
+    strategy: ddp_find_unused_parameters_true
 vector_field:
   convs_per_update: 1
+  high_confidence_threshold: 0.0
   message_norm: 100
   n_cp_feats: 4
   n_hidden_edge_feats: 128
   n_hidden_scalars: 256
   n_message_gvps: 3
-  n_molecule_updates: 8
+  n_molecule_updates: 5
   n_recycles: 1
   n_update_gvps: 3
   n_vec_channels: 16
-  rbf_dim: 16
-  rbf_dmax: 14
+  rbf_dim: 32
+  rbf_dmax: 12
   separate_mol_updaters: true
+  stochasticity: 10.0
   update_edge_w_distance: true
 wandb:
-  entity: iandunn
-  id: 9skv7r3e
+  group: null
+  id: jcbq0qz5
   mode: online
-  name: qm9-gauss-ep_qm9valid
+  name: geom-ctmc
   project: mol-fm
-  save_dir: runs_qm9_valid
+  save_dir: runs_ctmc

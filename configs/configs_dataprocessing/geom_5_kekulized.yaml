@@ -17,8 +17,10 @@ dataset:
   - I
   dataset_name: geom
   dataset_size: null
-  processed_data_dir: data/geom/
+  processed_data_dir: data/geom_5_kekulized/
   raw_data_dir: data/geom_raw/
+  confs_per_mol: 5
+
 interpolant_scheduler:
   cosine_params:
     a: 2
@@ -26,10 +28,10 @@ interpolant_scheduler:
     e: 2
     x: 1
   schedule_type:
-    a: cosine
-    c: cosine
-    e: cosine
-    x: cosine
+    a: linear
+    c: linear
+    e: linear
+    x: linear
 lr_scheduler:
   base_lr: 0.0001
   restart_interval: 0
@@ -37,23 +39,21 @@ lr_scheduler:
   warmup_length: 0.0
   weight_decay: 1.0e-12
 mol_fm:
-  parameterization: endpoint
+  explicit_aromaticity: false
+  parameterization: ctmc
   prior_config:
     a:
       align: false
-      kwargs:
-        blur: 0.15
-      type: marginal
+      kwargs: {}
+      type: ctmc
     c:
       align: false
-      kwargs:
-        blur: 0.15
-      type: c-given-a
+      kwargs: {}
+      type: ctmc
     e:
       align: false
-      kwargs:
-        blur: 0.15
-      type: marginal
+      kwargs: {}
+      type: ctmc
     x:
       align: true
       kwargs:
@@ -66,7 +66,7 @@ mol_fm:
     e: 2.0
     x: 3.0
 resume:
-  run_id: vx1dm723
+  run_id: jcbq0qz5
 training:
   batch_size: 16
   evaluation:
@@ -74,17 +74,18 @@ training:
     sample_interval: 0.012
     val_loss_interval: 0.012
   num_workers: 4
-  output_dir: runs_paper_fixm/
+  output_dir: runs_ctmc/
   trainer_args:
     accelerator: gpu
     accumulate_grad_batches: 1
-    devices: 2
+    devices: 4
     limit_val_batches: 0.002
     max_epochs: 20
     num_nodes: 1
     strategy: ddp_find_unused_parameters_true
 vector_field:
   convs_per_update: 1
+  high_confidence_threshold: 0.0
   message_norm: 100
   n_cp_feats: 4
   n_hidden_edge_feats: 128
@@ -94,14 +95,15 @@ vector_field:
   n_recycles: 1
   n_update_gvps: 3
   n_vec_channels: 16
-  rbf_dim: 16
+  rbf_dim: 32
   rbf_dmax: 12
   separate_mol_updaters: true
+  stochasticity: 10.0
   update_edge_w_distance: true
 wandb:
-  group: for-reals
-  id: vx1dm723
+  group: null
+  id: jcbq0qz5
   mode: online
-  name: geom-dp-fixp
+  name: geom-ctmc
   project: mol-fm
-  save_dir: runs_paper_fixm
+  save_dir: runs_ctmc

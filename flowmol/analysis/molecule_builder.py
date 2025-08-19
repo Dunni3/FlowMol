@@ -19,11 +19,14 @@ class SampledMolecule:
     def __init__(self, g: dgl.DGLGraph, 
         atom_type_map: List[str], 
         traj_frames: Dict[str, torch.Tensor] = None,
-        ctmc_mol: bool = False, # whether the molecule was sampled from a CTMC model. Important because one-hot encodings will contain a mask token. 
+        ctmc_mol: bool = True, # whether the molecule was sampled from a CTMC model. Important because one-hot encodings will contain a mask token. 
+        fake_atoms: bool = False, # whether the molecule contains fake atoms,
         exclude_charges: bool = False, 
         align_traj: bool = True,
         build_xt_traj=True,
-        build_ep_traj=True,):
+        build_ep_traj=True,
+        explicit_aromaticity: bool = False,
+    ):
         """Represents a molecule sampled from a model. Converts the DGL graph to an rdkit molecule and keeps all associated information."""
 
         atom_type_map = list(atom_type_map) # create a shallow copy of the atom type map so that we don't modify the original
@@ -31,6 +34,11 @@ class SampledMolecule:
         self.exclude_charges = exclude_charges
         self.align_traj = align_traj
         self.ctmc_mol = ctmc_mol
+        self.fake_atoms = fake_atoms
+        self.explicit_aromaticity = explicit_aromaticity
+
+        if fake_atoms:
+            atom_type_map.append('Sn') # fake atoms will show up as tin, only in trajectories
 
         if ctmc_mol:
             atom_type_map.append('Se') # masked molecules will show up as selenium
@@ -39,20 +47,30 @@ class SampledMolecule:
         self.g = g
 
         self.positions, self.atom_types, self.atom_charges, self.bond_types, self.bond_src_idxs, self.bond_dst_idxs = extract_moldata_from_graph(
-            g, 
+            copy_graph(g), 
             atom_type_map, 
             exclude_charges=exclude_charges,
-            ctmc_mol=self.ctmc_mol)
+            ctmc_mol=self.ctmc_mol,
+            fake_atoms=self.fake_atoms,
+            show_fake_atoms=False,
+            explicit_aromaticity=self.explicit_aromaticity
+            )
 
         self.atom_type_map = atom_type_map
-        self.num_atoms = g.num_nodes()
         self.num_atom_types = len(atom_type_map)
+
+        self.num_atoms = g.num_nodes()
+        if self.fake_atoms:
+            fake_atom_token_idx  = len(atom_type_map) - 2 
+            fake_atom_mask = g.ndata['a_1'].argmax(dim=1) == fake_atom_token_idx
+            n_fake_atoms = fake_atom_mask.sum().item()
+            self.num_atoms -= n_fake_atoms
 
         # build rdkit molecule
         self.rdkit_mol = self.build_molecule()
 
         # compute valencies on every atom
-        self.valencies = self.compute_valencies()
+        self.valencies = self.compute_valencies(arom_dependent=explicit_aromaticity)
 
         # build trajectory molecules
         self.traj_frames = traj_frames
@@ -66,7 +84,7 @@ class SampledMolecule:
                 self.ep_traj_mols = self.process_traj_frames(traj_frames, ep_traj=True)
 
     @classmethod
-    def from_rdkit_mol(cls, mol: Chem.Mol, atom_type_map: List[str] = None):
+    def from_rdkit_mol(cls, mol: Chem.Mol, atom_type_map: List[str] = None, **kwargs):
         """Creates a SampledMolecule from an rdkit molecule."""
 
         if atom_type_map is None:
@@ -107,22 +125,32 @@ class SampledMolecule:
         g.edata['e_1'] = one_hot(edge_attr.long(), num_classes=5).float()
         g.edata['ue_mask'] = torch.ones(g.num_edges()).bool()
 
-        return cls(g, atom_type_map=atom_type_map)
+        return cls(g, atom_type_map=atom_type_map, **kwargs)
     
     # this code is adapted from MiDi: https://github.com/cvignac/MiDi/blob/ba07fc5b1313855c047ba0b90e7aceae47e34e38/midi/analysis/rdkit_functions.py
     def build_molecule(self):
         mol = build_molecule(self.positions, self.atom_types, self.atom_charges, self.bond_src_idxs, self.bond_dst_idxs, self.bond_types)
         return mol
     
-    def compute_valencies(self):
+    def compute_valencies(self, arom_dependent: bool = False):
         """Compute the valencies of every atom in the molecule. Returns a tensor of shape (num_atoms,)."""
-        adj = torch.zeros((self.num_atoms, self.num_atoms))
-        adjusted_bond_types = self.bond_types.clone()
+
+        adj = torch.zeros((self.num_atoms, self.num_atoms)).float()
+        adjusted_bond_types = self.bond_types.clone().float().float()
         adjusted_bond_types[adjusted_bond_types == 4] = 1.5
         adjusted_bond_types = adjusted_bond_types.float()
         adj[self.bond_src_idxs, self.bond_dst_idxs] = adjusted_bond_types
         adj[self.bond_dst_idxs, self.bond_src_idxs] = adjusted_bond_types
-        valencies = torch.sum(adj, dim=-1).long()
+
+
+        valencies = torch.sum(adj, dim=-1)
+
+        if arom_dependent:
+            n_arom = (adj == 1.5).sum(dim=-1)
+            non_arom_valence = (valencies - n_arom*1.5).long()
+            valencies = torch.stack([n_arom, non_arom_valence], dim=1)
+
+        
         return valencies
     
     def process_traj_frames(self, traj_frames: Dict[str, torch.Tensor], ep_traj: bool = False):
@@ -162,7 +190,11 @@ class SampledMolecule:
             positions, atom_types, atom_charges, bond_types, bond_src_idxs, bond_dst_idxs = extract_moldata_from_graph(
                 g_dummy, 
                 self.atom_type_map,
-                ctmc_mol=self.ctmc_mol)
+                ctmc_mol=self.ctmc_mol,
+                fake_atoms=self.fake_atoms,
+                show_fake_atoms=True, # for trajectories, we want to show fake atoms
+                explicit_aromaticity=self.explicit_aromaticity
+                )
 
             # align positions to final frame
             if self.align_traj:
@@ -182,7 +214,21 @@ class SampledMolecule:
         return traj_mols
     
 
-def extract_moldata_from_graph(g: dgl.DGLGraph, atom_type_map: List[str], exclude_charges: bool = False, ctmc_mol: bool = False):
+def extract_moldata_from_graph(g: dgl.DGLGraph, 
+                               atom_type_map: List[str], 
+                               exclude_charges: bool = False, 
+                               ctmc_mol: bool = False, 
+                               fake_atoms: bool = False, 
+                               show_fake_atoms: bool = False,
+                               explicit_aromaticity: bool = False
+                               ):
+
+    # if fake atoms are present, identify them
+    if fake_atoms and not show_fake_atoms:
+        fake_atom_token_idx  = len(atom_type_map) - 2 
+        fake_atom_mask = g.ndata['a_1'].argmax(dim=1) == fake_atom_token_idx
+        fake_atom_idxs = torch.where(fake_atom_mask)[0]
+        g.remove_nodes(fake_atom_idxs)
 
     # extract node-level features
     positions = g.ndata['x_1']
@@ -197,10 +243,11 @@ def extract_moldata_from_graph(g: dgl.DGLGraph, atom_type_map: List[str], exclud
     else:
         atom_charges = g.ndata['c_1'].argmax(dim=1) - 2 # implicit assumption that index 0 charge is -2
 
-
     # get bond types and atom indicies for every edge, convert types from simplex to integer
     bond_types = g.edata['e_1'].argmax(dim=1)
-    bond_types[bond_types == 5] = 0 # set masked bonds to 0
+    # set masked bonds to 0
+    mask_idx = 5 if explicit_aromaticity else 4
+    bond_types[bond_types == mask_idx] = 0 # set masked bonds to 0
     bond_src_idxs, bond_dst_idxs = g.edges()
 
     # get just the upper triangle of the adjacency matrix
@@ -214,7 +261,6 @@ def extract_moldata_from_graph(g: dgl.DGLGraph, atom_type_map: List[str], exclud
     bond_types = bond_types[bond_mask]
     bond_src_idxs = bond_src_idxs[bond_mask]
     bond_dst_idxs = bond_dst_idxs[bond_mask]
-
 
     return positions, atom_types, atom_charges, bond_types, bond_src_idxs, bond_dst_idxs
 
@@ -272,16 +318,16 @@ def copy_graph(g: dgl.DGLGraph) -> dgl.DGLGraph:
 
     return g_copy
 
-def dataset_mol_to_sampled_mol(g, atom_type_map) -> SampledMolecule:
+def dataset_mol_to_sampled_mol(g, atom_type_map, state='1_true', **kwargs) -> SampledMolecule:
     for feat in 'xace':
         if feat == 'e':
             data_src = g.edata
         else:
             data_src = g.ndata
-        data_src[f'{feat}_1'] = data_src[f'{feat}_1_true']
+        data_src[f'{feat}_1'] = data_src[f'{feat}_{state}']
 
     g.edata['ue_mask'] = get_upper_edge_mask(g)
-    return SampledMolecule(g, atom_type_map)
+    return SampledMolecule(g, atom_type_map, **kwargs)
 
 def dataset_mol_to_rdmol(g, atom_type_map):
     dataset_mol_to_sampled_mol(g, atom_type_map).rdkit_mol

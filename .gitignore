@@ -21,7 +21,19 @@ baseline_comparison*
 flowmol/trained_models/qm9*
 flowmol/trained_models/geom*
 figures/
+local/
+fm3_evals/ablations/*runs/
+fm3_evals/baselines/baseline_mols/
+fm3_evals/baselines/baseline_results/
+fm3_evals/baselines/cmd_files/
+fm3_evals/ablations/sc_runs_full
 
+# ignore config files except for a few
+configs/*.yml
+configs/*.yaml
+!configs/flowmol3.yml
+!configs/configs_dataprocessing/*aromatic*
+!configs/configs_dataprocessing/*kekulized*
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

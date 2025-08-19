@@ -6,6 +6,7 @@ import signal
 import sys
 from pathlib import Path
 from typing import List
+from collections import defaultdict
 
 import numpy as np
 import torch
@@ -14,7 +15,7 @@ import yaml
 from rdkit import Chem
 from multiprocessing import Pool
 
-from flowmol.data_processing.geom import MoleculeFeaturizer
+from flowmol.data_processing.geom import MoleculeFeaturizer, BatchMoleculeData
 from flowmol.utils.dataset_stats import compute_p_c_given_a
 
 def chunks(lst, n):
@@ -68,6 +69,46 @@ def parse_args():
         raise ValueError(f"start_idx must be less than end_idx")
 
     return args
+
+def build_kekulized_valency_dict(unique_valencies):
+    atom_type_idxs, atom_charges, valencies = unique_valencies.unbind(dim=1)
+    
+    unique_valencies_dict = {}
+    for atom_type_idx, charge, valency in zip(atom_type_idxs, atom_charges, valencies):
+        atom_type_idx = int(atom_type_idx)
+
+        atom_type = config['dataset']['atom_map'][atom_type_idx]
+
+        charge = int(charge)
+        valency = int(valency)
+
+        if atom_type not in unique_valencies_dict:
+            unique_valencies_dict[atom_type] = {}
+        if charge not in unique_valencies_dict[atom_type]:
+            unique_valencies_dict[atom_type][charge] = []
+        unique_valencies_dict[atom_type][charge].append(valency)
+    return unique_valencies_dict
+
+def build_explicit_arom_valency_dict(unique_valencies):
+    atom_type_idxs, atom_charges, n_arom_bonds, non_arom_valencies = unique_valencies.unbind(dim=1)
+
+    unique_valencies_dict = {}
+    for atom_type_idx, charge, n_arom_bonds, non_arom_valency in zip(atom_type_idxs, atom_charges, n_arom_bonds, non_arom_valencies):
+        atom_type_idx = int(atom_type_idx)
+
+        atom_type = config['dataset']['atom_map'][atom_type_idx]
+
+        charge = int(charge)
+        n_arom_bonds = int(n_arom_bonds)
+        non_arom_valency = int(non_arom_valency)
+
+        if atom_type not in unique_valencies_dict:
+            unique_valencies_dict[atom_type] = {}
+        if charge not in unique_valencies_dict[atom_type]:
+            unique_valencies_dict[atom_type][charge] = []
+        unique_valencies_dict[atom_type][charge].append((n_arom_bonds, non_arom_valency))
+    return unique_valencies_dict
+
 
 
 if __name__ == "__main__":
@@ -140,7 +181,7 @@ if __name__ == "__main__":
     running_file = running_dir / output_file.name
 
     # setup exit handler
-    setup_exit_handler(running_file)
+    # setup_exit_handler(running_file)
 
     # combine all the conformers from all the molecules into a single list
     all_molecules = []
@@ -170,16 +211,21 @@ if __name__ == "__main__":
     all_smiles = all_smiles[start_idx:end_idx]
 
     dataset_size = config['dataset']['dataset_size']
-
+    explicit_aromaticity = config['mol_fm'].get('explicit_aromaticity', False)
 
     all_positions = []
     all_atom_types = []
     all_atom_charges = []
     all_bond_types = []
     all_bond_idxs = []
-    all_bond_order_counts = torch.zeros(5, dtype=torch.int64)
+    n_bond_orders = 5 if explicit_aromaticity else 4
+    all_bond_order_counts = torch.zeros(n_bond_orders, dtype=torch.int64)
 
-    mol_featurizer = MoleculeFeaturizer(config['dataset']['atom_map'], n_cpus=args.n_cpus)
+    mol_featurizer = MoleculeFeaturizer(
+        config['dataset']['atom_map'], 
+        n_cpus=args.n_cpus,
+        explicit_aromaticity=explicit_aromaticity,
+        )
 
     # molecules is a list of rdkit molecules.  now we create an iterator that yields sub-lists of molecules. we do this using itertools:
     chunk_iterator = chunks(molecules, args.chunk_size)
@@ -192,21 +238,31 @@ if __name__ == "__main__":
     total_molecules_bar = tqdm.tqdm(desc="Total Molecules", unit="molecules", total=len(molecules))
 
     failed_molecules = 0
+    failure_counts = defaultdict(int)
+    unique_valencies = None
     for molecule_chunk in tqdm_iterator:
 
-        # TODO: we should collect all the molecules from each individual list into a single list and then featurize them all at once - this would make the multiprocessing actually useful
-        positions, atom_types, atom_charges, bond_types, bond_idxs, num_failed, bond_order_counts = mol_featurizer.featurize_molecules(molecule_chunk)
+        batch_data: BatchMoleculeData = mol_featurizer.featurize_molecules(molecule_chunk)
+
+        num_failed = len(batch_data.failed_idxs)
 
         failed_molecules += num_failed
         failed_molecules_bar.update(num_failed)
-        total_molecules_bar.update(len(molecule_chunk))
+        total_molecules_bar.update(batch_data.n_mols)
+        for k, v in batch_data.failure_counts.items():
+            failure_counts[k] += v
 
-        all_positions.extend(positions)
-        all_atom_types.extend(atom_types)
-        all_atom_charges.extend(atom_charges)
-        all_bond_types.extend(bond_types)
-        all_bond_idxs.extend(bond_idxs)
-        all_bond_order_counts += bond_order_counts
+        all_positions.extend(batch_data.positions)
+        all_atom_types.extend(batch_data.atom_types)
+        all_atom_charges.extend(batch_data.atom_charges)
+        all_bond_types.extend(batch_data.bond_types)
+        all_bond_idxs.extend(batch_data.bond_idxs)
+        all_bond_order_counts += batch_data.bond_order_counts
+
+        if unique_valencies is None:
+            unique_valencies = batch_data.unique_valencies
+        else:
+            unique_valencies = torch.unique(torch.cat((unique_valencies, batch_data.unique_valencies), dim=0), dim=0)
 
         # early stopping - a feature only used for debugging / creating small datasets
         if dataset_size is not None and len(all_positions) > dataset_size and full_dataset:
@@ -290,5 +346,33 @@ if __name__ == "__main__":
         smiles_file = output_dir / f'{args.split_file.stem}_smiles.pkl'
         with open(smiles_file, 'wb') as f:
             pickle.dump(all_smiles, f)
+
+    # print failure counts to console and also write them to a file
+    print(f"Failed to process {failed_molecules} molecules")
+    for k, v in failure_counts.items():
+        print(f"failure mode: {k}, {v} molecules")
+    failure_counts_file = output_dir / f'{args.split_file.stem}_failure_counts.json'
+    with open(failure_counts_file, 'w') as f:
+        json.dump(failure_counts, f)
+
+    # convert unique valencies to a dict representation
+    if unique_valencies.shape[1] == 3:
+        unique_valencies_dict = build_kekulized_valency_dict(unique_valencies)
+    elif unique_valencies.shape[1] == 4:
+        unique_valencies_dict = build_explicit_arom_valency_dict(unique_valencies)
+    else:
+        raise ValueError(f"unique valencies has shape {unique_valencies.shape}, expected 3 or 4")
+    
+    explicit_aromaticity = config['mol_fm'].get('explicit_aromaticity', False)
+    if explicit_aromaticity:
+        name_str = 'aromatic'
+    else:
+        name_str = 'kekulized'
+
+    # write unique valencies to a file
+    valencies_file = output_dir / f'{args.split_file.stem}_valencies_{name_str}.json'
+    with open(valencies_file, 'w') as f:
+        json.dump(unique_valencies_dict, f)
+
 
 

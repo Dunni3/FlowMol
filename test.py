@@ -12,6 +12,7 @@ from flowmol.model_utils.load import read_config_file
 import pickle
 import math
 import time
+import numpy as np
 
 def parse_args():
     p = argparse.ArgumentParser(description='Testing Script')
@@ -21,7 +22,7 @@ def parse_args():
 
     p.add_argument('--n_mols', type=int, default=100, help='The number of molecules to generate.')
     p.add_argument('--n_atoms_per_mol', type=int, default=None, help="The number of atoms in every molecule. If None, the number of atoms will be sampled independently for each molecule from the training data distribution.")
-    p.add_argument('--n_timesteps', type=int, default=20, help="Number of timesteps for integration via Euler's method")
+    p.add_argument('--n_timesteps', type=int, default=250, help="Number of timesteps for integration via Euler's method")
     # p.add_argument('--visualize', action='store_true', help='Visualize the sampled trajectories')
     p.add_argument('--xt_traj', action='store_true', help='Save the x-t trajectory of the sampled molecules')
     p.add_argument('--ep_traj', action='store_true', help='Save the endpoint trajectory of the sampled molecules')
@@ -33,7 +34,11 @@ def parse_args():
     p.add_argument('--stochasticity', type=float, default=None, help='Stochasticity for sampling molecules, only applies to models using CTMC')
     p.add_argument('--hc_thresh', type=float, default=None, help='High confidence threshold for purity sampling, only applies to models using CTMC')
     
+    p.add_argument('--reos_raw', action='store_true')
+
     p.add_argument('--seed', type=int, default=None)
+    p.add_argument('--n_subsets', type=int, default=None, 
+                  help='Number of subsets to divide molecules into for confidence interval calculation')
 
     args = p.parse_args()
 
@@ -147,12 +152,40 @@ if __name__ == "__main__":
     # compute metrics if necessary
     if args.metrics:
         processed_data_dir = config['dataset']['processed_data_dir']
-        sample_analyzer = SampleAnalyzer(processed_data_dir=Path(processed_data_dir))
-        metrics = sample_analyzer.analyze(molecules)
-
-        # compute js-divergence of energies
-        js_div = sample_analyzer.compute_energy_divergence(molecules)
-        metrics['energy_js_div'] = js_div
+        sample_analyzer = SampleAnalyzer(processed_data_dir=Path(processed_data_dir), pb_energy=True)
+        
+        # Add subset-based metric calculation
+        if args.n_subsets is not None and args.n_subsets > 1:
+            mols_per_subset = len(molecules) / args.n_subsets
+            subset_metrics = []
+            for i in range(args.n_subsets):
+                start_idx = int(i * mols_per_subset)
+                end_idx = min(int(start_idx + mols_per_subset), len(molecules))
+                subset_metrics.append(
+                    sample_analyzer.analyze(
+                        molecules[start_idx:end_idx],
+                        energy_div=False,
+                        posebusters=True,
+                        functional_validity=True
+                    )
+                )
+            
+            metrics = {}
+            for key in subset_metrics[0].keys():
+                vals = np.array([d[key] for d in subset_metrics])
+                mean = vals.mean()
+                std = vals.std()
+                count = vals.shape[0]
+                ci95 = 1.96 * std / math.sqrt(count)
+                metrics[key] = mean
+                metrics[f'{key}_ci95'] = ci95
+        else:
+            metrics = sample_analyzer.analyze(
+                molecules,
+                energy_div=False,
+                posebusters=True,
+                functional_validity=True
+            )
 
         metrics_txt_file = output_file.parent / f'{output_file.stem}_metrics.txt'
         metrics_pkl_file = output_file.parent / f'{output_file.stem}_metrics.pkl'
@@ -164,6 +197,13 @@ if __name__ == "__main__":
                 f.write(f'{k}: {v}\n')
         with open(metrics_pkl_file, 'wb') as f:
             pickle.dump(metrics, f)
+
+        if args.reos_raw:
+            reos_raw_file = output_file.parent / f'{output_file.stem}_reos_and_rings.pkl'
+            reos_raw = sample_analyzer.reos_and_rings(molecules, return_raw=True)
+            print(f'Writing REOS raw data to {reos_raw_file}')
+            with open(reos_raw_file, 'wb') as f:
+                pickle.dump(reos_raw, f)
 
     # check that output file is an sdf file
     if output_file.suffix != '.sdf':
@@ -217,6 +257,5 @@ if __name__ == "__main__":
                 sdf_writer.close()
 
         print(f'All molecules written to {output_file.parent}')
-    
 
-    
+

@@ -31,7 +31,6 @@ class FlowMol(pl.LightningModule):
                  n_atoms_hist_file: str,
                  marginal_dists_file: str,                 
                  n_atom_charges: int = 6,
-                 n_bond_types: int = 5,
                  sample_interval: float = 1.0, # how often to sample molecules from the model, measured in epochs
                  n_mols_to_sample: int = 64, # how many molecules to sample from the model during each sample/eval step during training
                  time_scaled_loss: bool = True,
@@ -45,6 +44,10 @@ class FlowMol(pl.LightningModule):
                  vector_field_config: dict = {},
                  prior_config: dict = {},
                  default_n_timesteps: int = 250,
+                 ema_weight: float = 0.999, # TODO: currently unused but thought i implemented it at some point? maybe floating in a branch somewhere
+                 fake_atom_p: float = 0.0,
+                 distort_p: float = 0.0,
+                 explicit_aromaticity: bool = False,
                  ):
         super().__init__()
 
@@ -52,7 +55,7 @@ class FlowMol(pl.LightningModule):
         self.atom_type_map = atom_type_map
         self.n_atom_types = len(atom_type_map)
         self.n_atom_charges = n_atom_charges
-        self.n_bond_types = n_bond_types
+        self.n_bond_types = 5 if explicit_aromaticity else 4
         self.total_loss_weights = total_loss_weights
         self.time_scaled_loss = time_scaled_loss
         self.prior_config = prior_config
@@ -63,6 +66,14 @@ class FlowMol(pl.LightningModule):
         self.target_blur = target_blur
         self.n_atoms_hist_file = n_atoms_hist_file
         self.default_n_timesteps = default_n_timesteps
+        self.distort_p = distort_p
+        self.explicit_aromaticity = explicit_aromaticity
+
+        # fake atoms settings
+        self.fake_atom_p = fake_atom_p
+        self.fake_atoms = fake_atom_p > 0
+        if self.fake_atoms:
+            self.n_atom_types += 1
 
         if self.weight_ae and parameterization == 'vector-field':
             raise NotImplementedError('weighting the atom and edge losses is not yet implemented for the vector-field parameterization')
@@ -77,8 +88,12 @@ class FlowMol(pl.LightningModule):
         processed_data_dir = Path(self.marginal_dists_file).parent
         if not processed_data_dir.exists():
             repo_root = Path(__file__).parent.parent.parent
-            self.marginal_dists_file = repo_root / self.marginal_dists_file
-            self.n_atoms_hist_file = repo_root / self.n_atoms_hist_file
+            processed_data_dir = repo_root / processed_data_dir
+            self.marginal_dists_file = processed_data_dir / self.marginal_dists_file.name
+            self.n_atoms_hist_file = processed_data_dir / self.n_atoms_hist_file.name
+
+            if not self.n_atoms_hist_file.exists():
+                raise FileNotFoundError(f"Could not find n_atoms_hist_file at {self.n_atoms_hist_file}. Please provide a valid path.")
 
         # do some boring stuff regarding the prior distribution
         self.configure_prior()
@@ -92,7 +107,7 @@ class FlowMol(pl.LightningModule):
         self.n_cat_dict = {
             'a': self.n_atom_types,
             'c': n_atom_charges,
-            'e': n_bond_types,
+            'e': self.n_bond_types,
         }
 
         for feat in self.canonical_feat_order:
@@ -128,8 +143,9 @@ class FlowMol(pl.LightningModule):
                                            canonical_feat_order=self.canonical_feat_order,
                                            interpolant_scheduler=self.interpolant_scheduler, 
                                            n_charges=n_atom_charges, 
-                                           n_bond_types=n_bond_types,
+                                           n_bond_types=self.n_bond_types,
                                            exclude_charges=self.exclude_charges,
+                                           fake_atoms=self.fake_atoms,
                                            **vector_field_config)
 
         # remove charge loss function if necessary
@@ -139,7 +155,7 @@ class FlowMol(pl.LightningModule):
         self.sample_interval = sample_interval # how often to sample molecules from the model, measured in epochs
         self.n_mols_to_sample = n_mols_to_sample # how many molecules to sample from the model during each sample/eval step during training
         self.last_sample_marker = 0 # this is the epoch_exact value of the last time we sampled molecules from the model
-        self.sample_analyzer = SampleAnalyzer()
+        self.sample_analyzer = SampleAnalyzer(processed_data_dir=processed_data_dir)
 
 
         # record the last epoch value for training steps -  this is really hacky but it lets me
@@ -150,32 +166,27 @@ class FlowMol(pl.LightningModule):
 
     def configure_prior(self):
         # load the marginal distributions of atom types, bond orders and the conditional distribution of charges given atom type
-        p_a, p_c, p_e, p_c_given_a = torch.load(self.marginal_dists_file)
-        self.p_a = p_a
-        self.p_e = p_e
+        # p_a, p_c, p_e, p_c_given_a = torch.load(self.marginal_dists_file)
+        # self.p_a = p_a
+        # self.p_e = p_e
 
         # add the marginal distributions as arguments to the prior sampling functions
-        if self.prior_config['a']['type'] == 'marginal':
-            self.prior_config['a']['kwargs']['p'] = p_a
+        # if self.prior_config['a']['type'] == 'marginal':
+        #     self.prior_config['a']['kwargs']['p'] = p_a
 
-        if self.prior_config['e']['type'] == 'marginal':
-            self.prior_config['e']['kwargs']['p'] = p_e
+        # if self.prior_config['e']['type'] == 'marginal':
+        #     self.prior_config['e']['kwargs']['p'] = p_e
 
-        if self.prior_config['c']['type'] == 'marginal':
-            self.prior_config['c']['kwargs']['p'] = p_c
+        # if self.prior_config['c']['type'] == 'marginal':
+        #     self.prior_config['c']['kwargs']['p'] = p_c
         
-        if self.prior_config['c']['type'] == 'c-given-a':
-            self.prior_config['c']['kwargs']['p_c_given_a'] = p_c_given_a
+        # if self.prior_config['c']['type'] == 'c-given-a':
+        #     self.prior_config['c']['kwargs']['p_c_given_a'] = p_c_given_a
 
-        if self.parameterization == 'dirichlet':
-            for feat in ['a', 'c', 'e']:
-                if self.prior_config[feat]['type'] != 'uniform-simplex':
-                    raise ValueError('dirichlet parameterization requires that all categorical priors be uniform-simplex')
-
-        if self.parameterization == 'ctmc':
-            for feat in ['a', 'c', 'e']:
-                if self.prior_config[feat]['type'] != 'ctmc':
-                    raise ValueError('ctmc parameterization requires that all categorical priors be ctmc')
+        for modality in ['a', 'c', 'e']:
+            prior_type = self.prior_config[modality]['type']
+            if prior_type != 'ctmc':
+                raise NotImplementedError('Only ctmc masked priors are supported for categorical features. All other options depracated.')
                 
     def configure_loss_fns(self, device):    
         # instantiate loss functions
@@ -229,7 +240,12 @@ class FlowMol(pl.LightningModule):
             with torch.no_grad():
                 sampled_molecules = self.sample_random_sizes(n_molecules=self.n_mols_to_sample, device=g.device)
             self.train()
-            sampled_mols_metrics = self.sample_analyzer.analyze(sampled_molecules, energy_div=False, functional_validity=True)
+            sampled_mols_metrics = self.sample_analyzer.analyze(
+                sampled_molecules, 
+                energy_div=False, 
+                functional_validity=True,
+                posebusters=True,
+            )
             self.log_dict(sampled_mols_metrics)
 
         # compute losses
@@ -309,6 +325,12 @@ class FlowMol(pl.LightningModule):
 
         # construct interpolated molecules
         g = self.vector_field.sample_conditional_path(g, t, node_batch_idx, edge_batch_idx, upper_edge_mask)
+
+        if self.distort_p > 0.0:
+            t_mask = (t > 0.5)[node_batch_idx]
+            distort_mask = torch.rand(g.num_nodes(), 1, device=device) < self.distort_p
+            distort_mask = distort_mask & t_mask.unsqueeze(-1)
+            g.ndata['x_t'] = g.ndata['x_t'] + torch.randn_like(g.ndata['x_t'])*distort_mask*0.5
 
         # forward pass for the vector field
         vf_output = self.vector_field(g, t, node_batch_idx=node_batch_idx, upper_edge_mask=upper_edge_mask)
@@ -415,7 +437,9 @@ class FlowMol(pl.LightningModule):
             g.ndata[f'{feat}_0'] = prior_fn(*args, **kwargs).to(device)
 
         # sample the prior for edge features
-        g.edata['e_0'] = edge_prior(upper_edge_mask, self.prior_config['e']).to(device)
+        g.edata['e_0'] = edge_prior(upper_edge_mask, 
+                                    self.prior_config['e'], 
+                                    explicit_aromaticity=self.explicit_aromaticity).to(device)
             
         return g
     
@@ -460,7 +484,9 @@ class FlowMol(pl.LightningModule):
 
     @torch.no_grad()
     def sample(self, n_atoms: torch.Tensor, n_timesteps: int = None, device="cuda:0",
-        stochasticity=None, high_confidence_threshold=None, xt_traj=False, ep_traj=False, **kwargs):
+        stochasticity=None, high_confidence_threshold=None, xt_traj=False, ep_traj=False, 
+        prior=None,
+        **kwargs):
         """Sample molecules with the given number of atoms.
         
         Args:
@@ -499,7 +525,20 @@ class FlowMol(pl.LightningModule):
         node_batch_idx, edge_batch_idx = get_batch_idxs(g)
 
         # sample molecules from prior
-        g = self.sample_prior(g, node_batch_idx, upper_edge_mask)
+        if prior is None:
+            g = self.sample_prior(g, node_batch_idx, upper_edge_mask)
+        else:
+            g.ndata['x_0'] = prior['x_0'].to(g.device)
+            g.ndata['a_0'] = prior['a_0'].to(g.device)
+            g.ndata['c_0'] = prior['c_0'].to(g.device)
+            g.edata['e_0'] = prior['e_0'].to(g.device)
+
+            if prior['fake_atoms'] and not self.fake_atom_p > 0:
+                # prior uses fake atoms but the model does not, so we need to drop the fake atom type
+                g.ndata['a_0'] = g.ndata['a_0'][:, 1:] # drop one atom type
+            elif not prior['fake_atoms'] and self.fake_atom_p > 0:
+                # prior does not use fake atoms but the model does, so we need to add a fake atom type
+                g.ndata['a_0'] = torch.cat([torch.zeros(g.ndata['a_0'].shape[0], 1, device=g.device), g.ndata['a_0']], dim=-1)
 
         # integrate trajectories
         integrate_kwargs = {
@@ -536,8 +575,11 @@ class FlowMol(pl.LightningModule):
 
             molecules.append(SampledMolecule(*args, 
                 ctmc_mol=ctmc_mol, 
+                fake_atoms=self.fake_atoms,
                 build_xt_traj=xt_traj,
                 build_ep_traj=ep_traj,
-                exclude_charges=self.exclude_charges))
+                exclude_charges=self.exclude_charges,
+                explicit_aromaticity=self.explicit_aromaticity,
+            ))
 
         return molecules
