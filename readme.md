@@ -2,7 +2,7 @@
 
 [![arXiv](https://img.shields.io/badge/arXiv-1234.56789-b31b1b.svg?style=flat)](https://arxiv.org/abs/2508.12629)
 
-![Image](images/ga.png)
+![Image](images/ga_.png)
 
 This is the offical implementation of FlowMol, a flow matching model for unconditional 3D de novo molecule generation. The current version is FlowMol3, which is described in the following paper:
 
