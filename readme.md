@@ -1,6 +1,6 @@
 # FlowMol3: Flow Matching for 3D De Novo Small-Molecule Generation
 
-[![arXiv](https://img.shields.io/badge/arXiv-1234.56789-b31b1b.svg?style=flat)](https://arxiv.org/abs/2411.16644)
+[![arXiv](https://img.shields.io/badge/arXiv-1234.56789-b31b1b.svg?style=flat)](https://arxiv.org/abs/2508.12629)
 
 ![Image](images/ga.png)
 
@@ -8,9 +8,10 @@ This is the offical implementation of FlowMol, a flow matching model for uncondi
 
 ## Citing FlowMol3 (and what's going on the the FlowMol versions?)
 
-Unintentionally, FlowMol has gone through a few iterations of improvement. We have released three versions along with three preprints. FlowMol3 is the current and final version, it was released publicly on August 15th, 2025 and will (hopefully) soon find its home in a journal publication.
+Unintentionally, FlowMol has gone through a few iterations of improvement. We have released three versions along with three preprints. FlowMol3 is the current and final version, it was released publicly on August 18th, 2025 and will (hopefully) soon find its home in a journal publication.
 
-(flowmol3 citation goes here)
+> Dunn, I. & Koes, D. R. FlowMol3: Flow Matching for 3D De Novo Small-Molecule Generation. Preprint at https://doi.org/10.48550/arXiv.2508.12629 (2025).
+
 
 Earlier versions of FlowMol are still accessible (see next 2 sections), but we recommend using FlowMol3 for all new work.
 
@@ -68,10 +69,14 @@ In addition to the sampling example provided in the "Using FlowMol3" section, yo
 Here's an example command to sample from a trained model:
 
 ```console
-python test.py --model_dir=flowmol/trained_models/flowmol3 --n_mols=100 --n_timesteps=250 --output_file=brand_new_molecules.sdf
+python test.py --model_dir=flowmol/trained_models/flowmol3 --n_mols=100 --output_file=brand_new_molecules.sdf
 ```
 
 The output file, if specified, must be an SDF file. If not specified, sampled molecules will be written to the model directory. You can also have the script produce a molecule for every integration step to see the evolution of the molecule over time by adding the `--xt_traj` and/or `--ep_traj` flag. You can compute all of the metrics reported in the paper by adding the `--metrics` flag.
+
+## Reproducing paper results
+
+Run the `test.py` script as described above using the model to get an sdf file of molecules. Use the `--metrics` flag to compute all metrics in the paper except for the GFN2-xtb energy minimization; this will cause metrics to be written to the same directory as the output file. The energy minimization is done using `fm3_evals/geometry/xtb_optimization.py` and `fm3_evals/geometry/rmsd_energy.py`.
 
 # Datasets
 
