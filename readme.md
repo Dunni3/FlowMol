@@ -52,7 +52,7 @@ The pretrained models that are available for use are described in the [trained m
 
 ## Notebook Example
 
-There is a [notebook example available here](examples/flowmol_demo.ipynb).
+There is a [notebook example available here](examples/flowmol_demo.ipynb). The notebook contents won't render on github because it includes py3dmol visualizations. You can view the notebook contents on [google colab](https://colab.research.google.com/github/Dunni3/FlowMol/blob/main/examples/flowmol_demo.ipynb) but you won't be able to run the notebook there because the environment is not set up. You can run the notebook locally after setting up the environment as described above.
 
 
 # How we define a model (config files)
