@@ -113,9 +113,9 @@ Then, from the root of this repository, run these commands to process the geom d
 
 
 ```console
-python process_geom.py data/geom_raw/train_data.pickle --config=configs/geom_ctmc.yml
-python process_geom.py data/geom_raw/test_data.pickle --config=configs/geom_ctmc.yml
-python process_geom.py data/geom_raw/val_data.pickle --config=configs/geom_ctmc.yml
+python process_geom.py data/geom_raw/train_data.pickle --config=configs/flowmol3.yml
+python process_geom.py data/geom_raw/test_data.pickle --config=configs/flowmol3.yml
+python process_geom.py data/geom_raw/val_data.pickle --config=configs/flowmol3.yml
 ```
 
 Note that these commands assumed you have downloaded our trained models as described above.
