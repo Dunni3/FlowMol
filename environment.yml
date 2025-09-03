@@ -226,7 +226,6 @@ dependencies:
       - appdirs==1.4.4
       - click==8.1.7
       - docker-pycreds==0.4.0
-      - flowmol==0.0.1
       - gitdb==4.0.11
       - gitpython==3.1.41
       - posebusters==0.4.4
@@ -240,4 +239,3 @@ dependencies:
       - torch-ema==0.3
       - useful-rdkit-utils==0.3.12
       - wandb==0.16.2
-prefix: /net/galaxy/home/koes/icd3/.conda/envs/mol-fm
