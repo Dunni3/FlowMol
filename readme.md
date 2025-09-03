@@ -4,7 +4,7 @@
 
 ![Image](images/ga_.png)
 
-This is the offical implementation of FlowMol, a flow matching model for unconditional 3D de novo molecule generation. The current version is FlowMol3, which is described in the following paper:
+This is the offical implementation of FlowMol, a flow matching model for unconditional 3D de novo molecule generation. The current version is FlowMol3.
 
 ## Citing FlowMol3 (and what's going on the the FlowMol versions?)
 
