@@ -49,6 +49,7 @@ class EndpointVectorField(nn.Module):
                     self_conditioning: bool = False,
                     use_dst_feats: bool = False,
                     dst_feat_msg_reduction_factor: float = 4,
+                    scprop: float = 0.5
                     # if we are using CTMC, input categorical features will have mask tokens,
                     # this means their one-hot representations will have an extra dimension,
                     # and the neural network instantiated by this method need to account for this
@@ -72,6 +73,7 @@ class EndpointVectorField(nn.Module):
         self.time_embedding_dim = time_embedding_dim
         self.self_conditioning = self_conditioning
         self.has_mask = has_mask
+        self.scprop = scprop
 
         if self.exclude_charges:
             raise ValueError("exclude_charges is deprecated")
@@ -266,7 +268,7 @@ class EndpointVectorField(nn.Module):
         # also if we are in the first timestep of inference, we need to do generate the first predicted endpoint
         if self.self_conditioning and prev_dst_dict is None:
 
-            train_self_condition = self.training and (torch.rand(1) > 0.5).item()
+            train_self_condition = self.training and (torch.rand(1) > self.scprop).item()
             inference_first_step = not self.training and (t == 0).all().item()
 
             if train_self_condition or inference_first_step:

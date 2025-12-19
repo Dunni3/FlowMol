@@ -329,5 +329,5 @@ def dataset_mol_to_sampled_mol(g, atom_type_map, state='1_true', **kwargs) -> Sa
     g.edata['ue_mask'] = get_upper_edge_mask(g)
     return SampledMolecule(g, atom_type_map, **kwargs)
 
-def dataset_mol_to_rdmol(g, atom_type_map):
-    dataset_mol_to_sampled_mol(g, atom_type_map).rdkit_mol
+def dataset_mol_to_rdmol(g, atom_type_map, **kwargs):
+    return dataset_mol_to_sampled_mol(g, atom_type_map, **kwargs).rdkit_mol
