@@ -13,6 +13,8 @@ def register_hyperparameter_args(p: argparse.ArgumentParser) -> argparse.Argumen
     p.add_argument('--scprop', type=float, default=None, help='Proportion of training steps using SC module')
     p.add_argument('--distort_p', type=float, default=None, help='Probability of distorting node positions during training')
     p.add_argument('--distort_t', type=float, default=None, help='Time threshold for applying distortion during training')
+    p.add_argument('--fake_atom_p', type=float, default=None, help='Probability of adding fake atoms during training')
+    p.add_argument('--fake_atom_std', type=float, default=None, help='Standard deviation of noise added to fake atom positions during training')
 
     # hyperparams which can be set for each feature
     feats = ['x', 'a', 'c', 'e']
@@ -85,6 +87,12 @@ def merge_config_and_args(config: dict, args: argparse.Namespace) -> dict:
 
     if getattr(args, 'distort_t') is not None:
         config['mol_fm']['distort_t'] = getattr(args, 'distort_t')
+
+    if getattr(args, 'fake_atom_p') is not None:
+        config['mol_fm']['fake_atom_p'] = getattr(args, 'fake_atom_p')
+
+    if getattr(args, 'fake_atom_std') is not None:
+        config['mol_fm']['fake_atom_std'] = getattr(args, 'fake_atom_std')
 
     # prior parameters which are boolean
     for arg in ['ot_node_feats', 'rotate_positions', 'biased_edge_prior']:

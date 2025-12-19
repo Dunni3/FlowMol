@@ -46,6 +46,7 @@ class FlowMol(pl.LightningModule):
                  default_n_timesteps: int = 250,
                  ema_weight: float = 0.999, # TODO: currently unused but thought i implemented it at some point? maybe floating in a branch somewhere
                  fake_atom_p: float = 0.0,
+                 fake_atom_std: float = 1.0,
                  distort_p: float = 0.0,
                  distort_t: float = 0.5,
                  explicit_aromaticity: bool = False,
@@ -73,6 +74,7 @@ class FlowMol(pl.LightningModule):
 
         # fake atoms settings
         self.fake_atom_p = fake_atom_p
+        self.fake_atom_std = fake_atom_std
         self.fake_atoms = fake_atom_p > 0
         if self.fake_atoms:
             self.n_atom_types += 1

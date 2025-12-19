@@ -62,6 +62,11 @@ def data_module_from_config(config: dict) -> MoleculeDataModule:
     except KeyError:
         fake_atom_p = 0.0
 
+    try:
+        fake_atom_std = config['mol_fm']['fake_atom_std']
+    except KeyError:
+        fake_atom_std = 1.0
+
     # determine if we are doing distributed training
     if config['training']['trainer_args']['devices'] > 1:
         distributed = True
@@ -71,6 +76,7 @@ def data_module_from_config(config: dict) -> MoleculeDataModule:
     dataset_config = config['dataset']
     dataset_config = deepcopy(dataset_config)
     dataset_config['fake_atom_p'] = fake_atom_p
+    dataset_config['fake_atom_std'] = fake_atom_std
     dataset_config['explicit_aromaticity'] = config['mol_fm'].get('explicit_aromaticity', False)
 
     data_module = MoleculeDataModule(dataset_config=dataset_config,
