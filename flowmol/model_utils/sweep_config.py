@@ -9,6 +9,8 @@ def register_hyperparameter_args(p: argparse.ArgumentParser) -> argparse.Argumen
     p.add_argument('--lr', type=float, default=None)
     p.add_argument('--warmup_length', type=float, default=None)
 
+    p.add_argument('--name', type=str, default=None, help='name of the run')
+
     # hyperparams which can be set for each feature
     feats = ['x', 'a', 'c', 'e']
     for feat in feats:
@@ -68,6 +70,9 @@ def merge_config_and_args(config: dict, args: argparse.Namespace) -> dict:
 
         if getattr(args, f'{feat}_cos_param') is not None:
             config['interpolant_scheduler']['cosine_params'][feat] = getattr(args, f'{feat}_cos_param')
+
+    if getattr(args, 'name') is not None:
+        config['wandb']['name'] = getattr(args, 'name')
 
     # prior parameters which are boolean
     for arg in ['ot_node_feats', 'rotate_positions', 'biased_edge_prior']:
