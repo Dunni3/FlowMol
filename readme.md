@@ -1,7 +1,6 @@
 # FlowMol3: Flow Matching for 3D De Novo Small-Molecule Generation
 
 [![arXiv](https://img.shields.io/badge/arXiv-1234.56789-b31b1b.svg?style=flat)](https://arxiv.org/abs/2508.12629)
-[![DOI](https://zenodo.org/badge/DOI/PLACEHOLDER.svg)](https://doi.org/PLACEHOLDER)
 
 ![Image](images/ga_.png)
 
@@ -13,7 +12,6 @@ Unintentionally, FlowMol has gone through a few iterations of improvement. We ha
 
 > Dunn, I. & Koes, D. R. FlowMol3: Flow Matching for 3D De Novo Small-Molecule Generation. Preprint at https://doi.org/10.48550/arXiv.2508.12629 (2025).
 
-The `v3.1.0` release of this repository is the version archived with the journal publication (Zenodo DOI: https://doi.org/PLACEHOLDER).
 
 Earlier versions of FlowMol are still accessible (see next 2 sections), but we recommend using FlowMol3 for all new work.
 
