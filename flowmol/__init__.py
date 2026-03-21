@@ -4,22 +4,35 @@ import subprocess
 
 pretrained_model_names = [
     'flowmol3',
-    'fm3_nofa',
     'fm3_nodistort',
-    'fm3_nosc',
-    'fm3_none'
+    'fm3_none',
+    'fm3_ahigh',
+    'fm3_alow',
+    'fm3_chigh',
+    'fm3_clow',
+    'fm3_distort_extreme',
+    'fm3_distort_highp',
+    'fm3_distort_hight',
+    'fm3_distort_lowp',
+    'fm3_distort_lowt',
+    'fm3_ehigh',
+    'fm3_elow',
+    'fm3_fa_highp',
+    'fm3_fa_highstd',
+    'fm3_fa_lowp',
+    'fm3_fa_lowstd',
+    'fm3_scprop_high',
+    'fm3_scprop_low',
+    'fm3_xhigh',
+    'fm3_xlow',
 ]
 
 def load_pretrained(model_name: str = 'flowmol3') -> FlowMol:
     """Load one of the pre-trained models by name.
 
     Args:
-        model_name (str): Name of the model to load. Supported models are:
-        'flowmol3' (default): FlowMol3 trained on the GEOM-Drugs dataset.,
-        'fm3_nofa',
-        'fm3_nodistort',
-        'fm3_nosc',
-        'fm3_none'
+        model_name (str): Name of the model to load. See flowmol/trained_models/readme.md
+        for the full list of supported models. Default is 'flowmol3'.
     """
     if model_name not in pretrained_model_names:
         raise ValueError(f"Model {model_name} not found. Supported models: {pretrained_model_names}")
@@ -55,7 +68,7 @@ def download_remote_model_dir(local_model_dir: Path):
 
     # get location of remote model dir
     model_name = local_model_dir.name
-    remote_model_dir = f"https://bits.csb.pitt.edu/files/FlowMol/trained_models_v3/{model_name}/"
+    remote_model_dir = f"https://bits.csb.pitt.edu/files/FlowMol/trained_models_v31/{model_name}/"
 
     # download the model
     wget_cmd = f"wget -r -np -nH --cut-dirs=3 --reject 'index.html*' -P {local_download_path} {remote_model_dir}"
