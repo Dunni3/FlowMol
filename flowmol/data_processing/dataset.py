@@ -19,6 +19,7 @@ class MoleculeDataset(torch.utils.data.Dataset):
         self.prior_config = prior_config
         self.dataset_config = dataset_config
         self.fake_atom_p = dataset_config['fake_atom_p']
+        self.fake_atom_std = dataset_config['fake_atom_std']
         self.use_fake_atoms = self.fake_atom_p > 0
         self.explicit_aromaticity = dataset_config['explicit_aromaticity']
         self.n_bond_types = 5 if self.explicit_aromaticity else 4
@@ -107,7 +108,7 @@ class MoleculeDataset(torch.utils.data.Dataset):
             # currently: gaussians around anchor atom 
             # possibilities: collapse on nearest atom, random placement in molecule interior,
             # fixed distance from acnhor atom
-            fake_atom_positions = fake_atom_positions + torch.randn_like(fake_atom_positions) 
+            fake_atom_positions = fake_atom_positions + torch.randn_like(fake_atom_positions)*self.fake_atom_std
             fake_atom_charges = torch.zeros_like(atom_charges[anchor_atom_idxs])
             fake_atom_types = torch.zeros_like(atom_types[anchor_atom_idxs])
 

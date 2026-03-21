@@ -103,7 +103,9 @@ python process_qm9.py --config=configs/qm9_ctmc.yaml
 
 ## GEOM-Drugs
 
-We use the dataset files [created by MiDi](https://github.com/cvignac/MiDi). Run the following command from the root of this repository to download the geom-drugs dataset:
+We use the dataset files [created by MiDi](https://github.com/cvignac/MiDi). The dataset is archived at Zenodo: https://doi.org/10.5281/zenodo.19150583
+
+Run the following command from the root of this repository to download the geom-drugs dataset:
 
 ```console
 wget -r -np -nH --cut-dirs=2 --reject "index.html*" -P data/ https://bits.csb.pitt.edu/files/geom_raw/

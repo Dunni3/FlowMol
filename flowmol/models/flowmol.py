@@ -46,7 +46,9 @@ class FlowMol(pl.LightningModule):
                  default_n_timesteps: int = 250,
                  ema_weight: float = 0.999, # TODO: currently unused but thought i implemented it at some point? maybe floating in a branch somewhere
                  fake_atom_p: float = 0.0,
+                 fake_atom_std: float = 1.0,
                  distort_p: float = 0.0,
+                 distort_t: float = 0.5,
                  explicit_aromaticity: bool = False,
                  ):
         super().__init__()
@@ -67,10 +69,12 @@ class FlowMol(pl.LightningModule):
         self.n_atoms_hist_file = n_atoms_hist_file
         self.default_n_timesteps = default_n_timesteps
         self.distort_p = distort_p
+        self.distort_t = distort_t
         self.explicit_aromaticity = explicit_aromaticity
 
         # fake atoms settings
         self.fake_atom_p = fake_atom_p
+        self.fake_atom_std = fake_atom_std
         self.fake_atoms = fake_atom_p > 0
         if self.fake_atoms:
             self.n_atom_types += 1
@@ -327,7 +331,7 @@ class FlowMol(pl.LightningModule):
         g = self.vector_field.sample_conditional_path(g, t, node_batch_idx, edge_batch_idx, upper_edge_mask)
 
         if self.distort_p > 0.0:
-            t_mask = (t > 0.5)[node_batch_idx]
+            t_mask = (t > self.distort_t)[node_batch_idx]
             distort_mask = torch.rand(g.num_nodes(), 1, device=device) < self.distort_p
             distort_mask = distort_mask & t_mask.unsqueeze(-1)
             g.ndata['x_t'] = g.ndata['x_t'] + torch.randn_like(g.ndata['x_t'])*distort_mask*0.5
